@@ -1,0 +1,38 @@
+cat > .gitignore << 'EOF'
+# Roblox / Rojo
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.rblx
+*.rblxmx
+*.rbt
+
+# Roblox Studio autosaves / temp
+*.lock
+*.tmp
+*.bak
+*.orig
+*.log
+.roblox/*
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.cursor/*
+!.cursor/settings.json
+
+# Node/Tooling
+node_modules/
+
+# Build/Export
+/build/
+dist/
+out/
+
+# Env/Secrets
+.env
+.env.*
+EOF
