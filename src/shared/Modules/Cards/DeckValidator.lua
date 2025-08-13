@@ -1,0 +1,133 @@
+local DeckValidator = {}
+
+local CardCatalog = require(script.Parent.CardCatalog)
+
+-- Board layout constants
+DeckValidator.BOARD_WIDTH = 3
+DeckValidator.BOARD_HEIGHT = 2
+DeckValidator.TOTAL_SLOTS = DeckValidator.BOARD_WIDTH * DeckValidator.BOARD_HEIGHT
+
+-- Board slot indexing (0-based for easy array access)
+-- [0] [1] [2]
+-- [3] [4] [5]
+DeckValidator.BoardSlots = {
+	TOP_LEFT = 0,
+	TOP_CENTER = 1,
+	TOP_RIGHT = 2,
+	BOTTOM_LEFT = 3,
+	BOTTOM_CENTER = 4,
+	BOTTOM_RIGHT = 5
+}
+
+-- Validation errors
+DeckValidator.Errors = {
+	INVALID_SIZE = "Deck must contain exactly 6 cards",
+	UNKNOWN_CARD = "Card ID not found in catalog: %s",
+	INVALID_CARD_ID = "Invalid card ID format: %s"
+}
+
+-- Validate deck composition
+function DeckValidator.ValidateDeck(deck)
+	-- Check deck size
+	if not deck or #deck ~= DeckValidator.TOTAL_SLOTS then
+		return false, DeckValidator.Errors.INVALID_SIZE
+	end
+	
+	-- Validate each card ID
+	for i, cardId in ipairs(deck) do
+		if type(cardId) ~= "string" or cardId == "" then
+			return false, string.format(DeckValidator.Errors.INVALID_CARD_ID, tostring(cardId))
+		end
+		
+		if not CardCatalog.IsValidCardId(cardId) then
+			return false, string.format(DeckValidator.Errors.UNKNOWN_CARD, cardId)
+		end
+	end
+	
+	return true, nil
+end
+
+-- Map validated deck to board layout
+function DeckValidator.MapDeckToBoard(deck)
+	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
+	if not isValid then
+		error("Cannot map invalid deck: " .. errorMessage)
+	end
+	
+	local board = {}
+	
+	-- Map deck array to board slots
+	for i = 1, #deck do
+		local slotIndex = i - 1 -- Convert to 0-based indexing
+		local cardId = deck[i]
+		local card = CardCatalog.GetCard(cardId)
+		
+		board[slotIndex] = {
+			slotIndex = slotIndex,
+			cardId = cardId,
+			card = card,
+			position = {
+				row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH),
+				col = slotIndex % DeckValidator.BOARD_WIDTH
+			}
+		}
+	end
+	
+	return board
+end
+
+-- Get board slot information
+function DeckValidator.GetSlotInfo(slotIndex)
+	if slotIndex < 0 or slotIndex >= DeckValidator.TOTAL_SLOTS then
+		return nil
+	end
+	
+	return {
+		slotIndex = slotIndex,
+		position = {
+			row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH),
+			col = slotIndex % DeckValidator.BOARD_WIDTH
+		},
+		adjacentSlots = DeckValidator.GetAdjacentSlots(slotIndex)
+	}
+end
+
+-- Get adjacent slots for a given slot
+function DeckValidator.GetAdjacentSlots(slotIndex)
+	local adjacent = {}
+	local row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH)
+	local col = slotIndex % DeckValidator.BOARD_WIDTH
+	
+	-- Check all 8 possible adjacent positions
+	local directions = {
+		{-1, -1}, {-1, 0}, {-1, 1},
+		{0, -1},           {0, 1},
+		{1, -1},  {1, 0},  {1, 1}
+	}
+	
+	for _, direction in ipairs(directions) do
+		local newRow = row + direction[1]
+		local newCol = col + direction[2]
+		
+		if newRow >= 0 and newRow < DeckValidator.BOARD_HEIGHT and
+		   newCol >= 0 and newCol < DeckValidator.BOARD_WIDTH then
+			local adjacentSlot = newRow * DeckValidator.BOARD_WIDTH + newCol
+			table.insert(adjacent, adjacentSlot)
+		end
+	end
+	
+	return adjacent
+end
+
+-- Utility function to check if two slots are adjacent
+function DeckValidator.AreSlotsAdjacent(slot1, slot2)
+	local adjacent = DeckValidator.GetAdjacentSlots(slot1)
+	for _, slot in ipairs(adjacent) do
+		if slot == slot2 then
+			return true
+		end
+	end
+	return false
+end
+
+return DeckValidator

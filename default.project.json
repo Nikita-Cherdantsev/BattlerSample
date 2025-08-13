@@ -1,56 +1,17 @@
 {
-  "name": "TestTempGen2_0",
+  "name": "BattlerSample",
   "tree": {
     "$className": "DataModel",
 
     "ReplicatedStorage": {
       "ClientModules": {  
         "$className": "Folder",
-        "AreaHandler": {
-          "$path": "src/shared/ClientModules/AreaHandler.lua"
-        },
-        "ClickerHandler": {
-          "$path": "src/shared/ClientModules/ClickerHandler.lua"
-        },
-        "ClientState": {
-          "$path": "src/shared/ClientModules/ClientState.lua"
-        },
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
-        },
-        "PerksHandler": {
-          "$path": "src/shared/ClientModules/PerksHandler.lua"
-        },
-        "RebirthHandler": {
-          "$path": "src/shared/ClientModules/RebirthHandler.lua"
-        },
-        "ClientController": {
-          "$path": "src/shared/ClientModules/ClientController.lua"
-        },
-        "SettingsHandler": {
-          "$path": "src/shared/ClientModules/SettingsHandler.lua"
-        },
-        "ShopHandler": {
-          "$path": "src/shared/ClientModules/ShopHandler.lua"
-        },
-        "StatsHandler": {
-          "$path": "src/shared/ClientModules/StatsHandler.lua"
-        },
-        "UIHandler": {
-          "$path": "src/shared/ClientModules/UIHandler.lua"
-        },
-        "WheelHandler": {
-          "$path": "src/shared/ClientModules/WheelHandler.lua"
         }
       },
       "Modules": {
         "$className": "Folder",
-        "Leaderboards": {
-          "$path": "src/shared/Modules/Leaderboards.lua"
-        },
-        "Multipliers": {
-          "$path": "src/shared/Modules/Multipliers.lua"
-        }, 
         "Utilities": {
           "$path": "src/shared/Modules/Utilities.lua",
           "Audio": {
@@ -91,70 +52,13 @@
     },
 
     "ServerScriptService": {
-      "$className": "ServerScriptService",
-      "Datastore": {
-        "$className": "Folder",
-        "DataHandler": {
-          "$path": "src/server/Datastore/DataHandler.server.lua"
-        },
-        "Datastore": {
-          "$path": "src/server/Datastore/Datastore.lua",
-          "Loading": {
-            "$path": "src/server/Datastore/DatastoreModuleScripts/Loading.lua"
-          },
-          "Saving": {
-            "$path": "src/server/Datastore/DatastoreModuleScripts/Saving.lua"
-          },
-          "Values": {
-            "$path": "src/server/Datastore/DatastoreModuleScripts/Values.lua"
-          }
-        }
-      },
-      "AdminHandler": {
-        "$path": "src/server/AdminHandler.server.lua",
-        "AdminFunctions": {
-          "$path": "src/server/AdminHandler.AdminFunctions.lua"
-        }
-      },
-      "BadgeService": {
-        "$path": "src/server/BadgeService.server.lua"
-      },
-      "CodesHandler": {
-        "$path": "src/server/CodesHandler.server.lua"
-      },
-      "LeaderboardHandler": {
-        "$path": "src/server/LeaderboardHandler.server.lua",
-        "Main": {
-          "$path": "src/server/LeaderboardHandler.Main.lua"
-        }
-      },
-      "OfflineEarningsHandler": {
-        "$path": "src/server/OfflineEarningsHandler.server.lua"
-      },
-      "RemoteHandler": {
-        "$path": "src/server/RemoteHandler.server.lua"
-      },
-      "RobuxHandler": {
-        "$path": "src/server/RobuxHandler.server.lua"
-      },
-      "SpawnHandler": {
-        "$path": "src/server/SpawnHandler.server.lua"
-      },
-      "ServerAnnouncement": {
-        "$path": "src/server/ServerAnnouncement.server.lua"
-      },
-      "EarnObjectsInteraction": {
-        "$path": "src/server/EarnObjectsInteraction.server.lua"
-      }
+      "$className": "ServerScriptService"
     },
 
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts",
-        "TestClientState": {
-          "$path": "src/client/TestClientState.client.lua"
-        }
+        "$className": "StarterPlayerScripts"
       }
     }
   }
