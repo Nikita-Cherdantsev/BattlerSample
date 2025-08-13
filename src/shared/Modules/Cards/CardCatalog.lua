@@ -1,21 +1,18 @@
 local CardCatalog = {}
 
--- Rarity definitions
+-- Rarity definitions (canon set)
 CardCatalog.Rarities = {
 	COMMON = "common",
-	UNCOMMON = "uncommon", 
 	RARE = "rare",
 	EPIC = "epic",
 	LEGENDARY = "legendary"
 }
 
--- Class/Role definitions
+-- Class/Role definitions (canon set)
 CardCatalog.Classes = {
-	WARRIOR = "warrior",
-	MAGE = "mage",
-	HEALER = "healer",
-	TANK = "tank",
-	SUPPORT = "support"
+	DPS = "dps",
+	SUPPORT = "support",
+	TANK = "tank"
 }
 
 -- Base card template
@@ -34,56 +31,55 @@ local function CreateCard(id, name, rarity, class, baseStats, passive)
 	}
 end
 
--- Initial catalog with 8 example cards
+-- Initial catalog with 8 example cards (updated for canon enums)
 CardCatalog.Cards = {
 	-- Common cards
-	["warrior_001"] = CreateCard("warrior_001", "Recruit Warrior", CardCatalog.Rarities.COMMON, CardCatalog.Classes.WARRIOR, {
+	["dps_001"] = CreateCard("dps_001", "Recruit Fighter", CardCatalog.Rarities.COMMON, CardCatalog.Classes.DPS, {
 		attack = 3,
 		health = 4,
 		speed = 2
 	}),
 	
-	["mage_001"] = CreateCard("mage_001", "Apprentice Mage", CardCatalog.Rarities.COMMON, CardCatalog.Classes.MAGE, {
-		attack = 4,
-		health = 2,
-		speed = 3
-	}),
-	
-	-- Uncommon cards
-	["healer_001"] = CreateCard("healer_001", "Novice Healer", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.HEALER, {
+	["support_001"] = CreateCard("support_001", "Novice Healer", CardCatalog.Rarities.COMMON, CardCatalog.Classes.SUPPORT, {
 		attack = 2,
 		health = 5,
 		speed = 2
-	}, "placeholder_passive"),
+	}),
 	
-	["tank_001"] = CreateCard("tank_001", "Iron Guard", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.TANK, {
+	-- Rare cards
+	["tank_001"] = CreateCard("tank_001", "Iron Guard", CardCatalog.Rarities.RARE, CardCatalog.Classes.TANK, {
 		attack = 2,
 		health = 6,
 		speed = 1
 	}),
 	
-	-- Rare cards
-	["warrior_002"] = CreateCard("warrior_002", "Veteran Fighter", CardCatalog.Rarities.RARE, CardCatalog.Classes.WARRIOR, {
+	["dps_002"] = CreateCard("dps_002", "Veteran Warrior", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
 		attack = 5,
 		health = 5,
 		speed = 3
-	}, "placeholder_passive"),
+	}),
 	
-	["mage_002"] = CreateCard("mage_002", "Battle Sorcerer", CardCatalog.Rarities.RARE, CardCatalog.Classes.MAGE, {
-		attack = 6,
-		health = 3,
+	["support_002"] = CreateCard("support_002", "Battle Cleric", CardCatalog.Rarities.RARE, CardCatalog.Classes.SUPPORT, {
+		attack = 3,
+		health = 4,
 		speed = 4
 	}),
 	
 	-- Epic cards
-	["support_001"] = CreateCard("support_001", "Tactical Commander", CardCatalog.Rarities.EPIC, CardCatalog.Classes.SUPPORT, {
-		attack = 3,
+	["dps_003"] = CreateCard("dps_003", "Elite Berserker", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
+		attack = 7,
 		health = 4,
 		speed = 5
 	}, "placeholder_passive"),
 	
+	["tank_002"] = CreateCard("tank_002", "Steel Defender", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
+		attack = 3,
+		health = 8,
+		speed = 2
+	}, "placeholder_passive"),
+	
 	-- Legendary cards
-	["warrior_003"] = CreateCard("warrior_003", "Champion Warlord", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.WARRIOR, {
+	["dps_004"] = CreateCard("dps_004", "Champion Warlord", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
 		attack = 8,
 		health = 7,
 		speed = 4

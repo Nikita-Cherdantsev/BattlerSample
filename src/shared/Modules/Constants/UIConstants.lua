@@ -2,14 +2,14 @@ local UIConstants = {}
 
 -- Board layout constants
 UIConstants.BOARD = {
-	-- Slot positioning (relative to board center)
+	-- Slot positioning (relative to board center) - 1-based indexing
 	SLOT_POSITIONS = {
-		[0] = {x = -200, y = 100},   -- Top Left
-		[1] = {x = 0, y = 100},      -- Top Center
-		[2] = {x = 200, y = 100},    -- Top Right
-		[3] = {x = -200, y = -100},  -- Bottom Left
-		[4] = {x = 0, y = -100},     -- Bottom Center
-		[5] = {x = 200, y = -100}    -- Bottom Right
+		[1] = {x = -200, y = 100},   -- Top Left
+		[2] = {x = 0, y = 100},      -- Top Center
+		[3] = {x = 200, y = 100},    -- Top Right
+		[4] = {x = -200, y = -100},  -- Bottom Left
+		[5] = {x = 0, y = -100},     -- Bottom Center
+		[6] = {x = 200, y = -100}    -- Bottom Right
 	},
 	
 	-- Slot dimensions
@@ -33,10 +33,9 @@ UIConstants.CARD = {
 		height = 140
 	},
 	
-	-- Card colors by rarity
+	-- Card colors by rarity (canon set)
 	RARITY_COLORS = {
 		common = {r = 200, g = 200, b = 200},      -- Gray
-		uncommon = {r = 0, g = 255, b = 0},        -- Green
 		rare = {r = 0, g = 100, b = 255},          -- Blue
 		epic = {r = 200, g = 0, b = 255},          -- Purple
 		legendary = {r = 255, g = 165, b = 0}      -- Orange
@@ -165,11 +164,11 @@ UIConstants.TEXT = {
 		header = 32
 	},
 	
-	-- Font families
+	-- Font families (string identifiers for now)
 	FONTS = {
-		primary = Enum.Font.Gotham,
-		secondary = Enum.Font.GothamBold,
-		monospace = Enum.Font.Code
+		primary = "gotham",
+		secondary = "gotham_bold",
+		monospace = "code"
 	}
 }
 

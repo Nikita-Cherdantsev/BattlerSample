@@ -7,16 +7,16 @@ DeckValidator.BOARD_WIDTH = 3
 DeckValidator.BOARD_HEIGHT = 2
 DeckValidator.TOTAL_SLOTS = DeckValidator.BOARD_WIDTH * DeckValidator.BOARD_HEIGHT
 
--- Board slot indexing (0-based for easy array access)
--- [0] [1] [2]
--- [3] [4] [5]
+-- Board slot indexing (1-based for consistency)
+-- [1] [2] [3]
+-- [4] [5] [6]
 DeckValidator.BoardSlots = {
-	TOP_LEFT = 0,
-	TOP_CENTER = 1,
-	TOP_RIGHT = 2,
-	BOTTOM_LEFT = 3,
-	BOTTOM_CENTER = 4,
-	BOTTOM_RIGHT = 5
+	TOP_LEFT = 1,
+	TOP_CENTER = 2,
+	TOP_RIGHT = 3,
+	BOTTOM_LEFT = 4,
+	BOTTOM_CENTER = 5,
+	BOTTOM_RIGHT = 6
 }
 
 -- Validation errors
@@ -56,9 +56,9 @@ function DeckValidator.MapDeckToBoard(deck)
 	
 	local board = {}
 	
-	-- Map deck array to board slots
+	-- Map deck array to board slots (1-based indexing)
 	for i = 1, #deck do
-		local slotIndex = i - 1 -- Convert to 0-based indexing
+		local slotIndex = i -- Keep 1-based indexing
 		local cardId = deck[i]
 		local card = CardCatalog.GetCard(cardId)
 		
@@ -67,8 +67,8 @@ function DeckValidator.MapDeckToBoard(deck)
 			cardId = cardId,
 			card = card,
 			position = {
-				row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH),
-				col = slotIndex % DeckValidator.BOARD_WIDTH
+				row = math.floor((slotIndex - 1) / DeckValidator.BOARD_WIDTH),
+				col = (slotIndex - 1) % DeckValidator.BOARD_WIDTH
 			}
 		}
 	end
@@ -78,15 +78,15 @@ end
 
 -- Get board slot information
 function DeckValidator.GetSlotInfo(slotIndex)
-	if slotIndex < 0 or slotIndex >= DeckValidator.TOTAL_SLOTS then
+	if slotIndex < 1 or slotIndex > DeckValidator.TOTAL_SLOTS then
 		return nil
 	end
 	
 	return {
 		slotIndex = slotIndex,
 		position = {
-			row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH),
-			col = slotIndex % DeckValidator.BOARD_WIDTH
+			row = math.floor((slotIndex - 1) / DeckValidator.BOARD_WIDTH),
+			col = (slotIndex - 1) % DeckValidator.BOARD_WIDTH
 		},
 		adjacentSlots = DeckValidator.GetAdjacentSlots(slotIndex)
 	}
@@ -95,8 +95,8 @@ end
 -- Get adjacent slots for a given slot
 function DeckValidator.GetAdjacentSlots(slotIndex)
 	local adjacent = {}
-	local row = math.floor(slotIndex / DeckValidator.BOARD_WIDTH)
-	local col = slotIndex % DeckValidator.BOARD_WIDTH
+	local row = math.floor((slotIndex - 1) / DeckValidator.BOARD_WIDTH)
+	local col = (slotIndex - 1) % DeckValidator.BOARD_WIDTH
 	
 	-- Check all 8 possible adjacent positions
 	local directions = {
@@ -111,7 +111,7 @@ function DeckValidator.GetAdjacentSlots(slotIndex)
 		
 		if newRow >= 0 and newRow < DeckValidator.BOARD_HEIGHT and
 		   newCol >= 0 and newCol < DeckValidator.BOARD_WIDTH then
-			local adjacentSlot = newRow * DeckValidator.BOARD_WIDTH + newCol
+			local adjacentSlot = newRow * DeckValidator.BOARD_WIDTH + newCol + 1
 			table.insert(adjacent, adjacentSlot)
 		end
 	end

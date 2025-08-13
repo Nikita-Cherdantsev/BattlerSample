@@ -16,12 +16,12 @@ local function TestCardCatalog()
 	print("=== Testing Card Catalog ===")
 	
 	-- Test card retrieval
-	local card = CardCatalog.GetCard("warrior_001")
+	local card = CardCatalog.GetCard("dps_001")
 	if card then
-		print("✅ Found warrior_001:", card.name, "Rarity:", card.rarity)
+		print("✅ Found dps_001:", card.name, "Rarity:", card.rarity)
 		testResults.cardCatalog = true
 	else
-		print("❌ Failed to find warrior_001")
+		print("❌ Failed to find dps_001")
 		testResults.cardCatalog = false
 	end
 	
@@ -30,8 +30,8 @@ local function TestCardCatalog()
 	print("✅ Found", #commonCards, "common cards")
 	
 	-- Test class filtering
-	local warriorCards = CardCatalog.GetCardsByClass(CardCatalog.Classes.WARRIOR)
-	print("✅ Found", #warriorCards, "warrior cards")
+	local dpsCards = CardCatalog.GetCardsByClass(CardCatalog.Classes.DPS)
+	print("✅ Found", #dpsCards, "DPS cards")
 	
 	print("Total cards in catalog:", #CardCatalog.GetAllCards())
 end
@@ -41,7 +41,7 @@ local function TestDeckValidation()
 	print("\n=== Testing Deck Validation ===")
 	
 	-- Valid deck
-	local validDeck = {"warrior_001", "mage_001", "healer_001", "tank_001", "warrior_002", "mage_002"}
+	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "dps_003"}
 	local isValid, errorMessage = DeckValidator.ValidateDeck(validDeck)
 	
 	if isValid then
@@ -52,10 +52,10 @@ local function TestDeckValidation()
 		local board = DeckValidator.MapDeckToBoard(validDeck)
 		print("✅ Deck mapped to board with", #board, "slots")
 		
-		-- Test slot info
-		local slotInfo = DeckValidator.GetSlotInfo(0)
+		-- Test slot info (1-based indexing)
+		local slotInfo = DeckValidator.GetSlotInfo(1)
 		if slotInfo then
-			print("✅ Slot 0 info:", "Row:", slotInfo.position.row, "Col:", slotInfo.position.col)
+			print("✅ Slot 1 info:", "Row:", slotInfo.position.row, "Col:", slotInfo.position.col)
 		end
 		
 	else
@@ -64,7 +64,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Invalid deck (wrong size)
-	local invalidDeck = {"warrior_001", "mage_001"}
+	local invalidDeck = {"dps_001", "support_001"}
 	local isValid2, errorMessage2 = DeckValidator.ValidateDeck(invalidDeck)
 	if not isValid2 then
 		print("✅ Invalid deck correctly rejected:", errorMessage2)
@@ -74,7 +74,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Invalid deck (unknown card)
-	local invalidDeck2 = {"warrior_001", "mage_001", "healer_001", "tank_001", "warrior_002", "unknown_card"}
+	local invalidDeck2 = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "unknown_card"}
 	local isValid3, errorMessage3 = DeckValidator.ValidateDeck(invalidDeck2)
 	if not isValid3 then
 		print("✅ Unknown card correctly rejected:", errorMessage3)
@@ -152,9 +152,9 @@ local function TestCombatTypes()
 	
 	-- Test unit creation
 	local unit = {
-		slotIndex = 0,
-		cardId = "warrior_001",
-		card = CardCatalog.GetCard("warrior_001"),
+		slotIndex = 1, -- 1-based indexing
+		cardId = "dps_001",
+		card = CardCatalog.GetCard("dps_001"),
 		stats = {
 			attack = 5,
 			health = 10,
@@ -200,6 +200,7 @@ local function TestGameConstants()
 	
 	print("✅ Board dimensions:", GameConstants.BOARD.WIDTH, "x", GameConstants.BOARD.HEIGHT)
 	print("✅ Total slots:", GameConstants.BOARD.TOTAL_SLOTS)
+	print("✅ Slot indices (1-based):", table.concat(GameConstants.BOARD.SLOT_INDICES, ", "))
 	print("✅ Deck size:", GameConstants.DECK.MIN_SIZE, "-", GameConstants.DECK.MAX_SIZE)
 	print("✅ Max turns:", GameConstants.COMBAT.MAX_TURNS)
 	print("✅ Rarity weights - Common:", GameConstants.RARITY_WEIGHTS.COMMON .. "%")
@@ -209,7 +210,7 @@ end
 
 -- Run all tests
 function SelfCheck.RunAllTests()
-	print("🚀 Starting Self-Check for Card Battler MVP (Step 2A)")
+	print("🚀 Starting Self-Check for Card Battler MVP (Step 2A - Consistency Patch)")
 	print("=" .. string.rep("=", 60))
 	
 	-- Reset test results
@@ -241,7 +242,7 @@ function SelfCheck.RunAllTests()
 	print("\n🎯 Overall Result:", passedTests .. "/" .. totalTests, "tests passed")
 	
 	if passedTests == totalTests then
-		print("🎉 All tests passed! Step 2A implementation is ready.")
+		print("🎉 All tests passed! Step 2A consistency patch is ready.")
 	else
 		print("⚠️  Some tests failed. Please review the implementation.")
 	end

@@ -5,7 +5,7 @@ GameConstants.BOARD = {
 	WIDTH = 3,
 	HEIGHT = 2,
 	TOTAL_SLOTS = 6,
-	SLOT_INDICES = {0, 1, 2, 3, 4, 5}
+	SLOT_INDICES = {1, 2, 3, 4, 5, 6}
 }
 
 -- Deck configuration
@@ -38,20 +38,17 @@ GameConstants.COMBAT = {
 
 -- Card rarity weights (for lootbox generation later)
 GameConstants.RARITY_WEIGHTS = {
-	COMMON = 50,      -- 50%
-	UNCOMMON = 30,    -- 30%
-	RARE = 15,        -- 15%
-	EPIC = 4,         -- 4%
-	LEGENDARY = 1     -- 1%
+	COMMON = 60,      -- 60%
+	RARE = 30,        -- 30%
+	EPIC = 8,         -- 8%
+	LEGENDARY = 2     -- 2%
 }
 
 -- Card class distribution limits (for deck building later)
 GameConstants.CLASS_LIMITS = {
-	WARRIOR = {min = 0, max = 6},
-	MAGE = {min = 0, max = 6},
-	HEALER = {min = 0, max = 6},
-	TANK = {min = 0, max = 6},
-	SUPPORT = {min = 0, max = 6}
+	DPS = {min = 0, max = 6},
+	SUPPORT = {min = 0, max = 6},
+	TANK = {min = 0, max = 6}
 }
 
 -- Match configuration
