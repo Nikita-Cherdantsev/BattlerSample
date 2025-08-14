@@ -8,7 +8,8 @@
         "$className": "Folder",
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
-        }
+        },
+        
       },
       "Modules": {
         "$className": "Folder",

@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 
 -- Modules
 local PlayerDataService = require(game.ServerScriptService.Services.PlayerDataService)
+local MatchService = require(game.ServerScriptService.Services.MatchService)
 
 -- Create RemoteEvents under ReplicatedStorage/Network
 local NetworkFolder = Instance.new("Folder")
@@ -19,12 +20,16 @@ RequestSetDeck.Parent = NetworkFolder
 
 local RequestProfile = Instance.new("RemoteEvent")
 RequestProfile.Name = "RequestProfile"
-RequestProfile.Name = "RequestProfile"
 RequestProfile.Parent = NetworkFolder
 
 local ProfileUpdated = Instance.new("RemoteEvent")
 ProfileUpdated.Name = "ProfileUpdated"
 ProfileUpdated.Parent = NetworkFolder
+
+-- Existing RequestStartMatch (from old clicker game)
+local RequestStartMatch = Instance.new("RemoteEvent")
+RequestStartMatch.Name = "RequestStartMatch"
+RequestStartMatch.Parent = NetworkFolder
 
 -- Rate limiting configuration
 local RATE_LIMIT = {
@@ -242,9 +247,26 @@ local function HandleRequestProfile(player, requestData)
 	end
 end
 
+local function HandleRequestStartMatch(player, requestData)
+	LogInfo(player, "Processing match request")
+	
+	-- Execute match via MatchService
+	local result = MatchService.ExecuteMatch(player, requestData or {})
+	
+	-- Reply on the same event (as per contract)
+	RequestStartMatch:FireClient(player, result)
+	
+	if result.ok then
+		LogInfo(player, "Match completed successfully: %s", result.matchId)
+	else
+		LogWarning(player, "Match failed: %s", result.error.message)
+	end
+end
+
 -- Connect RemoteEvents to handlers
 RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
 RequestProfile.OnServerEvent:Connect(HandleRequestProfile)
+RequestStartMatch.OnServerEvent:Connect(HandleRequestStartMatch)
 
 -- Player cleanup
 Players.PlayerRemoving:Connect(function(player)
@@ -255,6 +277,7 @@ end)
 RemoteEvents.RequestSetDeck = RequestSetDeck
 RemoteEvents.RequestProfile = RequestProfile
 RemoteEvents.ProfileUpdated = ProfileUpdated
+RemoteEvents.RequestStartMatch = RequestStartMatch
 
 -- Utility functions for other modules
 function RemoteEvents.SendProfileUpdate(player, payload)

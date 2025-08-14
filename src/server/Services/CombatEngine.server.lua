@@ -1,0 +1,438 @@
+local CombatEngine = {}
+
+-- Modules
+local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
+local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
+local CombatTypes = require(game.ReplicatedStorage.Modules.Combat.CombatTypes)
+local CombatUtils = require(game.ReplicatedStorage.Modules.Combat.CombatUtils)
+local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+
+-- Configuration
+local MAX_ROUNDS = 50 -- Hard cap to prevent infinite battles
+local MIRROR_SLOT_MAPPING = {
+	[1] = 4, -- Top-left -> Bottom-left
+	[2] = 5, -- Top-center -> Bottom-center  
+	[3] = 6, -- Top-right -> Bottom-right
+	[4] = 1, -- Bottom-left -> Top-left
+	[5] = 2, -- Bottom-center -> Top-center
+	[6] = 3  -- Bottom-right -> Top-right
+}
+
+-- Battle state
+local BattleState = {
+	round = 0,
+	winner = nil,
+	boardA = {}, -- Player A units (slots 1-6)
+	boardB = {}, -- Player B units (slots 1-6)
+	rng = nil,
+	battleLog = {},
+	isComplete = false
+}
+
+-- Utility functions
+local function LogInfo(message, ...)
+	local formattedMessage = string.format(message, ...)
+	print(string.format("[CombatEngine] %s", formattedMessage))
+end
+
+local function LogWarning(message, ...)
+	local formattedMessage = string.format(message, ...)
+	warn(string.format("[CombatEngine] %s", formattedMessage))
+end
+
+local function CreateUnitFromCard(cardId, slotIndex, playerId)
+	local card = CardCatalog.GetCard(cardId)
+	if not card then
+		error("Invalid card ID: " .. tostring(cardId))
+	end
+	
+	return {
+		slotIndex = slotIndex,
+		playerId = playerId,
+		cardId = cardId,
+		card = card,
+		stats = {
+			attack = card.baseStats.attack,
+			health = card.baseStats.health,
+			maxHealth = card.baseStats.health,
+			speed = card.baseStats.speed,
+			armor = 0
+		},
+		state = CombatTypes.UnitState.ALIVE,
+		statusEffects = {},
+		hasActed = false,
+		turnOrder = 0
+	}
+end
+
+local function InitializeBoard(deck, playerId)
+	local board = {}
+	
+	-- Validate deck and map to board
+	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
+	if not isValid then
+		error("Invalid deck for player " .. playerId .. ": " .. errorMessage)
+	end
+	
+	local boardMapping = DeckValidator.MapDeckToBoard(deck)
+	
+	-- Create units from board mapping
+	for slotIndex, slotData in pairs(boardMapping) do
+		board[slotIndex] = CreateUnitFromCard(slotData.cardId, slotIndex, playerId)
+	end
+	
+	return board
+end
+
+local function GetAliveUnits(board)
+	local aliveUnits = {}
+	for slotIndex, unit in pairs(board) do
+		if unit.state == CombatTypes.UnitState.ALIVE then
+			table.insert(aliveUnits, unit)
+		end
+	end
+	return aliveUnits
+end
+
+local function CalculateTurnOrder(boardA, boardB)
+	local allUnits = {}
+	
+	-- Collect all alive units from both boards
+	for slotIndex, unit in pairs(boardA) do
+		if unit.state == CombatTypes.UnitState.ALIVE then
+			table.insert(allUnits, unit)
+		end
+	end
+	
+	for slotIndex, unit in pairs(boardB) do
+		if unit.state == CombatTypes.UnitState.ALIVE then
+			table.insert(allUnits, unit)
+		end
+	end
+	
+	-- Sort by speed (highest first), then by slot index for deterministic tie-breaking
+	table.sort(allUnits, function(a, b)
+		if a.stats.speed ~= b.stats.speed then
+			return a.stats.speed > b.stats.speed
+		else
+			return a.slotIndex < b.slotIndex
+		end
+	end)
+	
+	-- Assign turn order
+	for i, unit in ipairs(allUnits) do
+		unit.turnOrder = i
+	end
+	
+	return allUnits
+end
+
+local function FindTarget(attacker, boardA, boardB)
+	local targetBoard = (attacker.playerId == "A") and boardB or boardA
+	
+	-- Try mirror targeting first
+	local mirrorSlot = MIRROR_SLOT_MAPPING[attacker.slotIndex]
+	local mirrorUnit = targetBoard[mirrorSlot]
+	
+	if mirrorUnit and mirrorUnit.state == CombatTypes.UnitState.ALIVE then
+		return mirrorUnit
+	end
+	
+	-- Find nearest living enemy by slot distance
+	local nearestUnit = nil
+	local nearestDistance = math.huge
+	
+	for slotIndex, unit in pairs(targetBoard) do
+		if unit.state == CombatTypes.UnitState.ALIVE then
+			local distance = math.abs(slotIndex - attacker.slotIndex)
+			if distance < nearestDistance then
+				nearestDistance = distance
+				nearestUnit = unit
+			elseif distance == nearestDistance then
+				-- Tie-breaker: prefer lower slot index
+				if slotIndex < nearestUnit.slotIndex then
+					nearestUnit = unit
+				end
+			end
+		end
+	end
+	
+	return nearestUnit
+end
+
+local function ApplyPassiveEffects(unit, effectType, context)
+	-- Placeholder for passive effects
+	-- This is where passive perks would be applied later
+	-- effectType: "pre_attack", "on_hit", "on_death", etc.
+	-- context: additional data for the effect
+	
+	-- For MVP, no passive effects are applied
+	return context
+end
+
+local function CalculateDamage(attacker, defender)
+	-- Apply pre-attack effects
+	local attackContext = {
+		damage = attacker.stats.attack,
+		attacker = attacker,
+		defender = defender
+	}
+	attackContext = ApplyPassiveEffects(attacker, "pre_attack", attackContext)
+	
+	-- Calculate final damage
+	local finalDamage = CombatUtils.CalculateDamage(attackContext.damage, defender.stats.armor)
+	
+	-- Apply on-hit effects
+	local hitContext = {
+		damage = finalDamage,
+		attacker = attacker,
+		defender = defender
+	}
+	hitContext = ApplyPassiveEffects(attacker, "on_hit", hitContext)
+	
+	return hitContext.damage
+end
+
+local function ExecuteAttack(attacker, defender, battleState)
+	-- Validate attack
+	if attacker.state ~= CombatTypes.UnitState.ALIVE then
+		LogWarning("Dead unit attempted to attack")
+		return false
+	end
+	
+	if defender.state ~= CombatTypes.UnitState.ALIVE then
+		LogWarning("Attempted to attack dead unit")
+		return false
+	end
+	
+	if attacker.hasActed then
+		LogWarning("Unit already acted this turn")
+		return false
+	end
+	
+	-- Calculate damage
+	local damage = CalculateDamage(attacker, defender)
+	
+	-- Apply damage
+	local actualDamage = CombatUtils.ApplyDamage(defender, damage)
+	
+	-- Mark attacker as acted
+	attacker.hasActed = true
+	
+	-- Log the attack
+	local logEntry = {
+		type = "attack",
+		round = battleState.round,
+		attackerSlot = attacker.slotIndex,
+		attackerPlayer = attacker.playerId,
+		defenderSlot = defender.slotIndex,
+		defenderPlayer = defender.playerId,
+		damage = actualDamage,
+		defenderHealth = defender.stats.health,
+		defenderKO = (defender.state == CombatTypes.UnitState.DEAD)
+	}
+	
+	table.insert(battleState.battleLog, logEntry)
+	
+	-- Apply on-death effects if defender died
+	if defender.state == CombatTypes.UnitState.DEAD then
+		local deathContext = {
+			killer = attacker,
+			victim = defender
+		}
+		ApplyPassiveEffects(attacker, "on_death", deathContext)
+	end
+	
+	LogInfo("Attack: %s slot %d → %s slot %d, damage: %d, KO: %s", 
+		attacker.playerId, attacker.slotIndex, 
+		defender.playerId, defender.slotIndex, 
+		actualDamage, tostring(logEntry.defenderKO))
+	
+	return true
+end
+
+local function CheckBattleEnd(boardA, boardB)
+	local aliveA = GetAliveUnits(boardA)
+	local aliveB = GetAliveUnits(boardB)
+	
+	if #aliveA == 0 and #aliveB == 0 then
+		return "Draw"
+	elseif #aliveA == 0 then
+		return "B"
+	elseif #aliveB == 0 then
+		return "A"
+	else
+		return nil -- Battle continues
+	end
+end
+
+local function ResetTurnFlags(boardA, boardB)
+	for _, unit in pairs(boardA) do
+		unit.hasActed = false
+	end
+	for _, unit in pairs(boardB) do
+		unit.hasActed = false
+	end
+end
+
+local function ProcessStatusEffects(boardA, boardB)
+	-- Process status effects for all units
+	for _, unit in pairs(boardA) do
+		CombatUtils.ProcessStatusEffects(unit)
+	end
+	for _, unit in pairs(boardB) do
+		CombatUtils.ProcessStatusEffects(unit)
+	end
+end
+
+-- Public API
+
+-- Execute a complete battle between two decks
+function CombatEngine.ExecuteBattle(deckA, deckB, seed)
+	LogInfo("Starting battle with seed: %s", tostring(seed))
+	
+	-- Initialize battle state
+	local battleState = {
+		round = 0,
+		winner = nil,
+		boardA = InitializeBoard(deckA, "A"),
+		boardB = InitializeBoard(deckB, "B"),
+		rng = SeededRNG.New(seed),
+		battleLog = {},
+		isComplete = false
+	}
+	
+	-- Battle loop
+	while battleState.round < MAX_ROUNDS do
+		battleState.round = battleState.round + 1
+		LogInfo("Starting round %d", battleState.round)
+		
+		-- Add round marker to log
+		table.insert(battleState.battleLog, {
+			type = "round_start",
+			round = battleState.round
+		})
+		
+		-- Process status effects at start of round
+		ProcessStatusEffects(battleState.boardA, battleState.boardB)
+		
+		-- Calculate turn order
+		local turnOrder = CalculateTurnOrder(battleState.boardA, battleState.boardB)
+		
+		-- Execute turns
+		for _, unit in ipairs(turnOrder) do
+			-- Skip if unit is dead
+			if unit.state ~= CombatTypes.UnitState.ALIVE then
+				goto continue
+			end
+			
+			-- Find target
+			local target = FindTarget(unit, battleState.boardA, battleState.boardB)
+			if not target then
+				-- No valid targets, skip turn
+				goto continue
+			end
+			
+			-- Execute attack
+			ExecuteAttack(unit, target, battleState)
+			
+			-- Check if battle ended
+			local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+			if winner then
+				battleState.winner = winner
+				battleState.isComplete = true
+				break
+			end
+			
+			::continue::
+		end
+		
+		-- Reset turn flags for next round
+		ResetTurnFlags(battleState.boardA, battleState.boardB)
+		
+		-- Check if battle ended
+		if battleState.isComplete then
+			break
+		end
+	end
+	
+	-- Handle stalemate
+	if not battleState.isComplete then
+		battleState.winner = "Draw"
+		battleState.isComplete = true
+		LogWarning("Battle ended in stalemate after %d rounds", MAX_ROUNDS)
+	end
+	
+	-- Create battle result
+	local result = {
+		winner = battleState.winner,
+		rounds = battleState.round,
+		survivorsA = GetAliveUnits(battleState.boardA),
+		survivorsB = GetAliveUnits(battleState.boardB),
+		battleLog = battleState.battleLog
+	}
+	
+	LogInfo("Battle complete. Winner: %s, Rounds: %d", result.winner, result.rounds)
+	
+	return result
+end
+
+-- Get battle statistics
+function CombatEngine.GetBattleStats(battleResult)
+	local stats = {
+		totalRounds = battleResult.rounds,
+		winner = battleResult.winner,
+		survivorsA = #battleResult.survivorsA,
+		survivorsB = #battleResult.survivorsB,
+		totalActions = 0,
+		totalDamage = 0,
+		totalKOs = 0
+	}
+	
+	for _, logEntry in ipairs(battleResult.battleLog) do
+		if logEntry.type == "attack" then
+			stats.totalActions = stats.totalActions + 1
+			stats.totalDamage = stats.totalDamage + logEntry.damage
+			if logEntry.defenderKO then
+				stats.totalKOs = stats.totalKOs + 1
+			end
+		end
+	end
+	
+	return stats
+end
+
+-- Validate battle result
+function CombatEngine.ValidateBattleResult(battleResult)
+	-- Check required fields
+	if not battleResult.winner or not battleResult.rounds or not battleResult.battleLog then
+		return false, "Missing required fields"
+	end
+	
+	-- Check winner is valid
+	if battleResult.winner ~= "A" and battleResult.winner ~= "B" and battleResult.winner ~= "Draw" then
+		return false, "Invalid winner"
+	end
+	
+	-- Check rounds is reasonable
+	if battleResult.rounds < 1 or battleResult.rounds > MAX_ROUNDS then
+		return false, "Invalid round count"
+	end
+	
+	-- Check battle log structure
+	for i, logEntry in ipairs(battleResult.battleLog) do
+		if not logEntry.type then
+			return false, "Log entry " .. i .. " missing type"
+		end
+		
+		if logEntry.type == "attack" then
+			if not logEntry.attackerSlot or not logEntry.defenderSlot or not logEntry.damage then
+				return false, "Attack log entry " .. i .. " missing required fields"
+			end
+		end
+	end
+	
+	return true
+end
+
+return CombatEngine
