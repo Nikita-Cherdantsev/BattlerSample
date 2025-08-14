@@ -4,12 +4,12 @@ local ProfileManager = {}
 local DataStoreService = game:GetService("DataStoreService")
 
 -- Modules
-local DataStoreWrapper = require(script.Parent.DataStoreWrapper)
-local ProfileSchema = require(script.Parent.ProfileSchema)
+local DataStoreWrapper = require(script.Parent:WaitForChild("DataStoreWrapper"))
+local ProfileSchema = require(script.Parent:WaitForChild("ProfileSchema"))
 
 -- Import shared modules for deck validation
-local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
-local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
+local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 
 -- Configuration
 ProfileManager.DATASTORE_NAME = "anime_battler_profile"

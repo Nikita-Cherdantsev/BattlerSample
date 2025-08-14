@@ -5,8 +5,8 @@
 local MatchServiceDevHarness = {}
 
 -- Modules
-local MatchService = require(script.Parent.MatchService)
-local PlayerDataService = require(script.Parent.PlayerDataService)
+local MatchService = require(script.Parent:WaitForChild("MatchService"))
+local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
 
 -- Test results
 local testResults = {}

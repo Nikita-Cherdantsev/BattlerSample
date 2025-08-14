@@ -5,7 +5,7 @@
 local CombatEngineDevHarness = {}
 
 -- Modules
-local CombatEngine = require(script.Parent.CombatEngine)
+local CombatEngine = require(script.Parent:WaitForChild("CombatEngine"))
 
 -- Test decks
 local TEST_DECKS = {

@@ -9,7 +9,7 @@ local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 
 -- Modules
-local PlayerDataService = require(script.Parent.PlayerDataService)
+local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
 
 -- Configuration
 local TEST_DELAY = 3 -- Seconds between operations to respect Studio budgets
@@ -109,7 +109,7 @@ local function TestProfileCreation()
 	-- For testing purposes, we'll simulate the key parts
 	
 	-- Check if profile exists in DataStore (this will create one if it doesn't exist)
-	local profileManager = require(game.ServerScriptService.Persistence.ProfileManager)
+	local profileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 	local profile = profileManager.LoadProfile(MOCK_USER_ID)
 	
 	if profile then

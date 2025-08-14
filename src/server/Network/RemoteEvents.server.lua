@@ -5,8 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 -- Modules
-local PlayerDataService = require(game.ServerScriptService.Services.PlayerDataService)
-local MatchService = require(game.ServerScriptService.Services.MatchService)
+local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
+local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 
 -- Create RemoteEvents under ReplicatedStorage/Network
 local NetworkFolder = Instance.new("Folder")

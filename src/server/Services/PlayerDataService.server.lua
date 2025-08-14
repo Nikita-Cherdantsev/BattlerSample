@@ -5,9 +5,9 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 -- Modules
-local ProfileManager = require(game.ServerScriptService.Persistence.ProfileManager)
-local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
-local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
+local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
+local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 
 -- Configuration
 local AUTOSAVE_INTERVAL = 300 -- 5 minutes in seconds

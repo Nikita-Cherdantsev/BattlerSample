@@ -4,10 +4,11 @@ local MatchService = {}
 local Players = game:GetService("Players")
 
 -- Modules
-local PlayerDataService = require(script.Parent.PlayerDataService)
-local CombatEngine = require(script.Parent.CombatEngine)
-local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
-local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
+local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
+local CombatEngine = require(script.Parent:WaitForChild("CombatEngine"))
+local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
+local SeededRNG = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("RNG"):WaitForChild("SeededRNG"))
+local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 
 -- Configuration
 local RATE_LIMIT = {
@@ -35,9 +36,9 @@ local PVE_OPPONENTS = {
 					opponentDeck[i] = cardId
 				else
 					-- Simple variant: try to find a card of same class
-					local card = require(game.ReplicatedStorage.Modules.Cards.CardCatalog).GetCard(cardId)
+					local card = CardCatalog.GetCard(cardId)
 					if card then
-						local sameClassCards = require(game.ReplicatedStorage.Modules.Cards.CardCatalog).GetCardsByClass(card.class)
+						local sameClassCards = CardCatalog.GetCardsByClass(card.class)
 						if #sameClassCards > 1 then
 							-- Pick a different card of same class
 							local availableCards = {}

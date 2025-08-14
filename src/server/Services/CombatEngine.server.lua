@@ -1,11 +1,11 @@
 local CombatEngine = {}
 
 -- Modules
-local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
-local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
-local CombatTypes = require(game.ReplicatedStorage.Modules.Combat.CombatTypes)
-local CombatUtils = require(game.ReplicatedStorage.Modules.Combat.CombatUtils)
-local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
+local SeededRNG = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("RNG"):WaitForChild("SeededRNG"))
+local CombatTypes = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Combat"):WaitForChild("CombatTypes"))
+local CombatUtils = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Combat"):WaitForChild("CombatUtils"))
+local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 
 -- Configuration
 local MAX_ROUNDS = 50 -- Hard cap to prevent infinite battles

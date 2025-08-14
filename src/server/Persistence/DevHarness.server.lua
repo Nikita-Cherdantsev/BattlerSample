@@ -8,9 +8,9 @@ local DevHarness = {}
 local DataStoreService = game:GetService("DataStoreService")
 
 -- Modules
-local DataStoreWrapper = require(script.Parent.DataStoreWrapper)
-local ProfileSchema = require(script.Parent.ProfileSchema)
-local ProfileManager = require(script.Parent.ProfileManager)
+local DataStoreWrapper = require(script.Parent:WaitForChild("DataStoreWrapper"))
+local ProfileSchema = require(script.Parent:WaitForChild("ProfileSchema"))
+local ProfileManager = require(script.Parent:WaitForChild("ProfileManager"))
 
 -- Configuration
 local MOCK_USER_ID = "0" -- Test user ID
