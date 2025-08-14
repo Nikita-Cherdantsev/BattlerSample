@@ -8,11 +8,43 @@
         "$className": "Folder",
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
-        },
-        
+        }
       },
       "Modules": {
         "$className": "Folder",
+        "Cards": {
+          "$className": "Folder",
+          "CardCatalog": {
+            "$path": "src/shared/Modules/Cards/CardCatalog.lua"
+          },
+          "DeckValidator": {
+            "$path": "src/shared/Modules/Cards/DeckValidator.lua"
+          }
+        },
+        "Combat": {
+          "$className": "Folder",
+          "CombatTypes": {
+            "$path": "src/shared/Modules/Combat/CombatTypes.lua"
+          },
+          "CombatUtils": {
+            "$path": "src/shared/Modules/Combat/CombatUtils.lua"
+          }
+        },
+        "Constants": {
+          "$className": "Folder",
+          "GameConstants": {
+            "$path": "src/shared/Modules/Constants/GameConstants.lua"
+          },
+          "UIConstants": {
+            "$path": "src/shared/Modules/Constants/UIConstants.lua"
+          }
+        },
+        "RNG": {
+          "$className": "Folder",
+          "SeededRNG": {
+            "$path": "src/shared/Modules/RNG/SeededRNG.lua"
+          }
+        },
         "Utilities": {
           "$path": "src/shared/Modules/Utilities.lua",
           "Audio": {
@@ -48,18 +80,72 @@
           "Typewrite": {
             "$path": "src/shared/Modules/UtilitiesModuleScripts/Typewrite.lua"
           }
+        },
+        "SelfCheck" : {
+          "$path": "src/shared/Modules/SelfCheck.lua"
         }
+      },
+      "TestRunner": {
+        "$path": "src/shared/TestRunner.lua"
       }
     },
 
     "ServerScriptService": {
-      "$className": "ServerScriptService"
+      "$className": "ServerScriptService",
+      "Network": {
+        "$className": "Folder",
+        "RemoteEvents": {
+          "$path": "src/server/Network/RemoteEvents.server.lua"
+        }
+      },
+      "Persistence": {
+        "$className": "Folder",
+        "DataStoreWrapper": {
+          "$path": "src/server/Persistence/DataStoreWrapper.server.lua"
+        },
+        "DevHarness": {
+          "$path": "src/server/Persistence/DevHarness.server.lua"
+        },
+        "ProfileManager": {
+          "$path": "src/server/Persistence/ProfileManager.server.lua"
+        },
+        "ProfileSchema": {
+          "$path": "src/server/Persistence/ProfileSchema.server.lua"
+        }
+      },
+      "Services": {
+        "$className": "Folder",
+        "CombatEngine": {
+          "$path": "src/server/Services/CombatEngine.server.lua"
+        },
+        "CombatEngineDevHarness": {
+          "$path": "src/server/Services/CombatEngineDevHarness.server.lua"
+        },
+        "MatchService": {
+          "$path": "src/server/Services/MatchService.server.lua"
+        }, 
+        "MatchServiceDevHarness": {
+          "$path": "src/server/Services/MatchServiceDevHarness.server.lua"
+        }, 
+        "PlayerDataService": {
+          "$path": "src/server/Services/PlayerDataService.server.lua"
+        },
+        "PlayerDataServiceDevHarness": {
+          "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua"
+        }
+      }
     },
 
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts"
+        "$className": "StarterPlayerScripts",
+        "MatchTestHarness": {
+          "$path": "src/client/MatchTestHarness.client.lua"
+        },
+        "NetworkTest": {
+          "$path": "src/client/NetworkTest.client.lua"
+        }
       }
     }
   }
