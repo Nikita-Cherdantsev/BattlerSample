@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 
 -- Modules
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
+local ProfileSchema = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileSchema"))
 local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 
@@ -18,6 +19,10 @@ local AUTOSAVE_BACKOFF_BASE = 2 -- seconds
 local playerProfiles = {} -- player -> profile mapping
 local autosaveTasks = {} -- player -> autosave task
 local isShuttingDown = false
+
+-- Forward declarations
+local StartAutosave
+local StopAutosave
 
 -- Utility functions
 local function LogInfo(player, message, ...)
@@ -45,6 +50,25 @@ local function ValidateDeck(deck)
 		return false, "Deck validation failed: " .. errorMessage
 	end
 	return true
+end
+
+local function AssignStarterDeckIfNeeded(profile, userId)
+	if profile.deck and #profile.deck == 6 then
+		return true -- Already has valid deck
+	end
+	
+	LogInfo(nil, "Assigning starter deck for user %d", userId)
+	
+	-- Use the default deck from ProfileManager
+	local success = ProfileManager.UpdateDeck(userId, ProfileManager.DEFAULT_DECK)
+	if success then
+		profile.deck = ProfileManager.DEFAULT_DECK
+		LogInfo(nil, "Assigned starter deck: %s", table.concat(ProfileManager.DEFAULT_DECK, ", "))
+		return true
+	else
+		LogWarning(nil, "Failed to assign starter deck for user %d", userId)
+		return false
+	end
 end
 
 local function CheckCollectionOwnership(player, deck)
@@ -85,7 +109,7 @@ local function SafeSaveProfile(player)
 	end
 end
 
-local function StartAutosave(player)
+StartAutosave = function(player)
 	if autosaveTasks[player] then
 		return -- Already running
 	end
@@ -122,7 +146,7 @@ local function StartAutosave(player)
 	end)
 end
 
-local function StopAutosave(player)
+StopAutosave = function(player)
 	if autosaveTasks[player] then
 		autosaveTasks[player] = nil
 	end
@@ -132,11 +156,23 @@ end
 local function OnPlayerAdded(player)
 	LogInfo(player, "Player joined, loading profile...")
 	
-	-- Load or create profile
-	local profile = ProfileManager.LoadProfile(player.UserId)
-	if not profile then
-		LogError(player, "Failed to load/create profile")
-		return
+	-- Load or create profile with retries
+	local profile = nil
+	local retryCount = 0
+	local maxRetries = 3
+	
+	while not profile and retryCount < maxRetries do
+		profile = ProfileManager.LoadProfile(player.UserId)
+		if not profile then
+			retryCount = retryCount + 1
+			if retryCount < maxRetries then
+				LogWarning(player, "Failed to load profile, retrying (%d/%d)...", retryCount, maxRetries)
+				task.wait(1) -- Wait 1 second before retry
+			else
+				LogError(player, "Failed to load/create profile after %d attempts", maxRetries)
+				return
+			end
+		end
 	end
 	
 	-- Store profile reference
@@ -144,19 +180,18 @@ local function OnPlayerAdded(player)
 	
 	-- Update profile with current player info
 	profile.playerId = tostring(player.UserId)
-	ProfileManager.UpdateLoginTime(player.UserId)
+	
+	-- Update login time and persist
+	ProfileSchema.UpdateLoginTime(profile)
+	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
+	if saveSuccess then
+		LogInfo(player, "Saved profile for user: %d", player.UserId)
+	else
+		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
+	end
 	
 	-- Ensure valid default deck if missing
-	if not profile.deck or #profile.deck ~= 6 then
-		LogInfo(player, "Initializing default deck...")
-		local success = ProfileManager.UpdateDeck(player.UserId, ProfileManager.DEFAULT_DECK)
-		if success then
-			profile.deck = ProfileManager.DEFAULT_DECK
-			LogInfo(player, "Default deck initialized")
-		else
-			LogWarning(player, "Failed to initialize default deck")
-		end
-	end
+	AssignStarterDeckIfNeeded(profile, player.UserId)
 	
 	-- Start autosave
 	StartAutosave(player)
@@ -385,8 +420,63 @@ function PlayerDataService.ForceSave(player)
 	return SafeSaveProfile(player)
 end
 
+-- Ensure profile is loaded (lazy-load for remotes)
+function PlayerDataService.EnsureProfileLoaded(player)
+	if not player then
+		return nil, "PROFILE_LOAD_FAILED", "No player specified"
+	end
+	
+	-- Check if already cached
+	if playerProfiles[player] then
+		return playerProfiles[player]
+	end
+	
+	-- Attempt lazy load
+	LogInfo(player, "Lazy loading profile...")
+	local profile = ProfileManager.LoadProfile(player.UserId)
+	if not profile then
+		LogWarning(player, "Failed to lazy load profile")
+		return nil, "PROFILE_LOAD_FAILED", "Failed to load profile data"
+	end
+	
+	-- Cache the profile
+	playerProfiles[player] = profile
+	
+	-- Update profile with current player info
+	profile.playerId = tostring(player.UserId)
+	
+	-- Update login time and persist
+	ProfileSchema.UpdateLoginTime(profile)
+	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
+	if saveSuccess then
+		LogInfo(player, "Saved profile for user: %d", player.UserId)
+	else
+		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
+	end
+	
+	-- Ensure valid default deck if missing
+	AssignStarterDeckIfNeeded(profile, player.UserId)
+	
+	-- Start autosave if not already running
+	if not autosaveTasks[player] then
+		StartAutosave(player)
+	end
+	
+	LogInfo(player, "Profile lazy loaded successfully")
+	return profile
+end
+
 -- Initialize service
 function PlayerDataService.Init()
+	-- Idempotency check
+	if isShuttingDown ~= nil then
+		LogInfo(nil, "PlayerDataService already initialized, skipping")
+		return
+	end
+	
+	-- Initialize state
+	isShuttingDown = false
+	
 	LogInfo(nil, "Initializing PlayerDataService...")
 	
 	-- Connect to player events
@@ -396,10 +486,14 @@ function PlayerDataService.Init()
 	-- Connect to shutdown event
 	game:BindToClose(OnBindToClose)
 	
+	-- Handle players already present (Studio timing quirk)
+	for _, player in ipairs(Players:GetPlayers()) do
+		OnPlayerAdded(player)
+	end
+	
 	LogInfo(nil, "PlayerDataService initialized successfully")
 end
 
--- Auto-initialize when script runs
-PlayerDataService.Init()
+-- Initialization moved to ServerBootstrap
 
 return PlayerDataService

@@ -323,28 +323,26 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed)
 		for _, unit in ipairs(turnOrder) do
 			-- Skip if unit is dead
 			if unit.state ~= CombatTypes.UnitState.ALIVE then
-				goto continue
+				-- Skip to next iteration
+			else
+				-- Find target
+				local target = FindTarget(unit, battleState.boardA, battleState.boardB)
+				if not target then
+					-- No valid targets, skip turn
+					-- Skip to next iteration
+				else
+					-- Execute attack
+					ExecuteAttack(unit, target, battleState)
+					
+					-- Check if battle ended
+					local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+					if winner then
+						battleState.winner = winner
+						battleState.isComplete = true
+						break
+					end
+				end
 			end
-			
-			-- Find target
-			local target = FindTarget(unit, battleState.boardA, battleState.boardB)
-			if not target then
-				-- No valid targets, skip turn
-				goto continue
-			end
-			
-			-- Execute attack
-			ExecuteAttack(unit, target, battleState)
-			
-			-- Check if battle ended
-			local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
-			if winner then
-				battleState.winner = winner
-				battleState.isComplete = true
-				break
-			end
-			
-			::continue::
 		end
 		
 		-- Reset turn flags for next round

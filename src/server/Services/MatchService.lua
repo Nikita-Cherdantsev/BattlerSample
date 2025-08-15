@@ -2,6 +2,7 @@ local MatchService = {}
 
 -- Services
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 -- Modules
 local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"))
@@ -17,6 +18,9 @@ local RATE_LIMIT = {
 }
 
 local MAX_ROUNDS = 50 -- Maximum battle rounds
+
+-- Dev mode detection
+local IS_DEV_MODE = RunService:IsStudio()
 
 -- Match state tracking
 local playerMatchState = {} -- player -> { lastRequest, requestCount, resetTime, isInMatch }
@@ -88,6 +92,72 @@ local PVE_OPPONENTS = {
 		description = "Mixed composition",
 		generateDeck = function(playerDeck, rng)
 			return {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
+		end
+	}
+}
+
+-- Dev-mode PvE opponents (for Studio development)
+local DEV_PVE_OPPONENTS = {
+	-- Mirror variant with controlled substitutions (0-10%)
+	MIRROR = {
+		name = "Dev Mirror",
+		description = "Your deck with 0-10% substitutions",
+		generateDeck = function(playerDeck, rng)
+			local opponentDeck = {}
+			for i, cardId in ipairs(playerDeck) do
+				-- 90-100% chance to use same card (controlled variance)
+				if SeededRNG.RandomFloat(rng, 0, 1) < 0.95 then
+					opponentDeck[i] = cardId
+				else
+					-- Find a balanced substitute
+					local card = CardCatalog.GetCard(cardId)
+					if card then
+						local sameClassCards = CardCatalog.GetCardsByClass(card.class)
+						if #sameClassCards > 1 then
+							-- Pick a different card of same class
+							local availableCards = {}
+							for _, variantCard in ipairs(sameClassCards) do
+								if variantCard.id ~= cardId then
+									table.insert(availableCards, variantCard.id)
+								end
+							end
+							if #availableCards > 0 then
+								opponentDeck[i] = SeededRNG.RandomChoice(rng, availableCards)
+							else
+								opponentDeck[i] = cardId
+							end
+						else
+							opponentDeck[i] = cardId
+						end
+					else
+						opponentDeck[i] = cardId
+					end
+				end
+			end
+			return opponentDeck
+		end
+	},
+	
+	-- Balanced composition for longer matches
+	BALANCED = {
+		name = "Dev Balanced",
+		description = "Balanced composition for longer matches",
+		generateDeck = function(playerDeck, rng)
+			-- Create a balanced deck with 2 DPS, 2 Support, 2 Tank
+			local balancedCards = {
+				"dps_001", "dps_002",  -- 2 DPS
+				"support_001", "support_002",  -- 2 Support  
+				"tank_001", "tank_002"  -- 2 Tank
+			}
+			
+			-- Shuffle the balanced composition
+			local shuffled = {}
+			for _, cardId in ipairs(balancedCards) do
+				table.insert(shuffled, cardId)
+			end
+			SeededRNG.Shuffle(rng, shuffled)
+			
+			return shuffled
 		end
 	}
 }
@@ -180,21 +250,37 @@ local function GenerateServerSeed(player, matchId)
 	return seed
 end
 
-local function SelectPvEOpponent(playerDeck, rng)
-	-- For MVP, randomly select from available opponents
+local function SelectPvEOpponent(playerDeck, rng, variant)
+	-- Use dev-mode opponents in Studio, production opponents otherwise
+	local opponents = IS_DEV_MODE and DEV_PVE_OPPONENTS or PVE_OPPONENTS
+	
+	-- If variant is specified and exists, use it
+	if variant and opponents[variant] then
+		LogInfo(nil, "Using PvE variant: %s", opponents[variant].name)
+		return opponents[variant]
+	end
+	
+	-- In dev mode, default to BALANCED if no variant specified
+	if IS_DEV_MODE and not variant then
+		LogInfo(nil, "Dev mode: defaulting to BALANCED variant")
+		return opponents.BALANCED
+	end
+	
+	-- Otherwise, randomly select from available opponents
 	local opponentKeys = {}
-	for key, _ in pairs(PVE_OPPONENTS) do
+	for key, _ in pairs(opponents) do
 		table.insert(opponentKeys, key)
 	end
 	
 	local selectedKey = SeededRNG.RandomChoice(rng, opponentKeys)
-	return PVE_OPPONENTS[selectedKey]
+	LogInfo(nil, "Selected PvE opponent: %s", opponents[selectedKey].name)
+	return opponents[selectedKey]
 end
 
-local function GenerateOpponentDeck(playerDeck, mode, rng)
+local function GenerateOpponentDeck(playerDeck, mode, rng, variant)
 	if mode == "PvE" then
 		-- Select PvE opponent and generate deck
-		local opponent = SelectPvEOpponent(playerDeck, rng)
+		local opponent = SelectPvEOpponent(playerDeck, rng, variant)
 		return opponent.generateDeck(playerDeck, rng)
 	else
 		-- PvP: mirror the player's deck for now
@@ -208,10 +294,10 @@ local function GenerateOpponentDeck(playerDeck, mode, rng)
 end
 
 local function ValidatePlayerDeck(player)
-	-- Get player's profile
-	local profile = PlayerDataService.GetProfile(player)
+	-- Get player's profile (with lazy loading)
+	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
-		return false, "NO_DECK", "Player profile not found"
+		return false, errorCode or "NO_DECK", errorMessage or "Player profile not found"
 	end
 	
 	-- Check if player has a deck
@@ -266,18 +352,7 @@ local function CreateCompactLog(battleResult)
 	return compactLog
 end
 
-local function CreateMatchResult(battleResult, matchId, seed)
-	-- Create the match result payload
-	return {
-		winner = battleResult.winner,
-		rounds = battleResult.rounds,
-		survivorsA = #battleResult.survivorsA,
-		survivorsB = #battleResult.survivorsB,
-		totalActions = 0,
-		totalDamage = 0,
-		totalKOs = 0
-	}
-end
+
 
 -- Main match execution function
 function MatchService.ExecuteMatch(player, requestData)
@@ -298,6 +373,8 @@ function MatchService.ExecuteMatch(player, requestData)
 	
 	-- Validate request data
 	local mode = requestData.mode or "PvE"
+	local variant = requestData.variant -- Optional variant selector
+	
 	if mode ~= "PvE" and mode ~= "PvP" then
 		LogWarning(player, "Invalid match mode: %s", mode)
 		CleanupPlayerState(player)
@@ -308,6 +385,30 @@ function MatchService.ExecuteMatch(player, requestData)
 				message = "Invalid match mode"
 			}
 		}
+	end
+	
+	-- Validate variant if provided
+	if variant and mode == "PvE" then
+		local validVariants = IS_DEV_MODE and {"Mirror", "Balanced"} or {"MIRROR_VARIANT", "AGGRESSIVE", "DEFENSIVE", "BALANCED"}
+		local isValidVariant = false
+		for _, validVariant in ipairs(validVariants) do
+			if variant == validVariant then
+				isValidVariant = true
+				break
+			end
+		end
+		
+		if not isValidVariant then
+			LogWarning(player, "Invalid PvE variant: %s", variant)
+			CleanupPlayerState(player)
+			return {
+				ok = false,
+				error = {
+					code = "INVALID_REQUEST",
+					message = "Invalid PvE variant"
+				}
+			}
+		end
 	end
 	
 	-- Validate and load player deck
@@ -326,9 +427,9 @@ function MatchService.ExecuteMatch(player, requestData)
 	
 	local playerDeck = deckOrError
 	
-	-- Generate match ID and server seed
+	-- Generate match ID and handle seed
 	local matchId = GenerateMatchId()
-	local serverSeed = GenerateServerSeed(player, matchId)
+	local serverSeed = requestData.seed or GenerateServerSeed(player, matchId)
 	
 	LogInfo(player, "Starting match %s with seed %d", matchId, serverSeed)
 	
@@ -336,7 +437,7 @@ function MatchService.ExecuteMatch(player, requestData)
 	local rng = SeededRNG.New(serverSeed)
 	
 	-- Generate opponent deck
-	local opponentDeck = GenerateOpponentDeck(playerDeck, mode, rng)
+	local opponentDeck = GenerateOpponentDeck(playerDeck, mode, rng, variant)
 	
 	-- Execute battle
 	local success, battleResult = pcall(function()
@@ -369,8 +470,19 @@ function MatchService.ExecuteMatch(player, requestData)
 		}
 	end
 	
-	-- Create response payload
-	local result = CreateMatchResult(battleResult, matchId, serverSeed)
+	-- Get battle statistics
+	local battleStats = CombatEngine.GetBattleStats(battleResult)
+	
+	-- Create response payload with real stats
+	local result = {
+		winner = battleResult.winner,
+		rounds = battleResult.rounds,
+		survivorsA = #battleResult.survivorsA,
+		survivorsB = #battleResult.survivorsB,
+		totalActions = battleStats.totalActions,
+		totalDamage = battleStats.totalDamage,
+		totalKOs = battleStats.totalKOs
+	}
 	local compactLog = CreateCompactLog(battleResult)
 	
 	LogInfo(player, "Match %s completed. Winner: %s, Rounds: %d", 
@@ -388,11 +500,6 @@ function MatchService.ExecuteMatch(player, requestData)
 		log = compactLog
 	}
 end
-
--- Player cleanup
-Players.PlayerRemoving:Connect(function(player)
-	playerMatchState[player] = nil
-end)
 
 -- Public API for other modules
 function MatchService.GetPlayerStatus(player)
@@ -415,6 +522,20 @@ function MatchService.ForceCleanup(player)
 	CleanupPlayerState(player)
 end
 
-LogInfo(nil, "MatchService initialized successfully")
+-- Init function for bootstrap
+function MatchService.Init()
+	-- Idempotency check
+	if playerMatchState ~= nil then
+		LogInfo(nil, "MatchService already initialized, skipping")
+		return
+	end
+	
+	-- Player cleanup
+	Players.PlayerRemoving:Connect(function(player)
+		playerMatchState[player] = nil
+	end)
+	
+	LogInfo(nil, "MatchService initialized successfully")
+end
 
 return MatchService

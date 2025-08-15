@@ -8,43 +8,43 @@ local Players = game:GetService("Players")
 local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 
--- Create RemoteEvents under ReplicatedStorage/Network
-local NetworkFolder = Instance.new("Folder")
-NetworkFolder.Name = "Network"
-NetworkFolder.Parent = ReplicatedStorage
+-- Network folder and RemoteEvents (created in Init)
+local NetworkFolder = nil
+local RequestSetDeck = nil
+local RequestProfile = nil
+local ProfileUpdated = nil
+local RequestStartMatch = nil
+local OpenLootbox = nil
 
--- Remote Events
-local RequestSetDeck = Instance.new("RemoteEvent")
-RequestSetDeck.Name = "RequestSetDeck"
-RequestSetDeck.Parent = NetworkFolder
-
-local RequestProfile = Instance.new("RemoteEvent")
-RequestProfile.Name = "RequestProfile"
-RequestProfile.Parent = NetworkFolder
-
-local ProfileUpdated = Instance.new("RemoteEvent")
-ProfileUpdated.Name = "ProfileUpdated"
-ProfileUpdated.Parent = NetworkFolder
-
--- Existing RequestStartMatch (from old clicker game)
-local RequestStartMatch = Instance.new("RemoteEvent")
-RequestStartMatch.Name = "RequestStartMatch"
-RequestStartMatch.Parent = NetworkFolder
-
--- Rate limiting configuration
-local RATE_LIMIT = {
-	REQUEST_SET_DECK = {
-		COOLDOWN = 2, -- seconds between deck update requests
-		MAX_REQUESTS = 5 -- max requests per minute
+-- Rate limiting configuration (explicit, module-scoped)
+local RATE_LIMITS = {
+	RequestSetDeck = {
+		cooldownSec = 2,
+		maxPerMinute = 5
 	},
-	REQUEST_PROFILE = {
-		COOLDOWN = 1, -- seconds between profile requests
-		MAX_REQUESTS = 10 -- max requests per minute
+	RequestProfile = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestStartMatch = {
+		cooldownSec = 1,
+		maxPerMinute = 5
+	},
+	OpenLootbox = {
+		cooldownSec = 2,
+		maxPerMinute = 5
 	}
 }
 
--- Rate limiting state
+-- Safe default configuration for missing entries
+local DEFAULT_RATE_LIMIT = {
+	cooldownSec = 1,
+	maxPerMinute = 5
+}
+
+-- Rate limiting state (module-scoped)
 local playerRateLimits = {} -- player -> rate limit data
+local rateLimitWarnings = {} -- track warnings to avoid spam
 
 -- Utility functions
 local function LogInfo(player, message, ...)
@@ -68,12 +68,22 @@ end
 local function InitializeRateLimit(player)
 	if not playerRateLimits[player] then
 		playerRateLimits[player] = {
-			requestSetDeck = {
+			RequestSetDeck = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
 			},
-			requestProfile = {
+			RequestProfile = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestStartMatch = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			OpenLootbox = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -85,9 +95,24 @@ end
 local function CheckRateLimit(player, requestType)
 	InitializeRateLimit(player)
 	local rateLimit = playerRateLimits[player][requestType]
-	local config = RATE_LIMIT[requestType:upper()]
+	
+	-- Get configuration with safe fallback
+	local config = RATE_LIMITS[requestType]
+	if not config then
+		-- Log warning once per request type
+		if not rateLimitWarnings[requestType] then
+			LogWarning(nil, "No rate limit config for '%s', using defaults", requestType)
+			rateLimitWarnings[requestType] = true
+		end
+		config = DEFAULT_RATE_LIMIT
+	end
 	
 	local now = os.time()
+	
+	-- Guard against nil timestamps
+	if not rateLimit.lastRequest then
+		rateLimit.lastRequest = 0
+	end
 	
 	-- Reset counter if minute has passed
 	if now >= rateLimit.resetTime then
@@ -96,12 +121,12 @@ local function CheckRateLimit(player, requestType)
 	end
 	
 	-- Check cooldown
-	if now - rateLimit.lastRequest < config.COOLDOWN then
+	if now - rateLimit.lastRequest < config.cooldownSec then
 		return false, "Request too frequent, please wait"
 	end
 	
 	-- Check request count limit
-	if rateLimit.requestCount >= config.MAX_REQUESTS then
+	if rateLimit.requestCount >= config.maxPerMinute then
 		return false, "Too many requests, please wait"
 	end
 	
@@ -148,7 +173,7 @@ local function HandleRequestSetDeck(player, requestData)
 	LogInfo(player, "Processing deck update request")
 	
 	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "requestSetDeck")
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestSetDeck")
 	if not canProceed then
 		SendProfileUpdate(player, {
 			error = {
@@ -206,7 +231,7 @@ local function HandleRequestProfile(player, requestData)
 	LogInfo(player, "Processing profile request")
 	
 	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "requestProfile")
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestProfile")
 	if not canProceed then
 		SendProfileUpdate(player, {
 			error = {
@@ -218,40 +243,62 @@ local function HandleRequestProfile(player, requestData)
 		return
 	end
 	
-	-- Get profile data via PlayerDataService
-	local profile = PlayerDataService.GetProfile(player)
-	local collection = PlayerDataService.GetCollection(player)
-	local loginInfo = CreateLoginInfo(player)
-	
-	if profile and collection and loginInfo then
-		-- Send profile snapshot
-		SendProfileUpdate(player, {
-			deck = profile.deck,
-			collectionSummary = CreateCollectionSummary(collection),
-			loginInfo = loginInfo,
-			updatedAt = os.time()
-		})
-		
-		LogInfo(player, "Profile sent successfully")
-	else
+	-- Get profile data via PlayerDataService (with lazy loading)
+	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
 		-- Send error response
 		SendProfileUpdate(player, {
 			error = {
-				code = "PROFILE_LOAD_FAILED",
-				message = "Failed to load profile data"
+				code = errorCode or "PROFILE_LOAD_FAILED",
+				message = errorMessage or "Failed to load profile data"
 			},
 			updatedAt = os.time()
 		})
 		
-		LogWarning(player, "Failed to load profile data")
+		LogWarning(player, "Failed to load profile data: %s", errorMessage or "Unknown error")
+		return
 	end
+	
+	-- Get collection and login info
+	local collection = PlayerDataService.GetCollection(player)
+	local loginInfo = CreateLoginInfo(player)
+	
+	-- Send profile snapshot
+	SendProfileUpdate(player, {
+		deck = profile.deck,
+		collectionSummary = CreateCollectionSummary(collection),
+		loginInfo = loginInfo,
+		updatedAt = os.time()
+	})
+	
+	LogInfo(player, "Profile sent successfully")
 end
 
 local function HandleRequestStartMatch(player, requestData)
 	LogInfo(player, "Processing match request")
 	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartMatch")
+	if not canProceed then
+		RequestStartMatch:FireClient(player, {
+			ok = false,
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Extract seed and variant from request data (optional)
+	local matchRequestData = {
+		mode = requestData and requestData.mode or "PvE",
+		seed = requestData and requestData.seed or nil,
+		variant = requestData and requestData.variant or nil
+	}
+	
 	-- Execute match via MatchService
-	local result = MatchService.ExecuteMatch(player, requestData or {})
+	local result = MatchService.ExecuteMatch(player, matchRequestData)
 	
 	-- Reply on the same event (as per contract)
 	RequestStartMatch:FireClient(player, result)
@@ -263,21 +310,83 @@ local function HandleRequestStartMatch(player, requestData)
 	end
 end
 
--- Connect RemoteEvents to handlers
-RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
-RequestProfile.OnServerEvent:Connect(HandleRequestProfile)
-RequestStartMatch.OnServerEvent:Connect(HandleRequestStartMatch)
-
--- Player cleanup
-Players.PlayerRemoving:Connect(function(player)
-	CleanupRateLimit(player)
-end)
+-- Connection code moved to Init() function
 
 -- Public API for other server modules
 RemoteEvents.RequestSetDeck = RequestSetDeck
 RemoteEvents.RequestProfile = RequestProfile
 RemoteEvents.ProfileUpdated = ProfileUpdated
 RemoteEvents.RequestStartMatch = RequestStartMatch
+RemoteEvents.OpenLootbox = OpenLootbox
+
+-- Init function for bootstrap
+function RemoteEvents.Init()
+	-- Idempotency check
+	if NetworkFolder then
+		LogInfo(nil, "RemoteEvents already initialized, skipping")
+		return
+	end
+	
+	-- Create Network folder and RemoteEvents
+	NetworkFolder = Instance.new("Folder")
+	NetworkFolder.Name = "Network"
+	NetworkFolder.Parent = ReplicatedStorage
+	
+	RequestSetDeck = Instance.new("RemoteEvent")
+	RequestSetDeck.Name = "RequestSetDeck"
+	RequestSetDeck.Parent = NetworkFolder
+	
+	RequestProfile = Instance.new("RemoteEvent")
+	RequestProfile.Name = "RequestProfile"
+	RequestProfile.Parent = NetworkFolder
+	
+	ProfileUpdated = Instance.new("RemoteEvent")
+	ProfileUpdated.Name = "ProfileUpdated"
+	ProfileUpdated.Parent = NetworkFolder
+	
+	RequestStartMatch = Instance.new("RemoteEvent")
+	RequestStartMatch.Name = "RequestStartMatch"
+	RequestStartMatch.Parent = NetworkFolder
+	
+	OpenLootbox = Instance.new("RemoteEvent")
+	OpenLootbox.Name = "OpenLootbox"
+	OpenLootbox.Parent = NetworkFolder
+	
+	-- Validate rate limit configuration
+	local function ValidateRateLimitConfig()
+		print("🔒 Rate Limiter Configuration:")
+		local remoteEvents = {
+			{name = "RequestSetDeck", instance = RequestSetDeck},
+			{name = "RequestProfile", instance = RequestProfile},
+			{name = "RequestStartMatch", instance = RequestStartMatch},
+			{name = "OpenLootbox", instance = OpenLootbox}
+		}
+		
+		for _, event in ipairs(remoteEvents) do
+			local config = RATE_LIMITS[event.name]
+			if config then
+				print(string.format("  ✅ %s: %ds cooldown, %d/min", 
+					event.name, config.cooldownSec, config.maxPerMinute))
+			else
+				warn(string.format("  ⚠️ %s: No config (using defaults)", event.name))
+			end
+		end
+	end
+	
+	ValidateRateLimitConfig()
+	
+	-- Connect RemoteEvents to handlers
+	RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
+	RequestProfile.OnServerEvent:Connect(HandleRequestProfile)
+	RequestStartMatch.OnServerEvent:Connect(HandleRequestStartMatch)
+	
+	-- Player cleanup
+	Players.PlayerRemoving:Connect(function(player)
+		CleanupRateLimit(player)
+	end)
+	
+	LogInfo(nil, "RemoteEvents initialized successfully")
+end
 
 -- Utility functions for other modules
 function RemoteEvents.SendProfileUpdate(player, payload)
@@ -301,6 +410,5 @@ function RemoteEvents.GetRateLimitStatus(player)
 	return status
 end
 
-LogInfo(nil, "RemoteEvents initialized successfully")
-
 return RemoteEvents
+

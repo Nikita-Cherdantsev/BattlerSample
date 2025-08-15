@@ -155,28 +155,26 @@ function DataStoreWrapper.ProcessPendingWrites()
 			table.remove(pendingWrites, i)
 			failed = failed + 1
 			LogError(write.storeName, write.key, "UpdateAsync", "Write expired", {age = os.time() - write.timestamp})
-			goto continue
-		end
-		
-		-- Check budget
-		if WaitForBudget(write.storeName) then
-			goto continue
-		end
-		
-		-- Attempt the write
-		local success, result = pcall(function()
-			return DataStoreWrapper.UpdateAsync(write.storeName, write.key, write.updateFunction, write.maxRetries)
-		end)
-		
-		if success then
-			table.remove(pendingWrites, i)
-			processed = processed + 1
+			-- Skip to next iteration
 		else
-			failed = failed + 1
-			LogError(write.storeName, write.key, "UpdateAsync", result, {pending = true})
+			-- Check budget
+			if WaitForBudget(write.storeName) then
+				-- Skip to next iteration
+			else
+				-- Attempt the write
+				local success, result = pcall(function()
+					return DataStoreWrapper.UpdateAsync(write.storeName, write.key, write.updateFunction, write.maxRetries)
+				end)
+				
+				if success then
+					table.remove(pendingWrites, i)
+					processed = processed + 1
+				else
+					failed = failed + 1
+					LogError(write.storeName, write.key, "UpdateAsync", result, {pending = true})
+				end
+			end
 		end
-		
-		::continue::
 	end
 	
 	print("DataStore pending writes processed:", processed, "successful,", failed, "failed,", #pendingWrites, "remaining")

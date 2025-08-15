@@ -92,46 +92,61 @@
 
     "ServerScriptService": {
       "$className": "ServerScriptService",
+      "ServerBootstrap": {
+        "$path": "src/server/ServerBootstrap.server.lua"
+      },
       "Network": {
         "$className": "Folder",
         "RemoteEvents": {
-          "$path": "src/server/Network/RemoteEvents.server.lua"
+          "$path": "src/server/Network/RemoteEvents.lua"
         }
       },
       "Persistence": {
         "$className": "Folder",
         "DataStoreWrapper": {
-          "$path": "src/server/Persistence/DataStoreWrapper.server.lua"
+          "$path": "src/server/Persistence/DataStoreWrapper.lua"
         },
         "DevHarness": {
-          "$path": "src/server/Persistence/DevHarness.server.lua"
+          "$path": "src/server/Persistence/DevHarness.server.lua",
+          "$properties": {
+            "Enabled": false
+          }
         },
         "ProfileManager": {
-          "$path": "src/server/Persistence/ProfileManager.server.lua"
+          "$path": "src/server/Persistence/ProfileManager.lua"
         },
         "ProfileSchema": {
-          "$path": "src/server/Persistence/ProfileSchema.server.lua"
+          "$path": "src/server/Persistence/ProfileSchema.lua"
         }
       },
       "Services": {
         "$className": "Folder",
         "CombatEngine": {
-          "$path": "src/server/Services/CombatEngine.server.lua"
+          "$path": "src/server/Services/CombatEngine.lua"
         },
         "CombatEngineDevHarness": {
-          "$path": "src/server/Services/CombatEngineDevHarness.server.lua"
+          "$path": "src/server/Services/CombatEngineDevHarness.server.lua",
+          "$properties": {
+            "Enabled": false
+          }
         },
         "MatchService": {
-          "$path": "src/server/Services/MatchService.server.lua"
+          "$path": "src/server/Services/MatchService.lua"
         }, 
         "MatchServiceDevHarness": {
-          "$path": "src/server/Services/MatchServiceDevHarness.server.lua"
+          "$path": "src/server/Services/MatchServiceDevHarness.server.lua",
+          "$properties": {
+            "Enabled": false
+          }
         }, 
         "PlayerDataService": {
-          "$path": "src/server/Services/PlayerDataService.server.lua"
+          "$path": "src/server/Services/PlayerDataService.lua"
         },
         "PlayerDataServiceDevHarness": {
-          "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua"
+          "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua",
+          "$properties": {
+            "Enabled": false
+          }
         }
       }
     },
