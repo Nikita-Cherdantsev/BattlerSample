@@ -12,4 +12,14 @@ Utilities.Tween = require(script.Tween)
 Utilities.TweenUI = require(script.TweenUI)
 Utilities.Typewrite = require(script.Typewrite)
 
+-- Card Battler MVP Modules (Step 2A)
+Utilities.CardCatalog = require(script.Cards.CardCatalog)
+Utilities.DeckValidator = require(script.Cards.DeckValidator)
+Utilities.SeededRNG = require(script.RNG.SeededRNG)
+Utilities.CombatTypes = require(script.Combat.CombatTypes)
+Utilities.CombatUtils = require(script.Combat.CombatUtils)
+Utilities.GameConstants = require(script.Constants.GameConstants)
+Utilities.UIConstants = require(script.Constants.UIConstants)
+Utilities.SelfCheck = require(script.SelfCheck)
+
 return Utilities
