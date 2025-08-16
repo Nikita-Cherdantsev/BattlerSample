@@ -7,7 +7,7 @@ local MatchTestHarness = {}
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 -- Configuration
@@ -302,12 +302,12 @@ local function OnInputBegan(input, gameProcessed)
 		SendMatchRequest("PvE")
 	end
 	
-	-- Hotkey: D to run determinism test
-	if input.KeyCode == Enum.KeyCode.D and lastMatchResult and lastMatchResult.ok and lastMatchSeed then
+	-- Hotkey: Ctrl+D to run determinism test
+	if input.KeyCode == Enum.KeyCode.D and input:IsModifierKeyDown(Enum.ModifierKey.Ctrl) and lastMatchResult and lastMatchResult.ok and lastMatchSeed then
 		LogInfo("Hotkey pressed: Running determinism test with seed %d", lastMatchSeed)
 		expectingDeterminismTest = true
 		SendMatchRequest("PvE", lastMatchSeed)
-	elseif input.KeyCode == Enum.KeyCode.D then
+	elseif input.KeyCode == Enum.KeyCode.D and input:IsModifierKeyDown(Enum.ModifierKey.Ctrl) then
 		LogWarning("Cannot run determinism test - no previous match result or seed available")
 	end
 	
@@ -349,7 +349,7 @@ function MatchTestHarness.RunTest()
 	-- Connect event handlers
 	connections.profileUpdated = ProfileUpdated.OnClientEvent:Connect(OnProfileUpdated)
 	connections.matchResult = RequestStartMatch.OnClientEvent:Connect(OnMatchResult)
-	connections.inputBegan = UserInputService.InputBegan:Connect(OnInputBegan)
+	connections.inputBegan = UIS.InputBegan:Connect(OnInputBegan)
 	
 	-- Start by requesting profile
 	LogInfo("Requesting player profile...")
@@ -357,7 +357,7 @@ function MatchTestHarness.RunTest()
 	
 	LogInfo("Test started. Hotkeys:")
 	LogInfo("  R - Re-run match")
-	LogInfo("  D - Determinism test")
+	LogInfo("  Ctrl+D - Determinism test")
 	LogInfo("  P - Request profile")
 	LogInfo("  T - Toggle harness")
 end
