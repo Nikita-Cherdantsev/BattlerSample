@@ -28,6 +28,7 @@ local RequestStartMatch = NetworkFolder:WaitForChild("RequestStartMatch")
 
 -- State
 local isRunning = false
+local shouldAutoStartOnNextProfile = false
 local lastMatchResult = nil
 local lastRequestTime = 0
 local lastMatchSeed = nil
@@ -237,8 +238,13 @@ local function OnProfileUpdated(profileData)
 	-- Start match after profile is loaded
 	task.wait(0.5) -- Small delay for readability
 	
-	LogInfo("Starting match...")
-	SendMatchRequest("PvE")
+	if shouldAutoStartOnNextProfile then
+		LogInfo("Starting match...")
+		SendMatchRequest("PvE")
+	else
+		LogInfo("Profile received, but not starting match")
+		shouldAutoStartOnNextProfile = true
+	end
 end
 
 local function OnMatchResult(result)
@@ -314,12 +320,8 @@ local function OnInputBegan(input, gameProcessed)
 	-- Hotkey: P to request profile
 	if input.KeyCode == Enum.KeyCode.P then
 		LogInfo("Hotkey pressed: Requesting profile")
+		shouldAutoStartOnNextProfile = false
 		RequestProfile:FireServer({})
-	end
-	
-	-- Hotkey: T to toggle harness
-	if input.KeyCode == Enum.KeyCode.T then
-		MatchTestHarness.Toggle()
 	end
 end
 
@@ -336,6 +338,7 @@ function MatchTestHarness.RunTest()
 	end
 	
 	isRunning = true
+	shouldAutoStartOnNextProfile = true
 	lastMatchResult = nil
 	lastRequestTime = 0
 	lastMatchSeed = nil
@@ -349,7 +352,7 @@ function MatchTestHarness.RunTest()
 	-- Connect event handlers
 	connections.profileUpdated = ProfileUpdated.OnClientEvent:Connect(OnProfileUpdated)
 	connections.matchResult = RequestStartMatch.OnClientEvent:Connect(OnMatchResult)
-	connections.inputBegan = UIS.InputBegan:Connect(OnInputBegan)
+	connections.testInput = UIS.InputBegan:Connect(OnInputBegan)
 	
 	-- Start by requesting profile
 	LogInfo("Requesting player profile...")
@@ -370,13 +373,19 @@ function MatchTestHarness.StopTest()
 	
 	isRunning = false
 	
-	-- Disconnect all connections
-	for _, connection in pairs(connections) do
-		if connection then
-			connection:Disconnect()
-		end
+	-- Disconnect test-specific connections (but keep persistent ones)
+	if connections.profileUpdated then
+		connections.profileUpdated:Disconnect()
+		connections.profileUpdated = nil
 	end
-	connections = {}
+	if connections.matchResult then
+		connections.matchResult:Disconnect()
+		connections.matchResult = nil
+	end
+	if connections.testInput then
+		connections.testInput:Disconnect()
+		connections.testInput = nil
+	end
 	
 	LogInfo("Match Test Harness stopped")
 end
@@ -409,6 +418,13 @@ end
 
 -- Connect cleanup events
 connections.playerRemoving = Players.PlayerRemoving:Connect(OnPlayerRemoving)
+
+-- Connect persistent input handler for toggle (always available)
+connections.toggleInput = UIS.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.T then
+		MatchTestHarness.Toggle()
+	end
+end)
 
 -- Auto-run if enabled
 if ENABLED and AUTO_RUN then

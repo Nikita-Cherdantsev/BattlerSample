@@ -338,6 +338,23 @@ function ProfileManager.GetCacheStatus()
 	}
 end
 
+-- Force save a profile (test-only, Studio only)
+function ProfileManager.ForceSave(userId)
+	if not game:GetService("RunService"):IsStudio() then
+		warn("ForceSave is only available in Studio")
+		return false
+	end
+	
+	userId = tostring(userId)
+	local profile = ProfileManager.GetCachedProfile(userId)
+	
+	if not profile then
+		return false, "Profile not loaded"
+	end
+	
+	return ProfileManager.SaveProfile(userId, profile)
+end
+
 -- Flush pending DataStore operations
 function ProfileManager.Flush()
 	DataStoreWrapper.Flush()

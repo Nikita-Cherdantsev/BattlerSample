@@ -13,18 +13,38 @@ local ProfileSchema = require(script.Parent:WaitForChild("ProfileSchema"))
 local ProfileManager = require(script.Parent:WaitForChild("ProfileManager"))
 
 -- Configuration
-local MOCK_USER_ID = "0" -- Test user ID
+local MOCK_USER_ID = "dev_harness_test_user" -- Isolated test user ID
 local TEST_DELAY = 2 -- Seconds between operations to respect Studio budgets
 
 -- Utility functions
+local function LogInfo(message, ...)
+	local formattedMessage = string.format(message, ...)
+	print(string.format("[PersistenceHarness] %s", formattedMessage))
+end
+
+local function LogSuccess(message, ...)
+	local formattedMessage = string.format(message, ...)
+	print(string.format("✅ [PersistenceHarness] %s", formattedMessage))
+end
+
+local function LogError(message, ...)
+	local formattedMessage = string.format(message, ...)
+	warn(string.format("❌ [PersistenceHarness] %s", formattedMessage))
+end
+
+local function LogWarning(message, ...)
+	local formattedMessage = string.format(message, ...)
+	warn(string.format("⚠️ [PersistenceHarness] %s", formattedMessage))
+end
+
 local function CheckStudioAccess()
 	local success, _ = pcall(function()
 		return DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.UpdateAsync)
 	end)
 	
 	if not success then
-		print("⚠️  Studio Access to API Services is disabled!")
-		print("   Enable it in Game Settings > Security to test DataStore operations.")
+		LogWarning("Studio Access to API Services is disabled!")
+		LogInfo("   Enable it in Game Settings > Security to test DataStore operations.")
 		return false
 	end
 	
@@ -69,9 +89,12 @@ local function PrintProfile(profile, label)
 	print("=" .. string.rep("=", 50))
 end
 
+-- Test state tracking
+local testBaseline = {} -- Track baseline values for delta checks
+
 -- Test functions
 local function TestDataStoreWrapper()
-	print("\n🧪 Testing DataStoreWrapper...")
+	LogInfo("🧪 Testing DataStoreWrapper...")
 	
 	-- Test GetDataStore
 	local success, dataStore = pcall(function()
@@ -79,213 +102,239 @@ local function TestDataStoreWrapper()
 	end)
 	
 	if success then
-		print("✅ GetDataStore successful")
+		LogSuccess("GetDataStore successful")
 	else
-		print("❌ GetDataStore failed:", dataStore)
+		LogError("GetDataStore failed: %s", dataStore)
 	end
 	
 	-- Test status
 	local status = DataStoreWrapper.GetStatus()
-	print("DataStoreWrapper Status:", status.pendingWrites, "pending writes")
+	LogInfo("DataStoreWrapper Status: %d pending writes", status.pendingWrites)
 end
 
 local function TestProfileSchema()
-	print("\n🧪 Testing ProfileSchema...")
+	LogInfo("🧪 Testing ProfileSchema...")
 	
 	-- Test profile creation
 	local profile = ProfileSchema.CreateProfile(MOCK_USER_ID)
 	if profile then
-		print("✅ Profile creation successful")
+		LogSuccess("Profile creation successful")
 		
 		-- Test validation
 		local isValid, errorMessage = ProfileSchema.ValidateProfile(profile)
 		if isValid then
-			print("✅ Profile validation successful")
+			LogSuccess("Profile validation successful")
 		else
-			print("❌ Profile validation failed:", errorMessage)
+			LogError("Profile validation failed: %s", errorMessage)
 		end
 		
 		-- Test profile stats
 		local stats = ProfileSchema.GetProfileStats(profile)
 		if stats then
-			print("✅ Profile stats generated:", stats.totalCards, "total cards")
+			LogSuccess("Profile stats generated: %d total cards", stats.totalCards)
 		else
-			print("❌ Profile stats generation failed")
+			LogError("Profile stats generation failed")
 		end
 	else
-		print("❌ Profile creation failed")
+		LogError("Profile creation failed")
 	end
 end
 
 local function TestProfileManager()
-	print("\n🧪 Testing ProfileManager...")
+	LogInfo("🧪 Testing ProfileManager...")
+	
+	-- Clear any existing test data
+	ProfileManager.ClearCache(MOCK_USER_ID)
+	LogInfo("Cleared existing test data for: %s", MOCK_USER_ID)
 	
 	-- Test profile loading (should create new profile)
-	print("Loading profile for user:", MOCK_USER_ID)
+	LogInfo("Loading profile for user: %s", MOCK_USER_ID)
 	local profile = ProfileManager.LoadProfile(MOCK_USER_ID)
 	
 	if profile then
-		print("✅ Profile loaded/created successfully")
+		LogSuccess("Profile loaded/created successfully")
 		PrintProfile(profile, "Initial Profile")
+		
+		-- Store baseline values for delta checks
+		testBaseline.softCurrency = profile.currencies.soft
+		testBaseline.loginStreak = profile.loginStreak
+		testBaseline.dps002Count = profile.collection["dps_002"] or 0
+		LogInfo("📊 Baseline values stored for delta checks")
 		
 		-- Test profile stats
 		local stats = ProfileManager.GetProfileStats(MOCK_USER_ID)
 		if stats then
-			print("📊 Profile Stats:", stats.uniqueCards, "unique cards,", stats.totalCards, "total cards")
+			LogInfo("📊 Profile Stats: %d unique cards, %d total cards", stats.uniqueCards, stats.totalCards)
 		end
 		
 		-- Test cache status
 		local cacheStatus = ProfileManager.GetCacheStatus()
-		print("💾 Cache Status:", cacheStatus.cachedProfiles, "cached profiles")
+		LogInfo("💾 Cache Status: %d cached profiles", cacheStatus.cachedProfiles)
 		
 		return profile
 	else
-		print("❌ Profile loading failed")
+		LogError("Profile loading failed")
 		return nil
 	end
 end
 
 local function TestProfileMutations(profile)
 	if not profile then
-		print("❌ Cannot test mutations without profile")
+		LogError("Cannot test mutations without profile")
 		return
 	end
 	
-	print("\n🧪 Testing Profile Mutations...")
+	LogInfo("🧪 Testing Profile Mutations...")
 	
 	-- Test adding cards
-	print("Adding cards to collection...")
+	LogInfo("Adding cards to collection...")
 	WaitForBudget()
 	
 	local success = ProfileManager.AddCardsToCollection(MOCK_USER_ID, "dps_002", 2)
 	if success then
-		print("✅ Added 2x dps_002 to collection")
+		LogSuccess("Added 2x dps_002 to collection")
 	else
-		print("❌ Failed to add cards")
+		LogError("Failed to add cards")
+	end
+	
+	-- Add support_002 for deck update test
+	WaitForBudget()
+	success = ProfileManager.AddCardsToCollection(MOCK_USER_ID, "support_002", 1)
+	if success then
+		LogSuccess("Added 1x support_002 to collection")
+	else
+		LogError("Failed to add support_002")
 	end
 	
 	-- Test adding currency
-	print("Adding soft currency...")
+	LogInfo("Adding soft currency...")
 	WaitForBudget()
 	
 	success = ProfileManager.AddCurrency(MOCK_USER_ID, "soft", 500)
 	if success then
-		print("✅ Added 500 soft currency")
+		LogSuccess("Added 500 soft currency")
 	else
-		print("❌ Failed to add currency")
+		LogError("Failed to add currency")
 	end
 	
 	-- Test updating login streak
-	print("Updating login streak...")
+	LogInfo("Updating login streak...")
 	WaitForBudget()
 	
 	success = ProfileManager.UpdateLoginStreak(MOCK_USER_ID, true)
 	if success then
-		print("✅ Incremented login streak")
+		LogSuccess("Incremented login streak")
 	else
-		print("❌ Failed to update login streak")
+		LogError("Failed to update login streak")
 	end
 	
 	-- Test deck update
-	print("Updating deck...")
+	LogInfo("Updating deck...")
 	WaitForBudget()
 	
 	local newDeck = {"dps_002", "support_002", "tank_001", "dps_001", "support_001", "tank_001"}
 	success = ProfileManager.UpdateDeck(MOCK_USER_ID, newDeck)
 	if success then
-		print("✅ Updated deck successfully")
+		LogSuccess("Updated deck successfully")
 	else
-		print("❌ Failed to update deck")
+		LogError("Failed to update deck")
 	end
 end
 
 local function TestProfileReadback()
-	print("\n🧪 Testing Profile Readback...")
+	LogInfo("🧪 Testing Profile Readback...")
+	
+	-- Force save and flush to ensure persistence
+	LogInfo("Forcing save and flush...")
+	ProfileManager.ForceSave(MOCK_USER_ID)
+	DataStoreWrapper.Flush()
+	WaitForBudget()
 	
 	-- Clear cache to force reload from DataStore
 	ProfileManager.ClearCache(MOCK_USER_ID)
-	print("Cleared profile cache")
+	LogInfo("Cleared profile cache")
 	
 	-- Reload profile
 	WaitForBudget()
-	print("Reloading profile from DataStore...")
+	LogInfo("Reloading profile from DataStore...")
 	local reloadedProfile = ProfileManager.LoadProfile(MOCK_USER_ID)
 	
 	if reloadedProfile then
-		print("✅ Profile reloaded successfully")
+		LogSuccess("Profile reloaded successfully")
 		PrintProfile(reloadedProfile, "Reloaded Profile")
 		
-		-- Compare with expected values
-		local expectedSoftCurrency = 1500 -- 1000 (default) + 500 (added)
+		-- Compare with baseline values using deltas
+		local expectedSoftCurrency = testBaseline.softCurrency + 500
 		if reloadedProfile.currencies.soft == expectedSoftCurrency then
-			print("✅ Soft currency persisted correctly:", reloadedProfile.currencies.soft)
+			LogSuccess("Soft currency persisted correctly: %d (baseline +500)", reloadedProfile.currencies.soft)
 		else
-			print("❌ Soft currency mismatch. Expected:", expectedSoftCurrency, "Got:", reloadedProfile.currencies.soft)
+			LogError("Soft currency mismatch. Expected: %d, Got: %d", expectedSoftCurrency, reloadedProfile.currencies.soft)
 		end
 		
-		local expectedLoginStreak = 1 -- 0 (default) + 1 (incremented)
+		local expectedLoginStreak = testBaseline.loginStreak + 1
 		if reloadedProfile.loginStreak == expectedLoginStreak then
-			print("✅ Login streak persisted correctly:", reloadedProfile.loginStreak)
+			LogSuccess("Login streak persisted correctly: %d (baseline +1)", reloadedProfile.loginStreak)
 		else
-			print("❌ Login streak mismatch. Expected:", expectedLoginStreak, "Got:", reloadedProfile.loginStreak)
+			LogError("Login streak mismatch. Expected: %d, Got: %d", expectedLoginStreak, reloadedProfile.loginStreak)
 		end
 		
 		-- Check if new cards were added
-		if reloadedProfile.collection["dps_002"] == 2 then
-			print("✅ New cards persisted correctly: dps_002 x2")
+		local expectedDps002Count = testBaseline.dps002Count + 2
+		if reloadedProfile.collection["dps_002"] == expectedDps002Count then
+			LogSuccess("New cards persisted correctly: dps_002 x%d (baseline +2)", expectedDps002Count)
 		else
-			print("❌ New cards not persisted correctly")
+			LogError("New cards not persisted correctly. Expected: %d, Got: %d", expectedDps002Count, reloadedProfile.collection["dps_002"] or 0)
 		end
 		
 	else
-		print("❌ Profile reload failed")
+		LogError("Profile reload failed")
 	end
 end
 
 local function TestErrorHandling()
-	print("\n🧪 Testing Error Handling...")
+	LogInfo("🧪 Testing Error Handling...")
 	
 	-- Test invalid deck update
-	print("Testing invalid deck update...")
+	LogInfo("Testing invalid deck update...")
 	WaitForBudget()
 	
 	local invalidDeck = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_001", "support_001"}
 	local success, errorMessage = ProfileManager.UpdateDeck(MOCK_USER_ID, invalidDeck)
 	
 	if not success then
-		print("✅ Invalid deck correctly rejected:", errorMessage)
+		LogSuccess("Invalid deck correctly rejected: %s", errorMessage)
 	else
-		print("❌ Invalid deck was incorrectly accepted")
+		LogError("Invalid deck was incorrectly accepted")
 	end
 	
 	-- Test deck with insufficient cards
-	print("Testing deck with insufficient cards...")
+	LogInfo("Testing deck with insufficient cards...")
 	WaitForBudget()
 	
 	local insufficientDeck = {"dps_003", "dps_003", "dps_003", "dps_003", "dps_003", "dps_003"}
 	success, errorMessage = ProfileManager.UpdateDeck(MOCK_USER_ID, insufficientDeck)
 	
 	if not success then
-		print("✅ Insufficient cards correctly rejected:", errorMessage)
+		LogSuccess("Insufficient cards correctly rejected: %s", errorMessage)
 	else
-		print("❌ Insufficient cards was incorrectly accepted")
+		LogError("Insufficient cards was incorrectly accepted")
 	end
 end
 
 -- Main test runner
 function DevHarness.RunAllTests()
-	print("🚀 Starting Persistence Dev Harness Tests")
+	LogInfo("🚀 Starting Persistence Dev Harness Tests")
 	print("=" .. string.rep("=", 60))
 	
 	-- Check Studio access first
 	if not CheckStudioAccess() then
-		print("\n⏭️  Skipping DataStore tests due to Studio access restrictions.")
-		print("   Enable 'Studio Access to API Services' in Game Settings > Security")
-		print("   Then run the tests again.")
+		LogWarning("⏭️  Skipping DataStore tests due to Studio access restrictions.")
+		LogInfo("   Enable 'Studio Access to API Services' in Game Settings > Security")
+		LogInfo("   Then run the tests again.")
 		return false
 	end
 	
-	print("✅ Studio access confirmed. Proceeding with tests...")
+	LogSuccess("Studio access confirmed. Proceeding with tests...")
 	
 	-- Run tests in sequence
 	TestDataStoreWrapper()
@@ -309,13 +358,13 @@ function DevHarness.RunAllTests()
 	
 	-- Final status
 	print("\n" .. string.rep("=", 60))
-	print("🏁 Dev Harness Tests Complete!")
+	LogInfo("🏁 Dev Harness Tests Complete!")
 	
 	local cacheStatus = ProfileManager.GetCacheStatus()
-	print("💾 Final Cache Status:", cacheStatus.cachedProfiles, "cached profiles")
+	LogInfo("💾 Final Cache Status: %d cached profiles", cacheStatus.cachedProfiles)
 	
 	local dataStoreStatus = DataStoreWrapper.GetStatus()
-	print("📊 DataStore Status:", dataStoreStatus.pendingWrites, "pending writes")
+	LogInfo("📊 DataStore Status: %d pending writes", dataStoreStatus.pendingWrites)
 	
 	print("=" .. string.rep("=", 60))
 	
@@ -350,9 +399,9 @@ end
 
 -- Auto-run tests when script is executed (if in Studio)
 if game:GetService("RunService"):IsStudio() then
-	print("🎮 Studio detected. Auto-running persistence dev harness...")
+	LogInfo("🎮 Studio detected. Auto-running persistence dev harness...")
 	spawn(function()
-		task.wait(2) -- Wait for services to initialize
+		task.wait(5) -- Wait for services to initialize and other harnesses
 		DevHarness.RunAllTests()
 	end)
 end

@@ -21,6 +21,11 @@ ProfileSchema.Profile = {
 	currencies = {
 		soft = 0,             -- Soft currency (earned in-game)
 		hard = 0              -- Hard currency (premium/Robux)
+	},
+	
+	-- Metadata for internal tracking
+	meta = {
+		lastStreakBumpDate = nil  -- Date when login streak was last bumped (YYYY-MM-DD)
 	}
 }
 
@@ -88,16 +93,32 @@ end
 function ProfileSchema.CreateProfile(playerId)
 	local now = os.time()
 	
+	-- Default starter cards (from CardCatalog)
+	local starterCards = {
+		"dps_001", "dps_001", "dps_001",  -- 3x DPS starter
+		"support_001", "support_001",     -- 2x Support starter  
+		"tank_001"                        -- 1x Tank starter
+	}
+	
+	-- Create starter collection with default cards
+	local starterCollection = {}
+	for _, cardId in ipairs(starterCards) do
+		starterCollection[cardId] = (starterCollection[cardId] or 0) + 1
+	end
+	
 	local profile = {
 		playerId = tostring(playerId),
 		createdAt = now,
 		lastLoginAt = now,
 		loginStreak = 0,
-		collection = {},
-		deck = {},
+		collection = starterCollection,
+		deck = starterCards,  -- Use the same 6 cards as the deck
 		currencies = {
 			soft = 1000,  -- Starting soft currency
 			hard = 0      -- No starting hard currency
+		},
+		meta = {
+			lastStreakBumpDate = nil  -- Will be set on first login streak bump
 		}
 	}
 	

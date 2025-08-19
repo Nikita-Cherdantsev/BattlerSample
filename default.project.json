@@ -156,7 +156,10 @@
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
         "MatchTestHarness": {
-          "$path": "src/client/MatchTestHarness.client.lua"
+          "$path": "src/client/MatchTestHarness.client.lua",
+          "$properties": {
+            "Enabled": true
+          }
         },
         "NetworkTest": {
           "$path": "src/client/NetworkTest.client.lua"

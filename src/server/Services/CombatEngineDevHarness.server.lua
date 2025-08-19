@@ -522,7 +522,13 @@ function CombatEngineDevHarness.TestBattleStats()
 	return TestBattleStats()
 end
 
--- Auto-run tests when script is executed
-LogInfo("CombatEngine dev harness loaded. Run CombatEngineDevHarness.RunAllTests() to start testing.")
+-- Auto-run tests when script is executed (if in Studio)
+if game:GetService("RunService"):IsStudio() then
+	LogInfo("🎮 Studio detected. Auto-running CombatEngine dev harness...")
+	spawn(function()
+		task.wait(2) -- Wait for services to initialize
+		CombatEngineDevHarness.RunAllTests()
+	end)
+end
 
 return CombatEngineDevHarness

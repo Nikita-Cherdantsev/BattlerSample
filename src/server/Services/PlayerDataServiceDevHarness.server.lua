@@ -13,8 +13,8 @@ local PlayerDataService = require(script.Parent:WaitForChild("PlayerDataService"
 
 -- Configuration
 local TEST_DELAY = 3 -- Seconds between operations to respect Studio budgets
-local MOCK_PLAYER_NAME = "TestPlayer"
-local MOCK_USER_ID = 999999
+local MOCK_PLAYER_NAME = "PDS_TestPlayer"
+local MOCK_USER_ID = 999998 + math.floor(os.time() % 1000) -- Ensures unique ID each test run
 
 -- Mock player for testing
 local MockPlayer = {}
@@ -22,6 +22,26 @@ MockPlayer.Name = MOCK_PLAYER_NAME
 MockPlayer.UserId = MOCK_USER_ID
 
 -- Utility functions
+local function LogInfo(message, ...)
+	local formattedMessage = string.format(message, ...)
+	print(string.format("[PDSHarness] %s", formattedMessage))
+end
+
+local function LogSuccess(message, ...)
+	local formattedMessage = string.format(message, ...)
+	print(string.format("✅ [PDSHarness] %s", formattedMessage))
+end
+
+local function LogError(message, ...)
+	local formattedMessage = string.format(message, ...)
+	warn(string.format("❌ [PDSHarness] %s", formattedMessage))
+end
+
+local function LogWarning(message, ...)
+	local formattedMessage = string.format(message, ...)
+	warn(string.format("⚠️ [PDSHarness] %s", formattedMessage))
+end
+
 local function WaitForBudget()
 	task.wait(TEST_DELAY)
 end
@@ -66,148 +86,193 @@ local function CheckStudioAccess()
 	end)
 	
 	if not success then
-		print("⚠️  Studio Access to API Services is disabled!")
-		print("   Enable it in Game Settings > Security to test DataStore operations.")
+		LogWarning("Studio Access to API Services is disabled!")
+		LogInfo("   Enable it in Game Settings > Security to test DataStore operations.")
 		return false
 	end
 	
 	return true
 end
 
+local function assertDelta(cardId, expectedDelta, currentCount, baselineCounts)
+	local base = baselineCounts[cardId] or 0
+	local gotDelta = currentCount - base
+	if gotDelta ~= expectedDelta then
+		LogError("  %s: +%d  ❌ Count mismatch. Expected: %d, Got: %d",
+			cardId, gotDelta, expectedDelta, gotDelta)
+		return false
+	end
+	LogInfo("  %s: +%d  ✅", cardId, gotDelta)
+	return true
+end
+
+-- Test state tracking
+local testBaseline = {} -- Track baseline values for delta checks
+
 -- Test functions
 local function TestServiceStatus()
-	print("\n🧪 Testing Service Status...")
+	LogInfo("🧪 Testing Service Status...")
 	
 	local status = PlayerDataService.GetStatus()
-	print("✅ Service Status:")
-	print("  Active Profiles:", status.activeProfiles)
-	print("  Active Autosaves:", status.activeAutosaves)
-	print("  Is Shutting Down:", status.isShuttingDown)
-	print("  Autosave Interval:", status.autosaveInterval, "seconds")
+	LogSuccess("Service Status:")
+	LogInfo("  Active Profiles: %d", status.activeProfiles)
+	LogInfo("  Active Autosaves: %d", status.activeAutosaves)
+	LogInfo("  Is Shutting Down: %s", tostring(status.isShuttingDown))
+	LogInfo("  Autosave Interval: %d seconds", status.autosaveInterval)
 end
 
 local function TestProfileCreation()
-	print("\n🧪 Testing Profile Creation...")
+	LogInfo("🧪 Testing Profile Creation...")
+	LogInfo("Using unique test user ID: %d", MockPlayer.UserId)
+	
+	-- Clear any existing test data
+	PlayerDataService.ClearCache(MockPlayer.UserId)
+	LogInfo("Cleared existing test data for: %d", MockPlayer.UserId)
 	
 	-- Simulate player join
-	print("Simulating player join...")
+	LogInfo("Simulating player join...")
 	
 	-- Get initial profile (should be nil)
 	local initialProfile = PlayerDataService.GetProfile(MockPlayer)
 	if not initialProfile then
-		print("✅ Initial profile correctly nil")
+		LogSuccess("Initial profile correctly nil")
 	else
-		print("❌ Initial profile should be nil")
+		LogError("Initial profile should be nil")
 		return false
 	end
 	
-	-- Simulate profile loading by calling ProfileManager directly
-	-- (This bypasses the PlayerAdded event for testing)
-	print("Loading profile for mock player...")
-	
-	-- We need to manually trigger the profile loading logic
-	-- For testing purposes, we'll simulate the key parts
-	
-	-- Check if profile exists in DataStore (this will create one if it doesn't exist)
-	local profileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
-	local profile = profileManager.LoadProfile(MOCK_USER_ID)
+	-- Use PlayerDataService to load the profile (this ensures proper cache management)
+	LogInfo("Loading profile for mock player via PlayerDataService...")
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
 	
 	if profile then
-		print("✅ Profile loaded/created successfully")
+		LogSuccess("Profile loaded/created successfully")
+		LogInfo("  Player ID: %s", profile.playerId)
+		LogInfo("  Created: %s", os.date("%Y-%m-%d %H:%M:%S", profile.createdAt))
+		-- Count collection size manually
+		local collectionSize = 0
+		for _ in pairs(profile.collection) do
+			collectionSize = collectionSize + 1
+		end
+		LogInfo("  Collection size: %d", collectionSize)
+		LogInfo("  Deck size: %d", #profile.deck)
+		LogInfo("  Login streak: %d", profile.loginStreak or 0)
+		
+		-- Debug: Show what's actually in the collection
+		LogInfo("  Starter collection contents:")
+		for cardId, count in pairs(profile.collection) do
+			LogInfo("    %s: %d", cardId, count)
+		end
+		
 		PrintProfile(profile, "Created Profile")
 		return true
 	else
-		print("❌ Profile creation failed")
+		LogError("Profile creation failed")
 		return false
 	end
 end
 
 local function TestProfileAPI()
-	print("\n🧪 Testing Profile API...")
+	LogInfo("🧪 Testing Profile API...")
 	
-	-- Get profile
-	local profile = PlayerDataService.GetProfile(MockPlayer)
+	-- Ensure profile is loaded
+	LogInfo("Ensuring profile is loaded...")
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
 	if not profile then
-		print("❌ Cannot test API without profile")
+		LogError("Cannot test API without profile")
 		return false
 	end
 	
-	print("✅ Profile retrieved successfully")
+	LogSuccess("Profile loaded successfully")
+	
+	-- Store baseline values for delta checks
+	testBaseline.softCurrency = profile.currencies.soft
+	testBaseline.loginStreak = profile.loginStreak
+	-- Store baseline for all cards that will be granted
+	testBaseline.dps002Count = profile.collection["dps_002"] or 0
+	testBaseline.support002Count = profile.collection["support_002"] or 0
+	testBaseline.tank002Count = profile.collection["tank_002"] or 0
+	LogInfo("📊 Baseline values stored for delta checks")
 	
 	-- Test collection access
 	local collection = PlayerDataService.GetCollection(MockPlayer)
 	if collection then
-		print("✅ Collection accessed successfully")
-		print("  Unique cards:", #collection)
+		LogSuccess("Collection accessed successfully")
+		-- Count unique card types
+		local uniqueCards = 0
+		for _ in pairs(collection) do
+			uniqueCards = uniqueCards + 1
+		end
+		LogInfo("  Unique cards: %d", uniqueCards)
 	else
-		print("❌ Collection access failed")
+		LogError("Collection access failed")
 	end
 	
 	-- Test login info
 	local loginInfo = PlayerDataService.GetLoginInfo(MockPlayer)
 	if loginInfo then
-		print("✅ Login info accessed successfully")
-		print("  Last Login:", os.date("%Y-%m-%d %H:%M:%S", loginInfo.lastLoginAt))
-		print("  Login Streak:", loginInfo.loginStreak)
+		LogSuccess("Login info accessed successfully")
+		LogInfo("  Last Login: %s", os.date("%Y-%m-%d %H:%M:%S", loginInfo.lastLoginAt))
+		LogInfo("  Login Streak: %d", loginInfo.loginStreak)
 	else
-		print("❌ Login info access failed")
+		LogError("Login info access failed")
 	end
 	
 	return true
 end
 
 local function TestDeckValidation()
-	print("\n🧪 Testing Deck Validation...")
+	LogInfo("🧪 Testing Deck Validation...")
 	
 	-- Test valid deck
 	local validDeck = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
-	print("Testing valid deck...")
+	LogInfo("Testing valid deck...")
 	WaitForBudget()
 	
 	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
 	if success then
-		print("✅ Valid deck accepted")
+		LogSuccess("Valid deck accepted")
 	else
-		print("❌ Valid deck rejected:", errorMessage)
+		LogError("Valid deck rejected: %s", errorMessage)
 		return false
 	end
 	
 	-- Test invalid deck (wrong size)
 	local invalidDeck1 = {"dps_001", "support_001"}
-	print("Testing invalid deck (wrong size)...")
+	LogInfo("Testing invalid deck (wrong size)...")
 	WaitForBudget()
 	
 	success, errorMessage = PlayerDataService.SetDeck(MockPlayer, invalidDeck1)
 	if not success then
-		print("✅ Invalid deck correctly rejected:", errorMessage)
+		LogSuccess("Invalid deck correctly rejected: %s", errorMessage)
 	else
-		print("❌ Invalid deck incorrectly accepted")
+		LogError("Invalid deck incorrectly accepted")
 		return false
 	end
 	
 	-- Test invalid deck (unknown card)
 	local invalidDeck2 = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_001", "support_001"}
-	print("Testing invalid deck (unknown card)...")
+	LogInfo("Testing invalid deck (unknown card)...")
 	WaitForBudget()
 	
 	success, errorMessage = PlayerDataService.SetDeck(MockPlayer, invalidDeck2)
 	if not success then
-		print("✅ Invalid deck correctly rejected:", errorMessage)
+		LogSuccess("Invalid deck correctly rejected: %s", errorMessage)
 	else
-		print("❌ Invalid deck incorrectly accepted")
+		LogError("Invalid deck incorrectly accepted")
 		return false
 	end
 	
 	-- Test deck with insufficient cards
 	local insufficientDeck = {"dps_003", "dps_003", "dps_003", "dps_003", "dps_003", "dps_003"}
-	print("Testing deck with insufficient cards...")
+	LogInfo("Testing deck with insufficient cards...")
 	WaitForBudget()
 	
 	success, errorMessage = PlayerDataService.SetDeck(MockPlayer, insufficientDeck)
 	if not success then
-		print("✅ Insufficient cards correctly rejected:", errorMessage)
+		LogSuccess("Insufficient cards correctly rejected: %s", errorMessage)
 	else
-		print("❌ Insufficient cards incorrectly accepted")
+		LogError("Insufficient cards incorrectly accepted")
 		return false
 	end
 	
@@ -215,7 +280,30 @@ local function TestDeckValidation()
 end
 
 local function TestCardGranting()
-	print("\n🧪 Testing Card Granting...")
+	LogInfo("🧪 Testing Card Granting...")
+	
+	-- Clear cache and reload profile to get clean state
+	PlayerDataService.ClearCache(MockPlayer.UserId)
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Cannot test card granting without profile")
+		return false
+	end
+	
+	-- Get current baseline from the fresh profile
+	local baselineCounts = {
+		["dps_002"] = profile.collection["dps_002"] or 0,
+		["support_002"] = profile.collection["support_002"] or 0,
+		["tank_002"] = profile.collection["tank_002"] or 0
+	}
+	LogInfo("Baseline counts: dps_002=%d, support_002=%d, tank_002=%d", 
+		baselineCounts["dps_002"], baselineCounts["support_002"], baselineCounts["tank_002"])
+	
+	-- Debug: Show what's in the collection before granting
+	LogInfo("Collection before granting:")
+	for cardId, count in pairs(profile.collection) do
+		LogInfo("  %s: %d", cardId, count)
+	end
 	
 	-- Grant some cards
 	local rewards = {
@@ -224,29 +312,51 @@ local function TestCardGranting()
 		["tank_002"] = 1
 	}
 	
-	print("Granting cards:", rewards)
+	LogInfo("Granting cards: %s", table.concat({rewards["dps_002"] .. "x dps_002", rewards["support_002"] .. "x support_002", rewards["tank_002"] .. "x tank_002"}, ", "))
 	WaitForBudget()
 	
-	local success, grantedCards = PlayerDataService.GrantCards(MockPlayer, rewards)
+			local success, grantedCards = PlayerDataService.GrantCards(MockPlayer, rewards)
 	if success then
-		print("✅ Cards granted successfully")
+		LogSuccess("Cards granted successfully")
 		for cardId, count in pairs(grantedCards) do
-			print("  " .. cardId .. ": +" .. count)
+			LogInfo("  %s: +%d", cardId, count)
+		end
+		
+		-- Debug: Show what's in the collection immediately after granting
+		profile = PlayerDataService.GetProfile(MockPlayer)
+		LogInfo("Collection immediately after granting:")
+		for cardId, count in pairs(profile.collection) do
+			LogInfo("  %s: %d", cardId, count)
+		end
+		
+		-- Force save and wait for persistence
+		PlayerDataService.ForceSave(MockPlayer)
+		WaitForBudget()
+		
+		-- Read fresh values after save
+		profile = PlayerDataService.GetProfile(MockPlayer)
+		local coll = profile.collection or {}
+		
+		-- Debug: Show what's in the collection after save
+		LogInfo("Collection after save:")
+		for cardId, count in pairs(coll) do
+			LogInfo("  %s: %d", cardId, count)
+		end
+		
+		-- Verify collection was updated using delta assertions
+		LogSuccess("Collection updated:")
+		local okAll = true
+		okAll = assertDelta("tank_002", 1, (coll["tank_002"] or 0), baselineCounts) and okAll
+		okAll = assertDelta("support_002", 1, (coll["support_002"] or 0), baselineCounts) and okAll
+		okAll = assertDelta("dps_002", 2, (coll["dps_002"] or 0), baselineCounts) and okAll
+		
+		if not okAll then
+			LogError("Some card count assertions failed")
+			return false
 		end
 	else
-		print("❌ Card granting failed:", grantedCards)
+		LogError("Card granting failed: %s", grantedCards)
 		return false
-	end
-	
-	-- Verify collection was updated
-	local collection = PlayerDataService.GetCollection(MockPlayer)
-	if collection then
-		print("✅ Collection updated:")
-		for cardId, count in pairs(collection) do
-			if rewards[cardId] then
-				print("  " .. cardId .. ": " .. count .. " (was granted)")
-			end
-		end
 	end
 	
 	-- Test invalid rewards
@@ -255,14 +365,14 @@ local function TestCardGranting()
 		["dps_001"] = -1
 	}
 	
-	print("Testing invalid rewards...")
+	LogInfo("Testing invalid rewards...")
 	WaitForBudget()
 	
 	success, errorMessage = PlayerDataService.GrantCards(MockPlayer, invalidRewards)
 	if not success then
-		print("✅ Invalid rewards correctly rejected:", errorMessage)
+		LogSuccess("Invalid rewards correctly rejected: %s", errorMessage)
 	else
-		print("❌ Invalid rewards incorrectly accepted")
+		LogError("Invalid rewards incorrectly accepted")
 		return false
 	end
 	
@@ -270,36 +380,67 @@ local function TestCardGranting()
 end
 
 local function TestLoginStreak()
-	print("\n🧪 Testing Login Streak...")
+	LogInfo("🧪 Testing Login Streak...")
+	
+	-- Clear any existing profile to get a clean state
+	PlayerDataService.ClearCache(MockPlayer.UserId)
+	
+	-- Ensure profile is loaded fresh
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Cannot test login streak without profile")
+		return false
+	end
 	
 	-- Get current login streak
 	local loginInfo = PlayerDataService.GetLoginInfo(MockPlayer)
 	if not loginInfo then
-		print("❌ Cannot test login streak without login info")
+		LogError("Cannot test login streak without login info")
 		return false
 	end
 	
-	local initialStreak = loginInfo.loginStreak
-	print("Initial login streak:", initialStreak)
+	local before = loginInfo.loginStreak or 0
+	LogInfo("Initial login streak: %d", before)
+	
+	-- Debug: Show the profile's meta information
+	local profile = PlayerDataService.GetProfile(MockPlayer)
+	if profile and profile.meta then
+		LogInfo("Profile meta info:")
+		LogInfo("  lastStreakBumpDate: %s", profile.meta.lastStreakBumpDate or "nil")
+		LogInfo("  profile created: %s", os.date("!%Y-%m-%d", profile.createdAt))
+		LogInfo("  today (UTC): %s", os.date("!%Y-%m-%d"))
+	else
+		LogWarning("No profile or meta info found")
+	end
 	
 	-- Bump login streak
-	print("Bumping login streak...")
+	LogInfo("Bumping login streak...")
 	WaitForBudget()
 	
-	local success = PlayerDataService.BumpLoginStreak(MockPlayer)
+	local success, newStreak = PlayerDataService.BumpLoginStreak(MockPlayer)
 	if success then
-		print("✅ Login streak bumped successfully")
+		LogSuccess("Login streak bumped successfully to: %d", newStreak)
 		
-		-- Verify streak was incremented
-		local newLoginInfo = PlayerDataService.GetLoginInfo(MockPlayer)
-		if newLoginInfo and newLoginInfo.loginStreak == initialStreak + 1 then
-			print("✅ Login streak incremented correctly:", newLoginInfo.loginStreak)
+		-- Force a save to ensure persistence
+		PlayerDataService.ForceSave(MockPlayer)
+		WaitForBudget()
+		
+		-- Verify streak was incremented by exactly 1
+		local finalLoginInfo = PlayerDataService.GetLoginInfo(MockPlayer)
+		local finalStreak = finalLoginInfo and finalLoginInfo.loginStreak or 0
+		local delta = finalStreak - before
+		
+		LogInfo("Final verification: before=%d, after=%d, delta=%d", before, finalStreak, delta)
+		
+		if delta == 1 then
+			LogSuccess("Login streak incremented correctly: %d (baseline +1)", finalStreak)
 		else
-			print("❌ Login streak not incremented correctly")
+			LogError("Login streak not incremented correctly. Expected: +1, Got: +%d", delta)
+			LogError("This might be due to automatic daily login logic. Check if profile was created on a different day.")
 			return false
 		end
 	else
-		print("❌ Failed to bump login streak")
+		LogError("Failed to bump login streak")
 		return false
 	end
 	
@@ -307,30 +448,30 @@ local function TestLoginStreak()
 end
 
 local function TestAutosaveSimulation()
-	print("\n🧪 Testing Autosave Simulation...")
+	LogInfo("🧪 Testing Autosave Simulation...")
 	
 	-- Force a save to test persistence
-	print("Forcing profile save...")
+	LogInfo("Forcing profile save...")
 	WaitForBudget()
 	
 	local success = PlayerDataService.ForceSave(MockPlayer)
 	if success then
-		print("✅ Profile saved successfully")
+		LogSuccess("Profile saved successfully")
 	else
-		print("❌ Profile save failed")
+		LogError("Profile save failed")
 		return false
 	end
 	
 	-- Test profile readback
-	print("Testing profile readback...")
+	LogInfo("Testing profile readback...")
 	WaitForBudget()
 	
 	local profile = PlayerDataService.GetProfile(MockPlayer)
 	if profile then
-		print("✅ Profile readback successful")
+		LogSuccess("Profile readback successful")
 		PrintProfile(profile, "Current Profile")
 	else
-		print("❌ Profile readback failed")
+		LogError("Profile readback failed")
 		return false
 	end
 	
@@ -338,38 +479,44 @@ local function TestAutosaveSimulation()
 end
 
 local function TestServiceCleanup()
-	print("\n🧪 Testing Service Cleanup...")
+	LogInfo("🧪 Testing Service Cleanup...")
 	
 	-- Simulate player leaving
-	print("Simulating player leave...")
+	LogInfo("Simulating player leave...")
 	
 	-- Get final status
 	local finalStatus = PlayerDataService.GetStatus()
-	print("Final Service Status:")
-	print("  Active Profiles:", finalStatus.activeProfiles)
-	print("  Active Autosaves:", finalStatus.activeAutosaves)
+	LogInfo("Final Service Status:")
+	LogInfo("  Active Profiles: %d", finalStatus.activeProfiles)
+	LogInfo("  Active Autosaves: %d", finalStatus.activeAutosaves)
 	
 	-- Note: We can't fully test PlayerRemoving without actual player objects
 	-- But we can verify the service is in a clean state
 	
-	print("✅ Service cleanup test completed")
+	LogSuccess("Service cleanup test completed")
 	return true
 end
 
 -- Main test runner
 function PlayerDataServiceDevHarness.RunAllTests()
-	print("🚀 Starting PlayerDataService Dev Harness Tests")
+	LogInfo("🚀 Starting PlayerDataService Dev Harness Tests")
+	LogInfo("🎯 Test User ID: %d (unique for this run)", MockPlayer.UserId)
 	print("=" .. string.rep("=", 60))
 	
 	-- Check Studio access first
 	if not CheckStudioAccess() then
-		print("\n⏭️  Skipping DataStore tests due to Studio access restrictions.")
-		print("   Enable 'Studio Access to API Services' in Game Settings > Security")
-		print("   Then run the tests again.")
+		LogWarning("⏭️  Skipping DataStore tests due to Studio access restrictions.")
+		LogInfo("   Enable 'Studio Access to API Services' in Game Settings > Security")
+		LogInfo("   Then run the tests again.")
 		return false
 	end
 	
-	print("✅ Studio access confirmed. Proceeding with tests...")
+	LogSuccess("Studio access confirmed. Proceeding with tests...")
+	
+	-- Clear any existing state before starting tests
+	LogInfo("🧹 Clearing any existing test state...")
+	PlayerDataService.ClearCache(MockPlayer.UserId)
+	WaitForBudget()
 	
 	-- Run tests in sequence
 	TestServiceStatus()
@@ -397,15 +544,20 @@ function PlayerDataServiceDevHarness.RunAllTests()
 	
 	TestServiceCleanup()
 	
+	-- Clean up test data
+	LogInfo("🧹 Cleaning up test data...")
+	PlayerDataService.ClearCache(MockPlayer.UserId)
+	LogSuccess("Test data cleaned up")
+	
 	-- Final status
 	print("\n" .. string.rep("=", 60))
-	print("🏁 PlayerDataService Dev Harness Tests Complete!")
+	LogInfo("🏁 PlayerDataService Dev Harness Tests Complete!")
 	
 	local finalStatus = PlayerDataService.GetStatus()
-	print("💾 Final Service Status:")
-	print("  Active Profiles:", finalStatus.activeProfiles)
-	print("  Active Autosaves:", finalStatus.activeAutosaves)
-	print("  Is Shutting Down:", finalStatus.isShuttingDown)
+	LogInfo("💾 Final Service Status:")
+	LogInfo("  Active Profiles: %d", finalStatus.activeProfiles)
+	LogInfo("  Active Autosaves: %d", finalStatus.activeAutosaves)
+	LogInfo("  Is Shutting Down: %s", tostring(finalStatus.isShuttingDown))
 	
 	print("=" .. string.rep("=", 60))
 	
@@ -447,10 +599,19 @@ end
 
 -- Auto-run tests when script is executed (if in Studio)
 if game:GetService("RunService"):IsStudio() then
-	print("🎮 Studio detected. Auto-running PlayerDataService dev harness...")
+	LogInfo("🎮 Studio detected. Auto-running PlayerDataService dev harness...")
+	local isRunning = false
 	spawn(function()
-		task.wait(3) -- Wait for services to initialize
-		PlayerDataServiceDevHarness.RunAllTests()
+		task.wait(8) -- Wait for services to initialize and other harnesses
+		if not isRunning then
+			isRunning = true
+			LogInfo("🚀 Starting PlayerDataService dev harness (guard: %s)", tostring(isRunning))
+			PlayerDataServiceDevHarness.RunAllTests()
+			isRunning = false
+			LogInfo("🏁 PlayerDataService dev harness completed (guard: %s)", tostring(isRunning))
+		else
+			LogWarning("⏭️  PlayerDataService dev harness already running, skipping...")
+		end
 	end)
 end
 

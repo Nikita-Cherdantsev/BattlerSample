@@ -13,8 +13,8 @@ local testResults = {}
 
 -- Mock player for testing
 local MockPlayer = {
-	UserId = 12345,
-	Name = "TestPlayer"
+	UserId = 999997, -- Different from other harnesses
+	Name = "MatchService_TestPlayer"
 }
 
 -- Utility functions
@@ -72,6 +72,9 @@ end
 local function TestHappyPath()
 	LogInfo("Testing happy path...")
 	
+	-- Enable test mode to bypass rate limits
+	MatchService.EnableTestMode(MockPlayer)
+	
 	-- Ensure player has a valid deck
 	local validDeck = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
 	
@@ -101,10 +104,11 @@ local function TestDeterminism()
 	LogInfo("Testing determinism...")
 	
 	local requestData = {
-		mode = "PvE"
+		mode = "PvE",
+		seed = 424242 -- Fixed seed for determinism test
 	}
 	
-	-- Run same match twice
+	-- Run same match twice (test mode already enabled)
 	local result1 = MatchService.ExecuteMatch(MockPlayer, requestData)
 	local result2 = MatchService.ExecuteMatch(MockPlayer, requestData)
 	
@@ -150,7 +154,7 @@ local function TestDeterminism()
 	end
 	
 	if isDeterministic then
-		LogSuccess("Determinism test passed - identical results")
+		LogSuccess("Determinism test passed - identical results for same seed")
 		testResults.determinism = true
 	else
 		LogError("Determinism test failed:")
@@ -166,6 +170,9 @@ end
 local function TestRateLimiting()
 	LogInfo("Testing rate limiting...")
 	
+	-- Temporarily disable test mode to test real rate limiting
+	MatchService.DisableTestMode(MockPlayer)
+	
 	local requestData = {
 		mode = "PvE"
 	}
@@ -178,6 +185,9 @@ local function TestRateLimiting()
 		table.insert(results, result)
 		task.wait(0.1) -- Small delay between requests
 	end
+	
+	-- Re-enable test mode for other tests
+	MatchService.EnableTestMode(MockPlayer)
 	
 	-- Check results
 	local rateLimitedCount = 0
@@ -201,22 +211,24 @@ end
 local function TestConcurrencyGuard()
 	LogInfo("Testing concurrency guard...")
 	
-	local requestData = {
-		mode = "PvE"
-	}
+	-- Ensure test mode is enabled for concurrency testing
+	MatchService.EnableTestMode(MockPlayer)
 	
-	-- Start first match
-	local result1 = MatchService.ExecuteMatch(MockPlayer, requestData)
+	-- Kick off the first match in another thread (it sets isInMatch = true immediately)
+	local ok1, code1
+	task.spawn(function()
+		ok1, code1 = MatchService.ExecuteMatch(MockPlayer, { mode = "PvE", seed = math.random(1, 1e9) })
+	end)
 	
-	-- Try to start second match immediately (should be rejected)
-	local result2 = MatchService.ExecuteMatch(MockPlayer, requestData)
+	-- Do NOT wait here; call again immediately:
+	local result2 = MatchService.ExecuteMatch(MockPlayer, { mode = "PvE", seed = math.random(1, 1e9) })
 	
-	if result1.ok and not result2.ok and result2.error.code == "BUSY" then
-		LogSuccess("Concurrency guard working: second request rejected with BUSY")
-		testResults.concurrencyGuard = true
-	else
-		LogError("Concurrency guard not working properly")
+	if result2.ok or result2.error.code ~= "BUSY" then
+		LogError("[MatchServiceTest] Concurrency guard failed: expected BUSY, got %s", tostring(result2.error and result2.error.code or "unknown"))
 		testResults.concurrencyGuard = false
+	else
+		LogSuccess("[MatchServiceTest] Concurrency guard working (BUSY rejection)")
+		testResults.concurrencyGuard = true
 	end
 	
 	return testResults.concurrencyGuard
@@ -224,6 +236,12 @@ end
 
 local function TestInvalidRequests()
 	LogInfo("Testing invalid requests...")
+	
+	-- Ensure test mode is enabled for validation tests
+	MatchService.EnableTestMode(MockPlayer)
+	
+	-- Clear any existing match state to avoid concurrency guard interference
+	MatchService.ForceCleanup(MockPlayer)
 	
 	local allTestsPassed = true
 	
@@ -253,6 +271,9 @@ end
 local function TestPvPMode()
 	LogInfo("Testing PvP mode...")
 	
+	-- Ensure test mode is enabled for PvP testing
+	MatchService.EnableTestMode(MockPlayer)
+	
 	local requestData = {
 		mode = "PvP"
 	}
@@ -273,6 +294,9 @@ end
 
 local function TestPlayerStatus()
 	LogInfo("Testing player status...")
+	
+	-- Ensure test mode is enabled for status testing
+	MatchService.EnableTestMode(MockPlayer)
 	
 	local status = MatchService.GetPlayerStatus(MockPlayer)
 	
@@ -394,6 +418,11 @@ function MatchServiceDevHarness.RunAllTests()
 	
 	print("=" .. string.rep("=", 60))
 	
+	-- Clean up test mode
+	MatchService.DisableTestMode(MockPlayer)
+	MatchService.ForceCleanup(MockPlayer)
+	LogInfo("Test cleanup completed")
+	
 	return passedTests == totalTests
 end
 
@@ -426,7 +455,13 @@ function MatchServiceDevHarness.TestPlayerStatus()
 	return TestPlayerStatus()
 end
 
--- Auto-run tests when script is executed
-LogInfo("MatchService dev harness loaded. Run MatchServiceDevHarness.RunAllTests() to start testing.")
+-- Auto-run tests when script is executed (if in Studio)
+if game:GetService("RunService"):IsStudio() then
+	LogInfo("🎮 Studio detected. Auto-running MatchService dev harness...")
+	spawn(function()
+		task.wait(11) -- Wait for services to initialize and other harnesses
+		MatchServiceDevHarness.RunAllTests()
+	end)
+end
 
 return MatchServiceDevHarness

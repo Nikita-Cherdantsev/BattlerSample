@@ -332,8 +332,6 @@ function PlayerDataService.GrantCards(player, rewards)
 	for cardId, delta in pairs(rewards) do
 		local cardSuccess = ProfileManager.AddCardsToCollection(player.UserId, cardId, delta)
 		if cardSuccess then
-			-- Update local copy
-			playerProfiles[player].collection[cardId] = (playerProfiles[player].collection[cardId] or 0) + delta
 			grantedCards[cardId] = delta
 		else
 			success = false
@@ -342,7 +340,19 @@ function PlayerDataService.GrantCards(player, rewards)
 	end
 	
 	if success then
-		LogInfo(player, "Granted %d card types successfully", #grantedCards)
+		-- Reload profile from DataStore to ensure local cache is in sync
+		-- We need to force a reload because the cached profile was modified in-place
+		local reloadedProfile = ProfileManager.LoadProfile(player.UserId)
+		if reloadedProfile then
+			playerProfiles[player] = reloadedProfile
+		end
+		
+		-- Count granted card types
+		local grantedCount = 0
+		for _ in pairs(grantedCards) do
+			grantedCount = grantedCount + 1
+		end
+		LogInfo(player, "Granted %d card types successfully", grantedCount)
 		return true, grantedCards
 	else
 		LogWarning(player, "Partial card grant failure")
@@ -373,19 +383,46 @@ function PlayerDataService.GetLoginInfo(player)
 	}
 end
 
+-- Helper function to get today's date key in UTC
+local function todayKeyUTC()
+	return os.date("!%Y-%m-%d")
+end
+
 -- Bump login streak (for DailyHandler integration)
 function PlayerDataService.BumpLoginStreak(player)
 	if not player or not playerProfiles[player] then
 		return false, "Player profile not loaded"
 	end
 	
-	local success = ProfileManager.UpdateLoginStreak(player.UserId, true)
-	if success then
-		playerProfiles[player].loginStreak = playerProfiles[player].loginStreak + 1
-		LogInfo(player, "Login streak bumped to %d", playerProfiles[player].loginStreak)
-		return true
+	local profile = playerProfiles[player]
+	profile.meta = profile.meta or {}
+	local today = todayKeyUTC()
+	
+	LogInfo(player, "BumpLoginStreak called. Current streak: %d, last bump date: %s", 
+		profile.loginStreak or 0, profile.meta.lastStreakBumpDate or "never")
+	
+	if profile.meta.lastStreakBumpDate == today then
+		LogInfo(player, "Login streak already bumped today: %d", profile.loginStreak or 0)
+		return true, profile.loginStreak
+	end
+	
+	-- Update the streak directly in our local cache
+	local oldStreak = profile.loginStreak or 0
+	profile.loginStreak = oldStreak + 1
+	profile.meta.lastStreakBumpDate = today
+	
+	LogInfo(player, "Streak updated: %d -> %d, date set to: %s", oldStreak, profile.loginStreak, today)
+	
+	-- Save the profile to persist the changes
+	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
+	if saveSuccess then
+		LogInfo(player, "Login streak bumped to %d and saved successfully", profile.loginStreak)
+		return true, profile.loginStreak
 	else
-		LogWarning(player, "Failed to bump login streak")
+		LogWarning(player, "Failed to save profile after streak bump")
+		-- Revert the change since save failed
+		profile.loginStreak = profile.loginStreak - 1
+		profile.meta.lastStreakBumpDate = nil
 		return false
 	end
 end
@@ -418,6 +455,28 @@ function PlayerDataService.ForceSave(player)
 	end
 	
 	return SafeSaveProfile(player)
+end
+
+-- Clear profile from cache (test-only, Studio only)
+function PlayerDataService.ClearCache(userId)
+	if not game:GetService("RunService"):IsStudio() then
+		warn("ClearCache is only available in Studio")
+		return false
+	end
+	
+	userId = tostring(userId)
+	
+	-- Clear from ProfileManager cache
+	ProfileManager.ClearCache(userId)
+	
+	-- Clear from PlayerDataService cache
+	for player, profile in pairs(playerProfiles) do
+		if profile and profile.playerId == userId then
+			playerProfiles[player] = nil
+		end
+	end
+	
+	return true
 end
 
 -- Ensure profile is loaded (lazy-load for remotes)

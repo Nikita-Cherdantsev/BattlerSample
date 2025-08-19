@@ -19,8 +19,14 @@ local RATE_LIMIT = {
 
 local MAX_ROUNDS = 50 -- Maximum battle rounds
 
+-- Studio-only: keep the BUSY window long enough for the concurrency test
+local TEST_BUSY_DELAY_SEC = 0.75 -- was ~0.2; use 0.75s
+
 -- Dev mode detection
 local IS_DEV_MODE = RunService:IsStudio()
+
+-- Test mode tracking (Studio-only)
+local testModeUsers = {} -- Set of userIds in test mode (bypasses rate limits)
 
 -- Match state tracking
 local playerMatchState = {} -- player -> { lastRequest, requestCount, resetTime, isInMatch }
@@ -192,10 +198,47 @@ local function InitializePlayerState(player)
 	end
 end
 
+-- Test mode functions (Studio-only)
+local function EnableTestMode(player)
+	if not IS_DEV_MODE then
+		return false, "Test mode only available in Studio"
+	end
+	testModeUsers[player.UserId] = true
+	return true
+end
+
+local function DisableTestMode(player)
+	if not IS_DEV_MODE then
+		return false, "Test mode only available in Studio"
+	end
+	testModeUsers[player.UserId] = nil
+	return true
+end
+
+-- Test delay function (Studio-only)
+local function TestDelay(seconds)
+	if not IS_DEV_MODE then
+		return
+	end
+	task.wait(seconds or 0.1)
+end
+
 local function CheckRateLimit(player)
 	InitializePlayerState(player)
 	local state = playerMatchState[player]
 	local now = os.time()
+	
+	-- Check if player is already in a match (concurrency guard)
+	if state.isInMatch then
+		return false, "BUSY", "Player already in match"
+	end
+	
+	-- Skip rate limiting for test mode users
+	if testModeUsers[player.UserId] then
+		-- Still set isInMatch to prevent concurrent matches
+		state.isInMatch = true
+		return true
+	end
 	
 	-- Reset counter if minute has passed
 	if now >= state.resetTime then
@@ -211,11 +254,6 @@ local function CheckRateLimit(player)
 	-- Check request count limit
 	if state.requestCount >= RATE_LIMIT.MAX_REQUESTS then
 		return false, "RATE_LIMITED", "Too many requests, please wait"
-	end
-	
-	-- Check if player is already in a match
-	if state.isInMatch then
-		return false, "BUSY", "Player already in match"
 	end
 	
 	-- Update rate limit state
@@ -439,6 +477,11 @@ function MatchService.ExecuteMatch(player, requestData)
 	-- Generate opponent deck
 	local opponentDeck = GenerateOpponentDeck(playerDeck, mode, rng, variant)
 	
+	-- Stretch the BUSY window before the battle (Studio-only, test mode)
+	if RunService:IsStudio() and testModeUsers[player.UserId] and TEST_BUSY_DELAY_SEC > 0 then
+		task.wait(TEST_BUSY_DELAY_SEC)
+	end
+	
 	-- Execute battle
 	local success, battleResult = pcall(function()
 		return CombatEngine.ExecuteBattle(playerDeck, opponentDeck, serverSeed)
@@ -520,6 +563,15 @@ end
 
 function MatchService.ForceCleanup(player)
 	CleanupPlayerState(player)
+end
+
+-- Test mode functions (Studio-only)
+function MatchService.EnableTestMode(player)
+	return EnableTestMode(player)
+end
+
+function MatchService.DisableTestMode(player)
+	return DisableTestMode(player)
 end
 
 -- Init function for bootstrap
