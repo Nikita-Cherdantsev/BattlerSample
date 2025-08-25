@@ -333,34 +333,32 @@ end
 
 local function ValidatePlayerDeck(player)
 	-- Get player's profile (with lazy loading)
-	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	local profile = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
-		return false, errorCode or "NO_DECK", errorMessage or "Player profile not found"
+		LogWarning(player, "Profile loading failed")
+		return false, "NO_DECK", "Player profile not found"
 	end
+	
+	LogInfo(player, "Profile loaded successfully, deck size: %d", profile.deck and #profile.deck or 0)
 	
 	-- Check if player has a deck
 	if not profile.deck or #profile.deck == 0 then
+		LogWarning(player, "Player has no active deck")
 		return false, "NO_DECK", "Player has no active deck"
 	end
 	
 	-- Validate deck using shared tooling
 	local isValid, errorMessage = DeckValidator.ValidateDeck(profile.deck)
 	if not isValid then
+		LogWarning(player, "Deck validation failed: %s", errorMessage)
 		return false, "INVALID_DECK", "Invalid deck: " .. errorMessage
 	end
 	
-	-- Check if player owns all cards in deck
-	local collection = PlayerDataService.GetCollection(player)
-	if collection then
-		for _, cardId in ipairs(profile.deck) do
-			local count = collection[cardId] or 0
-			if count < 1 then
-				return false, "INVALID_DECK", "Player does not own card: " .. cardId
-			end
-		end
-	end
+	LogInfo(player, "Deck validation passed, returning profile")
 	
-	return true, profile.deck
+	-- v2: No collection ownership validation - deck composition is independent of ownership
+	
+	return true, profile.deck, profile
 end
 
 local function CreateCompactLog(battleResult)
@@ -450,15 +448,27 @@ function MatchService.ExecuteMatch(player, requestData)
 	end
 	
 	-- Validate and load player deck
-	local deckValid, deckOrError, deckErrorMessage = ValidatePlayerDeck(player)
+	local deckValid, deckOrError, playerProfile = ValidatePlayerDeck(player)
+	LogInfo(player, "ValidatePlayerDeck returned: valid=%s, deck=%s, profile=%s", 
+		tostring(deckValid), tostring(type(deckOrError)), tostring(type(playerProfile)))
+	
+	-- Debug: Check what we actually got
+	if deckValid then
+		LogInfo(player, "Success case: deckValid=%s, deckOrError=%s, playerProfile=%s", 
+			tostring(deckValid), tostring(type(deckOrError)), tostring(type(playerProfile)))
+	else
+		LogInfo(player, "Error case: deckValid=%s, deckOrError=%s, playerProfile=%s", 
+			tostring(deckValid), tostring(deckOrError), tostring(type(playerProfile)))
+	end
+	
 	if not deckValid then
-		LogWarning(player, "Deck validation failed: %s", deckErrorMessage)
+		LogWarning(player, "Deck validation failed: %s", deckOrError)
 		CleanupPlayerState(player)
 		return {
 			ok = false,
 			error = {
-				code = deckOrError,
-				message = deckErrorMessage
+				code = "DECK_VALIDATION_FAILED",
+				message = deckOrError
 			}
 		}
 	end
@@ -482,9 +492,30 @@ function MatchService.ExecuteMatch(player, requestData)
 		task.wait(TEST_BUSY_DELAY_SEC)
 	end
 	
-	-- Execute battle
+	-- Execute battle with collections for proper level computation
+	if not playerProfile then
+		LogError(player, "Player profile is nil - this should not happen")
+		CleanupPlayerState(player)
+		return {
+			ok = false,
+			error = {
+				code = "INTERNAL",
+				message = "Player profile not available"
+			}
+		}
+	end
+	
+	LogInfo(player, "Player profile collection: %s", playerProfile.collection and "present" or "nil")
+	if playerProfile.collection then
+		local count = 0
+		for _ in pairs(playerProfile.collection) do
+			count = count + 1
+		end
+		LogInfo(player, "Collection size: %d cards", count)
+	end
+	
 	local success, battleResult = pcall(function()
-		return CombatEngine.ExecuteBattle(playerDeck, opponentDeck, serverSeed)
+		return CombatEngine.ExecuteBattle(playerDeck, opponentDeck, serverSeed, playerProfile.collection, nil)
 	end)
 	
 	if not success then

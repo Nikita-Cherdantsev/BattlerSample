@@ -2,18 +2,76 @@ local CombatUtils = {}
 
 local CombatTypes = require(script.Parent.CombatTypes)
 
--- Calculate damage with armor reduction
-function CombatUtils.CalculateDamage(baseDamage, targetArmor)
+-- Calculate damage with 50% defence soak model
+-- While defence > 0: soak = floor(0.5 * damage), defence -= soak, hp -= (damage - soak)
+-- If defence == 0: apply 100% damage to hp
+function CombatUtils.CalculateDamage(baseDamage, targetDefence)
 	if not baseDamage or baseDamage <= 0 then
 		return 0
 	end
 	
-	-- Simple armor formula: damage = baseDamage * (100 / (100 + armor))
-	local armorMultiplier = 100 / (100 + (targetArmor or 0))
-	local finalDamage = math.floor(baseDamage * armorMultiplier)
+	-- If no defence, apply full damage to hp
+	if not targetDefence or targetDefence <= 0 then
+		return baseDamage
+	end
 	
-	-- Ensure minimum damage of 1
-	return math.max(1, finalDamage)
+	-- Calculate soak amount (50% of incoming damage)
+	local soak = math.floor(0.5 * baseDamage)
+	
+	-- Determine actual soak (limited by available defence)
+	local actualSoak = math.min(soak, targetDefence)
+	
+	-- Calculate damage to hp (remaining damage after soak)
+	local damageToHp = baseDamage - actualSoak
+	
+	return damageToHp
+end
+
+-- Apply damage with defence soak model
+-- Returns: { damageToHp, defenceReduced }
+function CombatUtils.ApplyDamageWithDefence(unit, damage)
+	if not unit or not damage or damage <= 0 then
+		return { damageToHp = 0, defenceReduced = 0 }
+	end
+	
+	local damageToHp = 0
+	local defenceReduced = 0
+	
+	-- If unit has defence, apply soak model
+	if unit.stats.defence and unit.stats.defence > 0 then
+		local soak = math.floor(0.5 * damage)
+		defenceReduced = math.min(soak, unit.stats.defence)
+		unit.stats.defence = unit.stats.defence - defenceReduced
+		damageToHp = damage - defenceReduced
+	else
+		-- No defence, apply full damage to hp
+		damageToHp = damage
+	end
+	
+	-- Apply damage to hp
+	local actualDamage = math.min(unit.stats.health, damageToHp)
+	unit.stats.health = unit.stats.health - actualDamage
+	
+	-- Check if unit died
+	if unit.stats.health <= 0 then
+		unit.stats.health = 0
+		unit.state = CombatTypes.UnitState.DEAD
+	end
+	
+	return { damageToHp = actualDamage, defenceReduced = defenceReduced }
+end
+
+-- Legacy function for backward compatibility (now uses defence soak)
+function CombatUtils.CalculateDamageLegacy(baseDamage, targetArmor)
+	-- Note: This function now uses defence instead of armor
+	-- The old armor parameter is treated as defence
+	return CombatUtils.CalculateDamage(baseDamage, targetArmor)
+end
+
+-- Legacy function for backward compatibility (now uses defence soak)
+function CombatUtils.ApplyDamage(unit, damage)
+	local result = CombatUtils.ApplyDamageWithDefence(unit, damage)
+	return result.damageToHp
 end
 
 -- Calculate healing with potential buffs/debuffs
@@ -123,25 +181,6 @@ function CombatUtils.FindValidTargets(board, sourceSlot, targetType, actionType)
 	return validTargets
 end
 
--- Apply damage to a unit
-function CombatUtils.ApplyDamage(unit, damage)
-	if not unit or not damage or damage <= 0 then
-		return 0
-	end
-	
-	-- Apply damage
-	local actualDamage = math.min(unit.stats.health, damage)
-	unit.stats.health = unit.stats.health - actualDamage
-	
-	-- Check if unit died
-	if unit.stats.health <= 0 then
-		unit.stats.health = 0
-		unit.state = CombatTypes.UnitState.DEAD
-	end
-	
-	return actualDamage
-end
-
 -- Apply healing to a unit
 function CombatUtils.ApplyHealing(unit, healing)
 	if not unit or not healing or healing <= 0 then
@@ -214,24 +253,25 @@ function CombatUtils.ProcessStatusEffects(unit)
 	end
 end
 
--- Calculate turn order based on unit speed
+-- Calculate turn order based on fixed slot order (1-6)
+-- Note: MVP uses fixed turn order, speed is deprecated
 function CombatUtils.CalculateTurnOrder(board)
 	local units = {}
 	
-	-- Collect all units with their speed
-	for slotIndex, unit in pairs(board) do
-		if unit.state ~= CombatTypes.UnitState.DEAD then
+	-- Collect all units in slot order
+	for slotIndex = 1, 6 do
+		local unit = board[slotIndex]
+		if unit and unit.state ~= CombatTypes.UnitState.DEAD then
 			table.insert(units, {
 				slotIndex = slotIndex,
-				speed = unit.stats.speed or 0,
 				unit = unit
 			})
 		end
 	end
 	
-	-- Sort by speed (highest first)
+	-- Sort by slot index (1-6 order)
 	table.sort(units, function(a, b)
-		return a.speed > b.speed
+		return a.slotIndex < b.slotIndex
 	end)
 	
 	-- Assign turn order

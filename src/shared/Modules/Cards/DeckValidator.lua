@@ -8,8 +8,9 @@ DeckValidator.BOARD_HEIGHT = 2
 DeckValidator.TOTAL_SLOTS = DeckValidator.BOARD_WIDTH * DeckValidator.BOARD_HEIGHT
 
 -- Board slot indexing (1-based for consistency)
--- [1] [2] [3]
--- [4] [5] [6]
+-- Visual layout: [5] [3] [1]
+--                [6] [4] [2]
+-- Slots are assigned by slotNumber order: lowest slotNumber → slot 1, highest → slot 6
 DeckValidator.BoardSlots = {
 	TOP_LEFT = 1,
 	TOP_CENTER = 2,
@@ -23,17 +24,19 @@ DeckValidator.BoardSlots = {
 DeckValidator.Errors = {
 	INVALID_SIZE = "Deck must contain exactly 6 cards",
 	UNKNOWN_CARD = "Card ID not found in catalog: %s",
-	INVALID_CARD_ID = "Invalid card ID format: %s"
+	INVALID_CARD_ID = "Invalid card ID format: %s",
+	DUPLICATE_CARD = "Duplicate card ID in deck: %s"
 }
 
--- Validate deck composition
+-- Validate deck composition (v2 rules)
 function DeckValidator.ValidateDeck(deck)
 	-- Check deck size
 	if not deck or #deck ~= DeckValidator.TOTAL_SLOTS then
 		return false, DeckValidator.Errors.INVALID_SIZE
 	end
 	
-	-- Validate each card ID
+	-- Check for duplicates and validate each card ID
+	local seenCards = {}
 	for i, cardId in ipairs(deck) do
 		if type(cardId) ~= "string" or cardId == "" then
 			return false, string.format(DeckValidator.Errors.INVALID_CARD_ID, tostring(cardId))
@@ -42,30 +45,50 @@ function DeckValidator.ValidateDeck(deck)
 		if not CardCatalog.IsValidCardId(cardId) then
 			return false, string.format(DeckValidator.Errors.UNKNOWN_CARD, cardId)
 		end
+		
+		-- Check for duplicates
+		if seenCards[cardId] then
+			return false, string.format(DeckValidator.Errors.DUPLICATE_CARD, cardId)
+		end
+		seenCards[cardId] = true
 	end
 	
 	return true, nil
 end
 
--- Map validated deck to board layout
+-- Map validated deck to board layout by slotNumber order
 function DeckValidator.MapDeckToBoard(deck)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
 	if not isValid then
 		error("Cannot map invalid deck: " .. errorMessage)
 	end
 	
-	local board = {}
-	
-	-- Map deck array to board slots (1-based indexing)
-	for i = 1, #deck do
-		local slotIndex = i -- Keep 1-based indexing
-		local cardId = deck[i]
+	-- Create array of card data with slotNumber for sorting
+	local cardData = {}
+	for i, cardId in ipairs(deck) do
 		local card = CardCatalog.GetCard(cardId)
+		table.insert(cardData, {
+			cardId = cardId,
+			card = card,
+			slotNumber = card.slotNumber
+		})
+	end
+	
+	-- Sort by slotNumber (ascending)
+	table.sort(cardData, function(a, b)
+		return a.slotNumber < b.slotNumber
+	end)
+	
+	-- Map to board slots 1-6
+	local board = {}
+	for i = 1, #cardData do
+		local slotIndex = i  -- 1-based indexing
+		local data = cardData[i]
 		
 		board[slotIndex] = {
 			slotIndex = slotIndex,
-			cardId = cardId,
-			card = card,
+			cardId = data.cardId,
+			card = data.card,
 			position = {
 				row = math.floor((slotIndex - 1) / DeckValidator.BOARD_WIDTH),
 				col = (slotIndex - 1) % DeckValidator.BOARD_WIDTH

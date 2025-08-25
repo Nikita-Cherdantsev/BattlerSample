@@ -115,8 +115,8 @@ local function TestRequestSetDeckValid()
 	testResults.lastSuccess = nil
 	isTestComplete = false
 	
-	-- Valid deck (using cards that should exist in default collection)
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
+	-- Valid deck (using cards that should exist in default collection, no duplicates)
+	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
 	
 	-- Send deck update request
 	RequestSetDeck:FireServer({deck = validDeck})

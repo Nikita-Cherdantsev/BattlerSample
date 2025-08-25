@@ -98,7 +98,8 @@ local function PrintProfile(profileData)
 		print("Sample Cards:")
 		for i = 1, math.min(5, #profileData.collectionSummary) do
 			local card = profileData.collectionSummary[i]
-			print(string.format("  %s: %d copies", card.cardId, card.count))
+			local levelText = card.level and string.format(" (L%d)", card.level) or ""
+			print(string.format("  %s: %d copies%s", card.cardId, card.count, levelText))
 		end
 	end
 	

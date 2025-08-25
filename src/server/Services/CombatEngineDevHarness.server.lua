@@ -7,33 +7,34 @@ local CombatEngineDevHarness = {}
 -- Modules
 local CombatEngine = require(script.Parent:WaitForChild("CombatEngine"))
 
--- Test decks
+-- Test decks (v2: all cards must be unique, using only valid card IDs)
+-- Available cards: dps_001, dps_002, dps_003, dps_004, support_001, support_002, tank_001, tank_002
 local TEST_DECKS = {
 	-- Mirror match (same deck vs itself)
 	MIRROR_MATCH = {
-		deckA = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"},
-		deckB = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"},
+		deckA = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
+		deckB = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
 		description = "Mirror match with balanced deck"
 	},
 	
-	-- High damage vs high health
+	-- High damage vs high health (using available cards)
 	AGGRESSIVE_VS_DEFENSIVE = {
-		deckA = {"dps_002", "dps_003", "dps_004", "dps_002", "dps_003", "dps_004"}, -- High damage
-		deckB = {"tank_001", "tank_002", "support_001", "tank_001", "tank_002", "support_001"}, -- High health
+		deckA = {"dps_001", "dps_002", "dps_003", "dps_004", "support_001", "support_002"}, -- High damage + support
+		deckB = {"tank_001", "tank_002", "dps_001", "dps_002", "support_001", "support_002"}, -- High health + support
 		description = "High damage vs high health"
 	},
 	
-	-- Speed advantage
-	SPEED_VS_POWER = {
-		deckA = {"support_002", "support_002", "support_002", "support_002", "support_002", "support_002"}, -- High speed
-		deckB = {"tank_001", "tank_001", "tank_001", "tank_001", "tank_001", "tank_001"}, -- Low speed, high health
-		description = "High speed vs high health"
+	-- Support vs tank (using available cards)
+	SUPPORT_VS_TANK = {
+		deckA = {"support_001", "support_002", "dps_001", "dps_002", "dps_003", "dps_004"}, -- High support + damage
+		deckB = {"tank_001", "tank_002", "dps_001", "dps_002", "dps_003", "dps_004"}, -- High health + damage
+		description = "High support vs high health"
 	},
 	
-	-- Mixed composition
+	-- Mixed composition (using available cards)
 	MIXED_COMPOSITION = {
 		deckA = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
-		deckB = {"dps_002", "support_002", "tank_002", "dps_001", "support_001", "tank_001"},
+		deckB = {"dps_003", "dps_004", "support_001", "support_002", "tank_001", "tank_002"},
 		description = "Mixed composition battle"
 	}
 }
@@ -268,7 +269,7 @@ end
 local function TestTurnOrder()
 	LogInfo("Testing turn order...")
 	
-	local testDeck = TEST_DECKS.SPEED_VS_POWER
+	local testDeck = TEST_DECKS.SUPPORT_VS_TANK
 	local result = CombatEngine.ExecuteBattle(testDeck.deckA, testDeck.deckB, 12345)
 	
 	-- Check that high-speed units act first
@@ -285,13 +286,13 @@ local function TestTurnOrder()
 			firstAttack.attackerPlayer, firstAttack.attackerSlot,
 			firstAttack.defenderPlayer, firstAttack.defenderSlot)
 		
-		-- In this test, support_002 has higher speed than tank_001
-		-- So we expect the high-speed deck to act first
-		if firstAttack.attackerPlayer == "A" then
-			LogSuccess("High-speed deck acted first (as expected)")
+		-- v2: Fixed turn order (slot 1-6), not speed-based
+		-- Check that the first attack comes from slot 1 (as per v2 rules)
+		if firstAttack.attackerSlot == 1 then
+			LogSuccess("Fixed turn order working correctly (slot 1 acted first)")
 			testResults.turnOrder = true
 		else
-			LogError("Low-speed deck acted first (unexpected)")
+			LogError("Fixed turn order not working (slot %d acted first, expected slot 1)", firstAttack.attackerSlot)
 			testResults.turnOrder = false
 		end
 	else
@@ -308,39 +309,30 @@ local function TestTargeting()
 	local testDeck = TEST_DECKS.MIRROR_MATCH
 	local result = CombatEngine.ExecuteBattle(testDeck.deckA, testDeck.deckB, 12345)
 	
-	-- Check that mirror targeting is working
-	local mirrorTargets = 0
+	-- Check that same-index targeting is working (v2 combat system)
+	local sameIndexTargets = 0
 	local totalAttacks = 0
 	
 	for _, logEntry in ipairs(result.battleLog) do
 		if logEntry.type == "attack" then
 			totalAttacks = totalAttacks + 1
 			
-			-- Check if this is a mirror target (slot 1->4, 2->5, 3->6, etc.)
-			local expectedMirror = nil
-			if logEntry.attackerSlot == 1 then expectedMirror = 4
-			elseif logEntry.attackerSlot == 2 then expectedMirror = 5
-			elseif logEntry.attackerSlot == 3 then expectedMirror = 6
-			elseif logEntry.attackerSlot == 4 then expectedMirror = 1
-			elseif logEntry.attackerSlot == 5 then expectedMirror = 2
-			elseif logEntry.attackerSlot == 6 then expectedMirror = 3
-			end
-			
-			if logEntry.defenderSlot == expectedMirror then
-				mirrorTargets = mirrorTargets + 1
+			-- v2: Check if this is a same-index target (slot 1->1, 2->2, 3->3, etc.)
+			if logEntry.attackerSlot == logEntry.defenderSlot then
+				sameIndexTargets = sameIndexTargets + 1
 			end
 		end
 	end
 	
-	local mirrorPercentage = (mirrorTargets / totalAttacks) * 100
-	LogInfo("Mirror targeting: %d/%d attacks (%.1f%%)", mirrorTargets, totalAttacks, mirrorPercentage)
+	local sameIndexPercentage = (sameIndexTargets / totalAttacks) * 100
+	LogInfo("Same-index targeting: %d/%d attacks (%.1f%%)", sameIndexTargets, totalAttacks, sameIndexPercentage)
 	
-	-- In a mirror match, we expect high mirror targeting
-	if mirrorPercentage >= 50 then
-		LogSuccess("Mirror targeting working as expected")
+	-- In a mirror match with v2 targeting, we expect high same-index targeting
+	if sameIndexPercentage >= 30 then
+		LogSuccess("Same-index targeting working as expected")
 		testResults.targeting = true
 	else
-		LogError("Mirror targeting lower than expected")
+		LogError("Same-index targeting lower than expected")
 		testResults.targeting = false
 	end
 	

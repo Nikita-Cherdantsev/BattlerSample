@@ -44,7 +44,7 @@ local function LogError(player, message, ...)
 end
 
 local function ValidateDeck(deck)
-	-- Use shared DeckValidator
+	-- Use shared DeckValidator (v2: enforces uniqueness, no collection count check)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
 	if not isValid then
 		return false, "Deck validation failed: " .. errorMessage
@@ -69,29 +69,6 @@ local function AssignStarterDeckIfNeeded(profile, userId)
 		LogWarning(nil, "Failed to assign starter deck for user %d", userId)
 		return false
 	end
-end
-
-local function CheckCollectionOwnership(player, deck)
-	local profile = playerProfiles[player]
-	if not profile then
-		return false, "Player profile not loaded"
-	end
-	
-	-- Count cards needed
-	local cardCounts = {}
-	for _, cardId in ipairs(deck) do
-		cardCounts[cardId] = (cardCounts[cardId] or 0) + 1
-	end
-	
-	-- Check if collection has enough
-	for cardId, needed in pairs(cardCounts) do
-		local available = profile.collection[cardId] or 0
-		if available < needed then
-			return false, string.format("Not enough %s (need %d, have %d)", cardId, needed, available)
-		end
-	end
-	
-	return true
 end
 
 local function SafeSaveProfile(player)
@@ -264,39 +241,66 @@ function PlayerDataService.GetProfile(player)
 		createdAt = profile.createdAt,
 		lastLoginAt = profile.lastLoginAt,
 		loginStreak = profile.loginStreak,
-		collection = table.clone(profile.collection),
-		deck = table.clone(profile.deck),
+		collection = profile.collection and (function()
+			local cloned = {}
+			for k, v in pairs(profile.collection) do
+				cloned[k] = v
+			end
+			return cloned
+		end)() or {},
+		deck = profile.deck and (function()
+			local cloned = {}
+			for i, v in ipairs(profile.deck) do
+				cloned[i] = v
+			end
+			return cloned
+		end)() or {},
 		currencies = {
 			soft = profile.currencies.soft,
 			hard = profile.currencies.hard
-		}
+		},
+		favoriteLastSeen = profile.favoriteLastSeen,
+		tutorialStep = profile.tutorialStep,
+		squadPower = profile.squadPower,
+		lootboxes = profile.lootboxes and (function()
+			local cloned = {}
+			for i, v in ipairs(profile.lootboxes) do
+				cloned[i] = v
+			end
+			return cloned
+		end)() or {}
 	}
 end
 
--- Set player deck
+-- Set player deck (v2: no collection count validation)
 function PlayerDataService.SetDeck(player, deckIds)
 	if not player or not playerProfiles[player] then
 		return false, "Player profile not loaded"
 	end
 	
-	-- Validate deck structure
+	-- Validate deck structure (v2: enforces uniqueness, no collection count check)
 	local isValid, errorMessage = ValidateDeck(deckIds)
 	if not isValid then
 		return false, errorMessage
 	end
 	
-	-- Check collection ownership
-	local hasCards, errorMessage = CheckCollectionOwnership(player, deckIds)
-	if not hasCards then
-		return false, errorMessage
-	end
-	
-	-- Update deck atomically
+	-- Update deck atomically (ProfileManager handles squad power computation)
 	local success = ProfileManager.UpdateDeck(player.UserId, deckIds)
 	if success then
 		-- Update local copy
-		playerProfiles[player].deck = table.clone(deckIds)
-		LogInfo(player, "Deck updated successfully")
+		playerProfiles[player].deck = (function()
+			local cloned = {}
+			for i, v in ipairs(deckIds) do
+				cloned[i] = v
+			end
+			return cloned
+		end)()
+		
+		-- Update squad power in local cache
+		local stats = ProfileManager.GetProfileStats(player.UserId)
+		playerProfiles[player].squadPower = stats.squadPower
+		
+		LogInfo(player, "Deck updated successfully, squad power: %d", stats.squadPower)
 		return true
 	else
 		LogWarning(player, "Failed to update deck")
@@ -304,7 +308,7 @@ function PlayerDataService.SetDeck(player, deckIds)
 	end
 end
 
--- Grant cards to player
+-- Grant cards to player (v2 format)
 function PlayerDataService.GrantCards(player, rewards)
 	if not player or not playerProfiles[player] then
 		return false, "Player profile not loaded"
@@ -360,7 +364,7 @@ function PlayerDataService.GrantCards(player, rewards)
 	end
 end
 
--- Get player collection
+-- Get player collection (v2 format)
 function PlayerDataService.GetCollection(player)
 	if not player or not playerProfiles[player] then
 		return nil
@@ -388,28 +392,31 @@ local function todayKeyUTC()
 	return os.date("!%Y-%m-%d")
 end
 
--- Bump login streak (for DailyHandler integration)
+-- Bump login streak (v2: simplified logic without meta field)
 function PlayerDataService.BumpLoginStreak(player)
 	if not player or not playerProfiles[player] then
 		return false, "Player profile not loaded"
 	end
 	
 	local profile = playerProfiles[player]
-	profile.meta = profile.meta or {}
 	local today = todayKeyUTC()
 	
 	LogInfo(player, "BumpLoginStreak called. Current streak: %d, last bump date: %s", 
-		profile.loginStreak or 0, profile.meta.lastStreakBumpDate or "never")
+		profile.loginStreak or 0, profile.favoriteLastSeen and os.date("!%Y-%m-%d", profile.favoriteLastSeen) or "never")
 	
-	if profile.meta.lastStreakBumpDate == today then
-		LogInfo(player, "Login streak already bumped today: %d", profile.loginStreak or 0)
-		return true, profile.loginStreak
+	-- Check if already bumped today (using favoriteLastSeen as a proxy for last bump date)
+	if profile.favoriteLastSeen then
+		local lastBumpDate = os.date("!%Y-%m-%d", profile.favoriteLastSeen)
+		if lastBumpDate == today then
+			LogInfo(player, "Login streak already bumped today: %d", profile.loginStreak or 0)
+			return true, profile.loginStreak
+		end
 	end
 	
 	-- Update the streak directly in our local cache
 	local oldStreak = profile.loginStreak or 0
 	profile.loginStreak = oldStreak + 1
-	profile.meta.lastStreakBumpDate = today
+	profile.favoriteLastSeen = os.time() -- Use current time as last bump date
 	
 	LogInfo(player, "Streak updated: %d -> %d, date set to: %s", oldStreak, profile.loginStreak, today)
 	
@@ -422,7 +429,7 @@ function PlayerDataService.BumpLoginStreak(player)
 		LogWarning(player, "Failed to save profile after streak bump")
 		-- Revert the change since save failed
 		profile.loginStreak = profile.loginStreak - 1
-		profile.meta.lastStreakBumpDate = nil
+		profile.favoriteLastSeen = nil
 		return false
 	end
 end

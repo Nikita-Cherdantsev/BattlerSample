@@ -12,10 +12,25 @@
       },
       "Modules": {
         "$className": "Folder",
+        "Assets": {
+          "$className": "Folder",
+          "Manifest": {
+            "$path": "src/shared/Modules/Assets/Manifest.lua"
+          },
+          "Resolver": {
+            "$path": "src/shared/Modules/Assets/Resolver.lua"
+          }
+        },
         "Cards": {
           "$className": "Folder",
           "CardCatalog": {
             "$path": "src/shared/Modules/Cards/CardCatalog.lua"
+          },
+          "CardLevels": {
+            "$path": "src/shared/Modules/Cards/CardLevels.lua"
+          },
+          "CardStats": {
+            "$path": "src/shared/Modules/Cards/CardStats.lua"
           },
           "DeckValidator": {
             "$path": "src/shared/Modules/Cards/DeckValidator.lua"
@@ -81,8 +96,32 @@
             "$path": "src/shared/Modules/UtilitiesModuleScripts/Typewrite.lua"
           }
         },
+        "ViewModels": {
+          "$className": "Folder",
+          "CardVM": {
+            "$path": "src/shared/Modules/ViewModels/CardVM.lua"
+          },
+          "DeckVM": {
+            "$path": "src/shared/Modules/ViewModels/DeckVM.lua"
+          },
+          "ProfileVM": {
+            "$path": "src/shared/Modules/ViewModels/ProfileVM.lua"
+          }
+        },
+        "BoardLayout": {
+          "$path": "src/shared/Modules/BoardLayout.lua"
+        },
+        "ErrorMap": {
+          "$path": "src/shared/Modules/ErrorMap.lua"
+        },
         "SelfCheck" : {
           "$path": "src/shared/Modules/SelfCheck.lua"
+        },
+        "TimeUtils": {
+          "$path": "src/shared/Modules/TimeUtils.lua"
+        },
+        "Types": {
+          "$path": "src/shared/Modules/Types.lua"
         }
       },
       "TestRunner": {
@@ -109,7 +148,7 @@
         "DevHarness": {
           "$path": "src/server/Persistence/DevHarness.server.lua",
           "$properties": {
-            "Enabled": false
+            "Enabled": true
           }
         },
         "ProfileManager": {
@@ -127,7 +166,7 @@
         "CombatEngineDevHarness": {
           "$path": "src/server/Services/CombatEngineDevHarness.server.lua",
           "$properties": {
-            "Enabled": false
+            "Enabled": true
           }
         },
         "MatchService": {
@@ -136,7 +175,7 @@
         "MatchServiceDevHarness": {
           "$path": "src/server/Services/MatchServiceDevHarness.server.lua",
           "$properties": {
-            "Enabled": false
+            "Enabled": true
           }
         }, 
         "PlayerDataService": {
@@ -145,7 +184,7 @@
         "PlayerDataServiceDevHarness": {
           "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua",
           "$properties": {
-            "Enabled": false
+            "Enabled": true
           }
         }
       }
@@ -155,10 +194,43 @@
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
+        "Controllers": {
+          "$className": "Folder",
+          "NetworkClient": {
+            "$path": "src/client/Controllers/NetworkClient.client.lua"
+          }
+        },
+        "Dev": {
+          "$className": "Folder",
+          "DevPanel": {
+            "$path": "src/client/Dev/DevPanel.client.lua"
+          },
+          "MockData": {
+            "$path": "src/client/Dev/MockData.lua"
+          },
+          "MockNetwork": {
+            "$path": "src/client/Dev/MockNetwork.lua"
+          },
+          "VMHarness": {
+            "$path": "src/client/Dev/VMHarness.client.lua"
+          }
+        },
+        "State": {
+          "$className": "Folder",
+          "ClientState": {
+            "$path": "src/client/State/ClientState.client.lua"
+          },
+          "selectors": {
+            "$path": "src/client/State/selectors.lua"
+          }
+        },
+        "Config": {
+          "$path": "src/client/Config.lua"
+        },
         "MatchTestHarness": {
           "$path": "src/client/MatchTestHarness.client.lua",
           "$properties": {
-            "Enabled": true
+            "Enabled": false
           }
         },
         "NetworkTest": {

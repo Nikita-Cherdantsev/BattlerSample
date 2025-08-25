@@ -65,8 +65,11 @@ local function PrintProfile(profile, label)
 	
 	print("\n📚 Collection:")
 	if next(profile.collection) then
-		for cardId, count in pairs(profile.collection) do
-			print("  " .. cardId .. ": " .. count)
+		for cardId, entry in pairs(profile.collection) do
+			-- Handle v2 format: {count, level}
+			local count = type(entry) == "table" and entry.count or entry
+			local level = type(entry) == "table" and entry.level or 1
+			print("  " .. cardId .. ": " .. count .. " (L" .. level .. ")")
 		end
 	else
 		print("  (empty)")
@@ -158,10 +161,13 @@ local function TestProfileCreation()
 		LogInfo("  Deck size: %d", #profile.deck)
 		LogInfo("  Login streak: %d", profile.loginStreak or 0)
 		
-		-- Debug: Show what's actually in the collection
+		-- Debug: Show what's actually in the collection (v2 format)
 		LogInfo("  Starter collection contents:")
-		for cardId, count in pairs(profile.collection) do
-			LogInfo("    %s: %d", cardId, count)
+		for cardId, entry in pairs(profile.collection) do
+			-- Handle v2 format: {count, level}
+			local count = type(entry) == "table" and entry.count or entry
+			local level = type(entry) == "table" and entry.level or 1
+			LogInfo("    %s: %d (L%d)", cardId, count, level)
 		end
 		
 		PrintProfile(profile, "Created Profile")
@@ -189,9 +195,12 @@ local function TestProfileAPI()
 	testBaseline.softCurrency = profile.currencies.soft
 	testBaseline.loginStreak = profile.loginStreak
 	-- Store baseline for all cards that will be granted
-	testBaseline.dps002Count = profile.collection["dps_002"] or 0
-	testBaseline.support002Count = profile.collection["support_002"] or 0
-	testBaseline.tank002Count = profile.collection["tank_002"] or 0
+			local dps002Entry = profile.collection["dps_002"]
+		testBaseline.dps002Count = dps002Entry and dps002Entry.count or 0
+	local support002Entry = profile.collection["support_002"]
+	testBaseline.support002Count = support002Entry and support002Entry.count or 0
+	local tank002Entry = profile.collection["tank_002"]
+	testBaseline.tank002Count = tank002Entry and tank002Entry.count or 0
 	LogInfo("📊 Baseline values stored for delta checks")
 	
 	-- Test collection access
@@ -224,8 +233,8 @@ end
 local function TestDeckValidation()
 	LogInfo("🧪 Testing Deck Validation...")
 	
-	-- Test valid deck
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
+	-- Test valid deck (v2: no duplicates allowed)
+	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
 	LogInfo("Testing valid deck...")
 	WaitForBudget()
 	
@@ -251,7 +260,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Test invalid deck (unknown card)
-	local invalidDeck2 = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_001", "support_001"}
+	local invalidDeck2 = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_002", "support_002"}
 	LogInfo("Testing invalid deck (unknown card)...")
 	WaitForBudget()
 	
@@ -290,19 +299,21 @@ local function TestCardGranting()
 		return false
 	end
 	
-	-- Get current baseline from the fresh profile
+	-- Get current baseline from the fresh profile (v2 format)
 	local baselineCounts = {
-		["dps_002"] = profile.collection["dps_002"] or 0,
-		["support_002"] = profile.collection["support_002"] or 0,
-		["tank_002"] = profile.collection["tank_002"] or 0
+		["dps_002"] = (profile.collection["dps_002"] and profile.collection["dps_002"].count) or 0,
+		["support_002"] = (profile.collection["support_002"] and profile.collection["support_002"].count) or 0,
+		["tank_002"] = (profile.collection["tank_002"] and profile.collection["tank_002"].count) or 0
 	}
 	LogInfo("Baseline counts: dps_002=%d, support_002=%d, tank_002=%d", 
 		baselineCounts["dps_002"], baselineCounts["support_002"], baselineCounts["tank_002"])
 	
-	-- Debug: Show what's in the collection before granting
+	-- Debug: Show what's in the collection before granting (v2 format)
 	LogInfo("Collection before granting:")
-	for cardId, count in pairs(profile.collection) do
-		LogInfo("  %s: %d", cardId, count)
+	for cardId, entry in pairs(profile.collection) do
+		local count = type(entry) == "table" and entry.count or entry
+		local level = type(entry) == "table" and entry.level or 1
+		LogInfo("  %s: %d (L%d)", cardId, count, level)
 	end
 	
 	-- Grant some cards
@@ -322,11 +333,13 @@ local function TestCardGranting()
 			LogInfo("  %s: +%d", cardId, count)
 		end
 		
-		-- Debug: Show what's in the collection immediately after granting
+		-- Debug: Show what's in the collection immediately after granting (v2 format)
 		profile = PlayerDataService.GetProfile(MockPlayer)
 		LogInfo("Collection immediately after granting:")
-		for cardId, count in pairs(profile.collection) do
-			LogInfo("  %s: %d", cardId, count)
+		for cardId, entry in pairs(profile.collection) do
+			local count = type(entry) == "table" and entry.count or entry
+			local level = type(entry) == "table" and entry.level or 1
+			LogInfo("  %s: %d (L%d)", cardId, count, level)
 		end
 		
 		-- Force save and wait for persistence
@@ -337,18 +350,23 @@ local function TestCardGranting()
 		profile = PlayerDataService.GetProfile(MockPlayer)
 		local coll = profile.collection or {}
 		
-		-- Debug: Show what's in the collection after save
+		-- Debug: Show what's in the collection after save (v2 format)
 		LogInfo("Collection after save:")
-		for cardId, count in pairs(coll) do
-			LogInfo("  %s: %d", cardId, count)
+		for cardId, entry in pairs(coll) do
+			local count = type(entry) == "table" and entry.count or entry
+			local level = type(entry) == "table" and entry.level or 1
+			LogInfo("  %s: %d (L%d)", cardId, count, level)
 		end
 		
-		-- Verify collection was updated using delta assertions
+		-- Verify collection was updated using delta assertions (v2 format)
 		LogSuccess("Collection updated:")
 		local okAll = true
-		okAll = assertDelta("tank_002", 1, (coll["tank_002"] or 0), baselineCounts) and okAll
-		okAll = assertDelta("support_002", 1, (coll["support_002"] or 0), baselineCounts) and okAll
-		okAll = assertDelta("dps_002", 2, (coll["dps_002"] or 0), baselineCounts) and okAll
+		local tank002Count = (coll["tank_002"] and coll["tank_002"].count) or 0
+		local support002Count = (coll["support_002"] and coll["support_002"].count) or 0
+		local dps002Count = (coll["dps_002"] and coll["dps_002"].count) or 0
+		okAll = assertDelta("tank_002", 1, tank002Count, baselineCounts) and okAll
+		okAll = assertDelta("support_002", 1, support002Count, baselineCounts) and okAll
+		okAll = assertDelta("dps_002", 2, dps002Count, baselineCounts) and okAll
 		
 		if not okAll then
 			LogError("Some card count assertions failed")

@@ -7,22 +7,23 @@ local DataStoreService = game:GetService("DataStoreService")
 local DataStoreWrapper = require(script.Parent:WaitForChild("DataStoreWrapper"))
 local ProfileSchema = require(script.Parent:WaitForChild("ProfileSchema"))
 
--- Import shared modules for deck validation
+-- Import shared modules for deck validation and squad power computation
 local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
+local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 
 -- Configuration
 ProfileManager.DATASTORE_NAME = "anime_battler_profile"
-ProfileManager.KEY_PATTERN = "player_{userId}_v1"
+ProfileManager.KEY_PATTERN = "player_{userId}_v2"  -- Updated to v2
 
--- Safe default deck (using existing catalog IDs)
+-- Safe default deck (using existing catalog IDs, no duplicates)
 ProfileManager.DEFAULT_DECK = {
 	"dps_001",      -- Recruit Fighter
 	"support_001",  -- Novice Healer
 	"tank_001",     -- Iron Guard
-	"dps_001",      -- Recruit Fighter (duplicate)
-	"support_001",  -- Novice Healer (duplicate)
-	"tank_001"      -- Iron Guard (duplicate)
+	"dps_002",      -- Veteran Warrior
+	"support_002",  -- Battle Cleric
+	"tank_002"      -- Steel Defender
 }
 
 -- Cache for loaded profiles
@@ -43,12 +44,85 @@ local function IsProfileValid(profile)
 end
 
 local function ValidateDeckAgainstCatalog(deck)
-	-- Use shared DeckValidator
+	-- Use shared DeckValidator (v2: enforces uniqueness, no collection count check)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
 	if not isValid then
 		return false, "Deck validation failed: " .. errorMessage
 	end
 	return true
+end
+
+-- Compute squad power from deck and collection levels
+local function ComputeSquadPower(profile)
+	local totalPower = 0
+	
+	for _, cardId in ipairs(profile.deck) do
+		-- Get card level from collection (default to 1 if not found)
+		local cardEntry = profile.collection[cardId]
+		local level = cardEntry and cardEntry.level or 1
+		
+		-- Compute power for this card at its current level
+		local cardPower = CardStats.ComputeCardPower(cardId, level)
+		totalPower = totalPower + cardPower
+	end
+	
+	return totalPower
+end
+
+-- Migrate profile if needed
+local function MigrateProfileIfNeeded(profile)
+	-- Check if profile needs migration
+	-- Also check if it's already v2 format but missing version field
+	local needsMigration = not profile.version or profile.version == "v1"
+	
+	-- If no version but has v2 fields, it's already v2
+	if not profile.version and profile.collection then
+		local hasV2Format = false
+		for cardId, entry in pairs(profile.collection) do
+			if type(entry) == "table" and entry.count and entry.level then
+				hasV2Format = true
+				break
+			end
+		end
+		
+		if hasV2Format then
+			print("🔄 Profile missing version field but has v2 format, adding version")
+			profile.version = "v2"
+			return profile
+		end
+	end
+	
+	if needsMigration then
+		print("🔄 Migrating profile from v1 to v2")
+		
+		-- Debug: Log the original profile collection
+		if profile.collection then
+			print("Original collection:")
+			for cardId, count in pairs(profile.collection) do
+				print("  " .. cardId .. ": " .. tostring(count))
+			end
+		end
+		
+		local migratedProfile = ProfileSchema.MigrateV1ToV2(profile)
+		if migratedProfile then
+			migratedProfile.version = "v2"
+			
+			-- Debug: Log the migrated profile collection
+			if migratedProfile.collection then
+				print("Migrated collection:")
+				for cardId, entry in pairs(migratedProfile.collection) do
+					print("  " .. cardId .. ": count=" .. tostring(entry.count) .. ", level=" .. tostring(entry.level))
+				end
+			end
+			
+			return migratedProfile
+		else
+			warn("❌ Failed to migrate profile from v1 to v2")
+			return nil
+		end
+	end
+	
+	return profile
 end
 
 -- Public API
@@ -69,8 +143,16 @@ function ProfileManager.LoadProfile(userId)
 	end)
 	
 	if success and profile then
+		-- Migrate if needed
+		profile = MigrateProfileIfNeeded(profile)
+		
 		-- Validate loaded profile
-		if IsProfileValid(profile) then
+		if profile and IsProfileValid(profile) then
+			-- Compute squad power if not set
+			if profile.squadPower == 0 then
+				profile.squadPower = ComputeSquadPower(profile)
+			end
+			
 			profileCache[profileKey] = profile
 			print("✅ Loaded profile for user:", userId)
 			return profile
@@ -82,13 +164,16 @@ function ProfileManager.LoadProfile(userId)
 	-- Create new profile if loading failed or profile was invalid
 	local newProfile = ProfileSchema.CreateProfile(userId)
 	
-	-- Initialize with default deck and some starter cards
+	-- Initialize with default deck
 	newProfile.deck = ProfileManager.DEFAULT_DECK
 	
-	-- Add starter cards to collection
+	-- Add starter cards to collection (v2 format)
 	for _, cardId in ipairs(ProfileManager.DEFAULT_DECK) do
 		ProfileSchema.AddCardsToCollection(newProfile, cardId, 1)
 	end
+	
+	-- Compute initial squad power
+	newProfile.squadPower = ComputeSquadPower(newProfile)
 	
 	-- Validate the new profile
 	if not IsProfileValid(newProfile) then
@@ -147,7 +232,7 @@ function ProfileManager.GetCachedProfile(userId)
 	return profileCache[profileKey]
 end
 
--- Update deck with validation
+-- Update deck with validation (v2: no collection count validation)
 function ProfileManager.UpdateDeck(userId, newDeck)
 	userId = tostring(userId)
 	local profile = ProfileManager.GetCachedProfile(userId)
@@ -156,20 +241,17 @@ function ProfileManager.UpdateDeck(userId, newDeck)
 		return false, "Profile not loaded"
 	end
 	
-	-- Validate deck against catalog
+	-- Validate deck against catalog (v2: enforces uniqueness, no collection count check)
 	local isValid, errorMessage = ValidateDeckAgainstCatalog(newDeck)
 	if not isValid then
 		return false, errorMessage
 	end
 	
-	-- Check if player has the cards
-	local hasEnough, errorMessage = ProfileSchema.HasEnoughCardsForDeck(profile, newDeck)
-	if not hasEnough then
-		return false, errorMessage
-	end
-	
 	-- Update the deck
 	profile.deck = newDeck
+	
+	-- Compute and update squad power
+	profile.squadPower = ComputeSquadPower(profile)
 	
 	-- Save the profile
 	local saveSuccess = ProfileManager.SaveProfile(userId, profile)
@@ -180,7 +262,7 @@ function ProfileManager.UpdateDeck(userId, newDeck)
 	return true
 end
 
--- Add cards to collection
+-- Add cards to collection (v2 format)
 function ProfileManager.AddCardsToCollection(userId, cardId, count)
 	userId = tostring(userId)
 	local profile = ProfileManager.GetCachedProfile(userId)
@@ -209,7 +291,7 @@ function ProfileManager.AddCardsToCollection(userId, cardId, count)
 	return true
 end
 
--- Remove cards from collection
+-- Remove cards from collection (v2 format)
 function ProfileManager.RemoveCardsFromCollection(userId, cardId, count)
 	userId = tostring(userId)
 	local profile = ProfileManager.GetCachedProfile(userId)

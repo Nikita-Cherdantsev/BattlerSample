@@ -6,17 +6,10 @@ local SeededRNG = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitFor
 local CombatTypes = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Combat"):WaitForChild("CombatTypes"))
 local CombatUtils = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Combat"):WaitForChild("CombatUtils"))
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
+local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 
 -- Configuration
 local MAX_ROUNDS = 50 -- Hard cap to prevent infinite battles
-local MIRROR_SLOT_MAPPING = {
-	[1] = 4, -- Top-left -> Bottom-left
-	[2] = 5, -- Top-center -> Bottom-center  
-	[3] = 6, -- Top-right -> Bottom-right
-	[4] = 1, -- Bottom-left -> Top-left
-	[5] = 2, -- Bottom-center -> Top-center
-	[6] = 3  -- Bottom-right -> Top-right
-}
 
 -- Battle state
 local BattleState = {
@@ -40,11 +33,14 @@ local function LogWarning(message, ...)
 	warn(string.format("[CombatEngine] %s", formattedMessage))
 end
 
-local function CreateUnitFromCard(cardId, slotIndex, playerId)
+local function CreateUnitFromCard(cardId, slotIndex, playerId, level)
 	local card = CardCatalog.GetCard(cardId)
 	if not card then
 		error("Invalid card ID: " .. tostring(cardId))
 	end
+	
+	-- Compute stats for the card at the given level
+	local stats = CardStats.ComputeStats(cardId, level or 1)
 	
 	return {
 		slotIndex = slotIndex,
@@ -52,11 +48,10 @@ local function CreateUnitFromCard(cardId, slotIndex, playerId)
 		cardId = cardId,
 		card = card,
 		stats = {
-			attack = card.baseStats.attack,
-			health = card.baseStats.health,
-			maxHealth = card.baseStats.health,
-			speed = card.baseStats.speed,
-			armor = 0
+			attack = stats.atk,
+			health = stats.hp,
+			maxHealth = stats.hp,
+			defence = stats.defence
 		},
 		state = CombatTypes.UnitState.ALIVE,
 		statusEffects = {},
@@ -65,7 +60,7 @@ local function CreateUnitFromCard(cardId, slotIndex, playerId)
 	}
 end
 
-local function InitializeBoard(deck, playerId)
+local function InitializeBoard(deck, playerId, collection)
 	local board = {}
 	
 	-- Validate deck and map to board
@@ -76,9 +71,11 @@ local function InitializeBoard(deck, playerId)
 	
 	local boardMapping = DeckValidator.MapDeckToBoard(deck)
 	
-	-- Create units from board mapping
+	-- Create units from board mapping with levels from collection
 	for slotIndex, slotData in pairs(boardMapping) do
-		board[slotIndex] = CreateUnitFromCard(slotData.cardId, slotIndex, playerId)
+		local cardEntry = collection and collection[slotData.cardId]
+		local level = cardEntry and cardEntry.level or 1
+		board[slotIndex] = CreateUnitFromCard(slotData.cardId, slotIndex, playerId, level)
 	end
 	
 	return board
@@ -94,29 +91,26 @@ local function GetAliveUnits(board)
 	return aliveUnits
 end
 
+-- Fixed turn order: 1, 2, 3, 4, 5, 6 (v2 combat rules)
 local function CalculateTurnOrder(boardA, boardB)
 	local allUnits = {}
 	
-	-- Collect all alive units from both boards
-	for slotIndex, unit in pairs(boardA) do
-		if unit.state == CombatTypes.UnitState.ALIVE then
-			table.insert(allUnits, unit)
+	-- Collect all alive units from both boards in slot order
+	for slotIndex = 1, 6 do
+		local unitA = boardA[slotIndex]
+		if unitA and unitA.state == CombatTypes.UnitState.ALIVE then
+			table.insert(allUnits, unitA)
+		end
+		
+		local unitB = boardB[slotIndex]
+		if unitB and unitB.state == CombatTypes.UnitState.ALIVE then
+			table.insert(allUnits, unitB)
 		end
 	end
 	
-	for slotIndex, unit in pairs(boardB) do
-		if unit.state == CombatTypes.UnitState.ALIVE then
-			table.insert(allUnits, unit)
-		end
-	end
-	
-	-- Sort by speed (highest first), then by slot index for deterministic tie-breaking
+	-- Sort by slot index (1-6 order)
 	table.sort(allUnits, function(a, b)
-		if a.stats.speed ~= b.stats.speed then
-			return a.stats.speed > b.stats.speed
-		else
-			return a.slotIndex < b.slotIndex
-		end
+		return a.slotIndex < b.slotIndex
 	end)
 	
 	-- Assign turn order
@@ -127,18 +121,17 @@ local function CalculateTurnOrder(boardA, boardB)
 	return allUnits
 end
 
+-- Find target using same-index targeting (v2 combat rules)
 local function FindTarget(attacker, boardA, boardB)
 	local targetBoard = (attacker.playerId == "A") and boardB or boardA
 	
-	-- Try mirror targeting first
-	local mirrorSlot = MIRROR_SLOT_MAPPING[attacker.slotIndex]
-	local mirrorUnit = targetBoard[mirrorSlot]
-	
-	if mirrorUnit and mirrorUnit.state == CombatTypes.UnitState.ALIVE then
-		return mirrorUnit
+	-- Primary target: same slot index on enemy board
+	local sameSlotUnit = targetBoard[attacker.slotIndex]
+	if sameSlotUnit and sameSlotUnit.state == CombatTypes.UnitState.ALIVE then
+		return sameSlotUnit
 	end
 	
-	-- Find nearest living enemy by slot distance
+	-- Find nearest living enemy by absolute index distance
 	local nearestUnit = nil
 	local nearestDistance = math.huge
 	
@@ -170,6 +163,7 @@ local function ApplyPassiveEffects(unit, effectType, context)
 	return context
 end
 
+-- Calculate damage with 50% defence soak model (v2 combat rules)
 local function CalculateDamage(attacker, defender)
 	-- Apply pre-attack effects
 	local attackContext = {
@@ -179,8 +173,8 @@ local function CalculateDamage(attacker, defender)
 	}
 	attackContext = ApplyPassiveEffects(attacker, "pre_attack", attackContext)
 	
-	-- Calculate final damage
-	local finalDamage = CombatUtils.CalculateDamage(attackContext.damage, defender.stats.armor)
+	-- Calculate final damage using defence soak model
+	local finalDamage = CombatUtils.CalculateDamage(attackContext.damage, defender.stats.defence)
 	
 	-- Apply on-hit effects
 	local hitContext = {
@@ -193,6 +187,7 @@ local function CalculateDamage(attacker, defender)
 	return hitContext.damage
 end
 
+-- Execute attack with defence soak model
 local function ExecuteAttack(attacker, defender, battleState)
 	-- Validate attack
 	if attacker.state ~= CombatTypes.UnitState.ALIVE then
@@ -213,8 +208,8 @@ local function ExecuteAttack(attacker, defender, battleState)
 	-- Calculate damage
 	local damage = CalculateDamage(attacker, defender)
 	
-	-- Apply damage
-	local actualDamage = CombatUtils.ApplyDamage(defender, damage)
+	-- Apply damage with defence soak model
+	local damageResult = CombatUtils.ApplyDamageWithDefence(defender, damage)
 	
 	-- Mark attacker as acted
 	attacker.hasActed = true
@@ -227,8 +222,10 @@ local function ExecuteAttack(attacker, defender, battleState)
 		attackerPlayer = attacker.playerId,
 		defenderSlot = defender.slotIndex,
 		defenderPlayer = defender.playerId,
-		damage = actualDamage,
+		damage = damageResult.damageToHp,
+		defenceReduced = damageResult.defenceReduced,
 		defenderHealth = defender.stats.health,
+		defenderDefence = defender.stats.defence,
 		defenderKO = (defender.state == CombatTypes.UnitState.DEAD)
 	}
 	
@@ -243,10 +240,10 @@ local function ExecuteAttack(attacker, defender, battleState)
 		ApplyPassiveEffects(attacker, "on_death", deathContext)
 	end
 	
-	LogInfo("Attack: %s slot %d → %s slot %d, damage: %d, KO: %s", 
+	LogInfo("Attack: %s slot %d → %s slot %d, damage: %d, defence reduced: %d, KO: %s", 
 		attacker.playerId, attacker.slotIndex, 
 		defender.playerId, defender.slotIndex, 
-		actualDamage, tostring(logEntry.defenderKO))
+		damageResult.damageToHp, damageResult.defenceReduced, tostring(logEntry.defenderKO))
 	
 	return true
 end
@@ -288,15 +285,15 @@ end
 -- Public API
 
 -- Execute a complete battle between two decks
-function CombatEngine.ExecuteBattle(deckA, deckB, seed)
+function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB)
 	LogInfo("Starting battle with seed: %s", tostring(seed))
 	
 	-- Initialize battle state
 	local battleState = {
 		round = 0,
 		winner = nil,
-		boardA = InitializeBoard(deckA, "A"),
-		boardB = InitializeBoard(deckB, "B"),
+		boardA = InitializeBoard(deckA, "A", collectionA),
+		boardB = InitializeBoard(deckB, "B", collectionB),
 		rng = SeededRNG.New(seed),
 		battleLog = {},
 		isComplete = false
@@ -316,7 +313,7 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed)
 		-- Process status effects at start of round
 		ProcessStatusEffects(battleState.boardA, battleState.boardB)
 		
-		-- Calculate turn order
+		-- Calculate turn order (fixed 1-6 order)
 		local turnOrder = CalculateTurnOrder(battleState.boardA, battleState.boardB)
 		
 		-- Execute turns
@@ -384,6 +381,7 @@ function CombatEngine.GetBattleStats(battleResult)
 		survivorsB = #battleResult.survivorsB,
 		totalActions = 0,
 		totalDamage = 0,
+		totalDefenceReduced = 0,
 		totalKOs = 0
 	}
 	
@@ -391,6 +389,7 @@ function CombatEngine.GetBattleStats(battleResult)
 		if logEntry.type == "attack" then
 			stats.totalActions = stats.totalActions + 1
 			stats.totalDamage = stats.totalDamage + logEntry.damage
+			stats.totalDefenceReduced = stats.totalDefenceReduced + (logEntry.defenceReduced or 0)
 			if logEntry.defenderKO then
 				stats.totalKOs = stats.totalKOs + 1
 			end

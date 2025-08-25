@@ -1,9 +1,17 @@
 local ProfileSchema = {}
 
 -- Profile version
-ProfileSchema.VERSION = "v1"
+ProfileSchema.VERSION = "v2"
 
--- Profile structure definition
+-- Lootbox duration constants (in seconds)
+ProfileSchema.LootboxDurations = {
+	Common = 20 * 60,      -- 20 minutes
+	Rare = 60 * 60,        -- 1 hour
+	Epic = 4 * 60 * 60,    -- 4 hours
+	Legendary = 8 * 60 * 60 -- 8 hours
+}
+
+-- Profile structure definition (v2)
 ProfileSchema.Profile = {
 	-- Basic player information
 	playerId = "",           -- Roblox UserId (string)
@@ -11,10 +19,10 @@ ProfileSchema.Profile = {
 	lastLoginAt = 0,         -- Unix timestamp of last login
 	loginStreak = 0,         -- Consecutive login days (for DailyHandler integration)
 	
-	-- Card collection (map: cardId -> count)
-	collection = {},
+	-- Card collection (map: cardId -> { count: number, level: number })
+	collection = {}, 
 	
-	-- Active deck (exactly 6 card IDs)
+	-- Active deck (exactly 6 card IDs, no duplicates)
 	deck = {},
 	
 	-- Optional currencies
@@ -23,10 +31,23 @@ ProfileSchema.Profile = {
 		hard = 0              -- Hard currency (premium/Robux)
 	},
 	
-	-- Metadata for internal tracking
-	meta = {
-		lastStreakBumpDate = nil  -- Date when login streak was last bumped (YYYY-MM-DD)
-	}
+	-- New v2 fields
+	favoriteLastSeen = nil,  -- Unix seconds when player last claimed "Like" bonus (optional)
+	tutorialStep = 0,        -- Tutorial progress (default 0)
+	squadPower = 0,          -- Computed power of current deck
+	
+	-- Lootboxes (array of LootboxEntry, max 4, max 1 "unlocking")
+	lootboxes = {}
+}
+
+-- Lootbox entry structure
+ProfileSchema.LootboxEntry = {
+	id = "",                 -- Unique lootbox ID
+	rarity = "",            -- "Common", "Rare", "Epic", "Legendary"
+	state = "",             -- "idle", "unlocking", "ready"
+	acquiredAt = 0,         -- Unix timestamp when acquired
+	startedAt = nil,        -- Unix timestamp when unlocking started (optional)
+	endsAt = nil            -- Unix timestamp when unlocking ends (optional)
 }
 
 -- Validation functions
@@ -52,9 +73,28 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Invalid loginStreak"
 	end
 	
-	-- Check collection
+	-- Check collection (v2: cardId -> { count, level })
 	if not profile.collection or type(profile.collection) ~= "table" then
 		return false, "Invalid collection"
+	end
+	
+	-- Validate collection entries
+	for cardId, entry in pairs(profile.collection) do
+		if type(cardId) ~= "string" then
+			return false, "Invalid card ID in collection"
+		end
+		
+		if type(entry) ~= "table" then
+			return false, "Invalid collection entry for " .. cardId
+		end
+		
+		if type(entry.count) ~= "number" or entry.count < 0 then
+			return false, "Invalid count for " .. cardId
+		end
+		
+		if type(entry.level) ~= "number" or entry.level < 1 then
+			return false, "Invalid level for " .. cardId
+		end
 	end
 	
 	-- Check deck
@@ -73,6 +113,15 @@ function ProfileSchema.ValidateProfile(profile)
 		end
 	end
 	
+	-- Check for duplicates in deck
+	local seenCards = {}
+	for i, cardId in ipairs(profile.deck) do
+		if seenCards[cardId] then
+			return false, "Duplicate card ID in deck: " .. cardId
+		end
+		seenCards[cardId] = true
+	end
+	
 	-- Check currencies
 	if not profile.currencies or type(profile.currencies) ~= "table" then
 		return false, "Invalid currencies"
@@ -86,24 +135,97 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Invalid hard currency"
 	end
 	
+	-- Check v2 fields
+	if profile.favoriteLastSeen ~= nil and type(profile.favoriteLastSeen) ~= "number" then
+		return false, "Invalid favoriteLastSeen"
+	end
+	
+	if type(profile.tutorialStep) ~= "number" then
+		return false, "Invalid tutorialStep"
+	end
+	
+	if type(profile.squadPower) ~= "number" then
+		return false, "Invalid squadPower"
+	end
+	
+	-- Check lootboxes
+	if not profile.lootboxes or type(profile.lootboxes) ~= "table" then
+		return false, "Invalid lootboxes"
+	end
+	
+	if #profile.lootboxes > 4 then
+		return false, "Too many lootboxes (max 4)"
+	end
+	
+	-- Validate lootbox entries
+	local unlockingCount = 0
+	for i, lootbox in ipairs(profile.lootboxes) do
+		if type(lootbox) ~= "table" then
+			return false, "Invalid lootbox entry at index " .. i
+		end
+		
+		if type(lootbox.id) ~= "string" or lootbox.id == "" then
+			return false, "Invalid lootbox ID at index " .. i
+		end
+		
+		if not ProfileSchema.IsValidLootboxRarity(lootbox.rarity) then
+			return false, "Invalid lootbox rarity at index " .. i
+		end
+		
+		if not ProfileSchema.IsValidLootboxState(lootbox.state) then
+			return false, "Invalid lootbox state at index " .. i
+		end
+		
+		if type(lootbox.acquiredAt) ~= "number" then
+			return false, "Invalid lootbox acquiredAt at index " .. i
+		end
+		
+		if lootbox.startedAt ~= nil and type(lootbox.startedAt) ~= "number" then
+			return false, "Invalid lootbox startedAt at index " .. i
+		end
+		
+		if lootbox.endsAt ~= nil and type(lootbox.endsAt) ~= "number" then
+			return false, "Invalid lootbox endsAt at index " .. i
+		end
+		
+		-- Count unlocking lootboxes
+		if lootbox.state == "unlocking" then
+			unlockingCount = unlockingCount + 1
+		end
+	end
+	
+	if unlockingCount > 1 then
+		return false, "Too many unlocking lootboxes (max 1)"
+	end
+	
 	return true, nil
 end
 
--- Create a new profile with defaults
+-- Validate lootbox rarity
+function ProfileSchema.IsValidLootboxRarity(rarity)
+	return rarity == "Common" or rarity == "Rare" or rarity == "Epic" or rarity == "Legendary"
+end
+
+-- Validate lootbox state
+function ProfileSchema.IsValidLootboxState(state)
+	return state == "idle" or state == "unlocking" or state == "ready"
+end
+
+-- Create a new profile with defaults (v2)
 function ProfileSchema.CreateProfile(playerId)
 	local now = os.time()
 	
-	-- Default starter cards (from CardCatalog)
+	-- Default starter cards (from CardCatalog) - 6 unique cards for deck
 	local starterCards = {
-		"dps_001", "dps_001", "dps_001",  -- 3x DPS starter
-		"support_001", "support_001",     -- 2x Support starter  
-		"tank_001"                        -- 1x Tank starter
+		"dps_001", "support_001", "tank_001",  -- 3 unique starter cards
+		"dps_002", "support_002", "tank_002"   -- 3 more unique cards
 	}
 	
-	-- Create starter collection with default cards
+	-- Create starter collection with default cards (v2 format)
+	-- Give player 2 copies of each card so they can form a valid deck
 	local starterCollection = {}
 	for _, cardId in ipairs(starterCards) do
-		starterCollection[cardId] = (starterCollection[cardId] or 0) + 1
+		starterCollection[cardId] = { count = 2, level = 1 }
 	end
 	
 	local profile = {
@@ -117,12 +239,44 @@ function ProfileSchema.CreateProfile(playerId)
 			soft = 1000,  -- Starting soft currency
 			hard = 0      -- No starting hard currency
 		},
-		meta = {
-			lastStreakBumpDate = nil  -- Will be set on first login streak bump
-		}
+		favoriteLastSeen = nil,
+		tutorialStep = 0,
+		squadPower = 0,  -- Will be computed when deck is set
+		lootboxes = {}
 	}
 	
 	return profile
+end
+
+-- Migrate v1 profile to v2
+function ProfileSchema.MigrateV1ToV2(v1Profile)
+	if not v1Profile then
+		return nil, "No profile to migrate"
+	end
+	
+	local v2Profile = {
+		playerId = v1Profile.playerId,
+		createdAt = v1Profile.createdAt,
+		lastLoginAt = v1Profile.lastLoginAt,
+		loginStreak = v1Profile.loginStreak,
+		deck = v1Profile.deck,
+		currencies = v1Profile.currencies,
+		favoriteLastSeen = nil,
+		tutorialStep = 0,
+		squadPower = 0,
+		lootboxes = {}
+	}
+	
+	-- Migrate collection from v1 format to v2 format
+	v2Profile.collection = {}
+	for cardId, count in pairs(v1Profile.collection or {}) do
+		v2Profile.collection[cardId] = {
+			count = count,
+			level = 1  -- All v1 cards start at level 1
+		}
+	end
+	
+	return v2Profile
 end
 
 -- Update profile timestamps
@@ -155,64 +309,51 @@ function ProfileSchema.ResetLoginStreak(profile)
 	return true
 end
 
--- Add cards to collection
+-- Add cards to collection (v2 format)
 function ProfileSchema.AddCardsToCollection(profile, cardId, count)
 	if not profile or not profile.collection then
 		return false
 	end
 	
 	count = count or 1
-	profile.collection[cardId] = (profile.collection[cardId] or 0) + count
+	
+	-- Initialize card entry if it doesn't exist
+	if not profile.collection[cardId] then
+		profile.collection[cardId] = { count = 0, level = 1 }
+	end
+	
+	profile.collection[cardId].count = profile.collection[cardId].count + count
 	return true
 end
 
--- Remove cards from collection
+-- Remove cards from collection (v2 format)
 function ProfileSchema.RemoveCardsFromCollection(profile, cardId, count)
 	if not profile or not profile.collection then
 		return false
 	end
 	
 	count = count or 1
-	local currentCount = profile.collection[cardId] or 0
+	local cardEntry = profile.collection[cardId]
 	
-	if currentCount < count then
+	if not cardEntry then
+		return false, "Card not in collection"
+	end
+	
+	if cardEntry.count < count then
 		return false, "Not enough cards to remove"
 	end
 	
-	profile.collection[cardId] = currentCount - count
+	cardEntry.count = cardEntry.count - count
 	
 	-- Remove entry if count reaches 0
-	if profile.collection[cardId] <= 0 then
+	if cardEntry.count <= 0 then
 		profile.collection[cardId] = nil
 	end
 	
 	return true
 end
 
--- Check if player has enough cards for a deck
-function ProfileSchema.HasEnoughCardsForDeck(profile, deck)
-	if not profile or not profile.collection or not deck then
-		return false
-	end
-	
-	-- Count cards needed
-	local cardCounts = {}
-	for _, cardId in ipairs(deck) do
-		cardCounts[cardId] = (cardCounts[cardId] or 0) + 1
-	end
-	
-	-- Check if collection has enough
-	for cardId, needed in pairs(cardCounts) do
-		local available = profile.collection[cardId] or 0
-		if available < needed then
-			return false, "Not enough " .. cardId .. " (need " .. needed .. ", have " .. available .. ")"
-		end
-	end
-	
-	return true
-end
-
--- Update deck (with validation)
+-- Update deck (v2: no collection count validation, enforces uniqueness)
 function ProfileSchema.UpdateDeck(profile, newDeck)
 	if not profile then
 		return false, "Profile is nil"
@@ -222,10 +363,17 @@ function ProfileSchema.UpdateDeck(profile, newDeck)
 		return false, "Deck must contain exactly 6 cards"
 	end
 	
-	-- Check if player has the cards
-	local hasEnough, errorMessage = ProfileSchema.HasEnoughCardsForDeck(profile, newDeck)
-	if not hasEnough then
-		return false, errorMessage
+	-- Check for duplicates
+	local seenCards = {}
+	for i, cardId in ipairs(newDeck) do
+		if type(cardId) ~= "string" or cardId == "" then
+			return false, "Invalid card ID at position " .. i
+		end
+		
+		if seenCards[cardId] then
+			return false, "Duplicate card ID in deck: " .. cardId
+		end
+		seenCards[cardId] = true
 	end
 	
 	-- Update the deck
@@ -266,15 +414,17 @@ function ProfileSchema.RemoveCurrency(profile, currencyType, amount)
 	return false, "Invalid currency type"
 end
 
--- Get profile statistics
+-- Get profile statistics (v2)
 function ProfileSchema.GetProfileStats(profile)
 	if not profile then
 		return nil
 	end
 	
 	local totalCards = 0
-	for _, count in pairs(profile.collection) do
-		totalCards = totalCards + count
+	local totalLevels = 0
+	for _, entry in pairs(profile.collection) do
+		totalCards = totalCards + entry.count
+		totalLevels = totalLevels + entry.level
 	end
 	
 	local uniqueCards = 0
@@ -285,22 +435,24 @@ function ProfileSchema.GetProfileStats(profile)
 	return {
 		totalCards = totalCards,
 		uniqueCards = uniqueCards,
+		totalLevels = totalLevels,
 		deckSize = #profile.deck,
 		loginStreak = profile.loginStreak,
 		softCurrency = profile.currencies.soft,
 		hardCurrency = profile.currencies.hard,
+		squadPower = profile.squadPower,
+		tutorialStep = profile.tutorialStep,
+		lootboxCount = #profile.lootboxes,
 		daysSinceCreation = math.floor((os.time() - profile.createdAt) / 86400)
 	}
 end
 
 -- Schema migration hooks (for future versions)
 ProfileSchema.MigrationHooks = {
-	-- Example migration from v1 to v2
-	-- ["v2"] = function(profile)
-	--     -- Add new fields, transform data, etc.
-	--     profile.newField = "default_value"
-	--     return profile
-	-- end
+	["v2"] = function(profile)
+		-- Migrate v1 to v2
+		return ProfileSchema.MigrateV1ToV2(profile)
+	end
 }
 
 return ProfileSchema

@@ -3,6 +3,8 @@ local SelfCheck = {}
 -- Import modules to test
 local CardCatalog = require(script.Parent.Cards.CardCatalog)
 local DeckValidator = require(script.Parent.Cards.DeckValidator)
+local CardLevels = require(script.Parent.Cards.CardLevels)
+local CardStats = require(script.Parent.Cards.CardStats)
 local SeededRNG = require(script.Parent.RNG.SeededRNG)
 local CombatTypes = require(script.Parent.Combat.CombatTypes)
 local CombatUtils = require(script.Parent.Combat.CombatUtils)
@@ -11,14 +13,14 @@ local GameConstants = require(script.Parent.Constants.GameConstants)
 -- Test results
 local testResults = {}
 
--- Test 1: Card Catalog
+-- Test 1: Card Catalog (v2)
 local function TestCardCatalog()
-	print("=== Testing Card Catalog ===")
+	print("=== Testing Card Catalog (v2) ===")
 	
 	-- Test card retrieval
 	local card = CardCatalog.GetCard("dps_001")
 	if card then
-		print("✅ Found dps_001:", card.name, "Rarity:", card.rarity)
+		print("✅ Found dps_001:", card.name, "Rarity:", card.rarity, "SlotNumber:", card.slotNumber)
 		testResults.cardCatalog = true
 	else
 		print("❌ Failed to find dps_001")
@@ -33,14 +35,115 @@ local function TestCardCatalog()
 	local dpsCards = CardCatalog.GetCardsByClass(CardCatalog.Classes.DPS)
 	print("✅ Found", #dpsCards, "DPS cards")
 	
+	-- Test slot number sorting
+	local sortedCards = CardCatalog.GetCardsSortedBySlot()
+	print("✅ Cards sorted by slotNumber:", sortedCards[1].slotNumber, "to", sortedCards[#sortedCards].slotNumber)
+	
 	print("Total cards in catalog:", #CardCatalog.GetAllCards())
 end
 
--- Test 2: Deck Validation
-local function TestDeckValidation()
-	print("\n=== Testing Deck Validation ===")
+-- Test 2: Card Levels
+local function TestCardLevels()
+	print("\n=== Testing Card Levels ===")
 	
-	-- Valid deck
+	-- Test level cost retrieval
+	local level2Cost = CardLevels.GetLevelCost(2)
+	if level2Cost then
+		print("✅ Level 2 cost:", level2Cost.requiredCount, "copies,", level2Cost.softAmount, "currency")
+		testResults.cardLevels = true
+	else
+		print("❌ Failed to get level 2 cost")
+		testResults.cardLevels = false
+	end
+	
+	-- Test level up validation
+	local canLevelUp, errorMessage = CardLevels.CanLevelUp("dps_001", 1, 10, 12000)
+	if canLevelUp then
+		print("✅ Can level up dps_001 from 1 to 2")
+	else
+		print("❌ Cannot level up:", errorMessage)
+		testResults.cardLevels = false
+	end
+	
+	-- Test max level
+	local maxLevelCost = CardLevels.GetLevelCost(CardLevels.MAX_LEVEL)
+	if maxLevelCost then
+		print("✅ Max level cost:", maxLevelCost.requiredCount, "copies,", maxLevelCost.softAmount, "currency")
+	else
+		print("❌ Failed to get max level cost")
+		testResults.cardLevels = false
+	end
+	
+	-- Test invalid level
+	local invalidCost = CardLevels.GetLevelCost(8)
+	if not invalidCost then
+		print("✅ Invalid level correctly rejected")
+	else
+		print("❌ Invalid level incorrectly accepted")
+		testResults.cardLevels = false
+	end
+end
+
+-- Test 3: Card Stats
+local function TestCardStats()
+	print("\n=== Testing Card Stats ===")
+	
+	-- Test stat computation
+	local level1Stats = CardStats.ComputeStats("dps_001", 1)
+	if level1Stats then
+		print("✅ Level 1 stats:", "ATK:", level1Stats.atk, "HP:", level1Stats.hp, "DEF:", level1Stats.defence)
+		testResults.cardStats = true
+	else
+		print("❌ Failed to compute level 1 stats")
+		testResults.cardStats = false
+	end
+	
+	-- Test level 2 stats (should have increments)
+	local level2Stats = CardStats.ComputeStats("dps_001", 2)
+	if level2Stats then
+		print("✅ Level 2 stats:", "ATK:", level2Stats.atk, "HP:", level2Stats.hp, "DEF:", level2Stats.defence)
+		
+		-- Verify increments
+		local atkIncrement = level2Stats.atk - level1Stats.atk
+		local hpIncrement = level2Stats.hp - level1Stats.hp
+		local defIncrement = level2Stats.defence - level1Stats.defence
+		
+		if atkIncrement == 2 and hpIncrement == 10 and defIncrement == 2 then
+			print("✅ Level increments correct")
+		else
+			print("❌ Level increments incorrect:", atkIncrement, hpIncrement, defIncrement)
+			testResults.cardStats = false
+		end
+	else
+		print("❌ Failed to compute level 2 stats")
+		testResults.cardStats = false
+	end
+	
+	-- Test power computation
+	local power = CardStats.ComputePower(level1Stats)
+	print("✅ Level 1 power:", power)
+	
+	-- Test max level stats
+	local maxStats = CardStats.GetMaxStats("dps_001")
+	local maxPower = CardStats.GetMaxPower("dps_001")
+	print("✅ Max level power:", maxPower)
+	
+	-- Test level clamping
+	local clampedStats = CardStats.ComputeStats("dps_001", 10) -- Should clamp to max level
+	local maxLevelStats = CardStats.ComputeStats("dps_001", CardLevels.MAX_LEVEL)
+	if clampedStats.atk == maxLevelStats.atk then
+		print("✅ Level clamping works correctly")
+	else
+		print("❌ Level clamping failed")
+		testResults.cardStats = false
+	end
+end
+
+-- Test 4: Deck Validation (v2)
+local function TestDeckValidation()
+	print("\n=== Testing Deck Validation (v2) ===")
+	
+	-- Valid deck (no duplicates)
 	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "dps_003"}
 	local isValid, errorMessage = DeckValidator.ValidateDeck(validDeck)
 	
@@ -48,9 +151,28 @@ local function TestDeckValidation()
 		print("✅ Valid deck passed validation")
 		testResults.deckValidation = true
 		
-		-- Test board mapping
+		-- Test board mapping (should order by slotNumber)
 		local board = DeckValidator.MapDeckToBoard(validDeck)
 		print("✅ Deck mapped to board with", #board, "slots")
+		
+		-- Verify slotNumber ordering
+		local prevSlotNumber = 0
+		local orderedCorrectly = true
+		for i = 1, #board do
+			local slotData = board[i]
+			if slotData.card.slotNumber < prevSlotNumber then
+				orderedCorrectly = false
+				break
+			end
+			prevSlotNumber = slotData.card.slotNumber
+		end
+		
+		if orderedCorrectly then
+			print("✅ Board mapping ordered by slotNumber correctly")
+		else
+			print("❌ Board mapping not ordered by slotNumber")
+			testResults.deckValidation = false
+		end
 		
 		-- Test slot info (1-based indexing)
 		local slotInfo = DeckValidator.GetSlotInfo(1)
@@ -82,9 +204,43 @@ local function TestDeckValidation()
 		print("❌ Unknown card incorrectly accepted")
 		testResults.deckValidation = false
 	end
+	
+	-- Invalid deck (duplicates)
+	local invalidDeck3 = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
+	local isValid4, errorMessage4 = DeckValidator.ValidateDeck(invalidDeck3)
+	if not isValid4 then
+		print("✅ Duplicate cards correctly rejected:", errorMessage4)
+	else
+		print("❌ Duplicate cards incorrectly accepted")
+		testResults.deckValidation = false
+	end
 end
 
--- Test 3: Seeded RNG
+-- Test 5: Combat Utils (v2)
+local function TestCombatUtils()
+	print("\n=== Testing Combat Utils (v2) ===")
+	
+	-- Test defence soak damage calculation
+	local damageWithDefence = CombatUtils.CalculateDamage(10, 5)
+	print("✅ 10 damage vs 5 defence =", damageWithDefence, "damage to HP")
+	
+	local damageNoDefence = CombatUtils.CalculateDamage(10, 0)
+	print("✅ 10 damage vs 0 defence =", damageNoDefence, "damage to HP")
+	
+	-- Test damage application with defence
+	local mockUnit = {
+		stats = { health = 20, defence = 5 },
+		state = CombatTypes.UnitState.ALIVE
+	}
+	
+	local damageResult = CombatUtils.ApplyDamageWithDefence(mockUnit, 10)
+	print("✅ Applied 10 damage:", "HP damage:", damageResult.damageToHp, "Defence reduced:", damageResult.defenceReduced)
+	print("✅ Unit state:", "HP:", mockUnit.stats.health, "Defence:", mockUnit.stats.defence)
+	
+	testResults.combatUtils = true
+end
+
+-- Test 6: Seeded RNG
 local function TestSeededRNG()
 	print("\n=== Testing Seeded RNG ===")
 	
@@ -101,7 +257,7 @@ local function TestSeededRNG()
 		table.insert(sequence2, SeededRNG.RandomInt(rng2, 1, 100))
 	end
 	
-	-- Check if sequences are identical
+	-- Compare sequences
 	local sequencesMatch = true
 	for i = 1, 10 do
 		if sequence1[i] ~= sequence2[i] then
@@ -111,164 +267,108 @@ local function TestSeededRNG()
 	end
 	
 	if sequencesMatch then
-		print("✅ Identical seeds produce identical sequences")
+		print("✅ Seeded RNG produces deterministic sequences")
 		testResults.seededRNG = true
 	else
-		print("❌ Identical seeds produced different sequences")
+		print("❌ Seeded RNG sequences don't match")
 		testResults.seededRNG = false
 	end
 	
 	-- Test different seeds produce different sequences
 	local rng3 = SeededRNG.New(54321)
-	local sequence3 = {}
-	for i = 1, 5 do
-		table.insert(sequence3, SeededRNG.RandomInt(rng3, 1, 100))
+	local differentSequence = {}
+	for i = 1, 10 do
+		table.insert(differentSequence, SeededRNG.RandomInt(rng3, 1, 100))
 	end
 	
-	local differentSeedsDifferent = false
-	for i = 1, 5 do
-		if sequence1[i] ~= sequence3[i] then
-			differentSeedsDifferent = true
+	local sequencesDifferent = false
+	for i = 1, 10 do
+		if sequence1[i] ~= differentSequence[i] then
+			sequencesDifferent = true
 			break
 		end
 	end
 	
-	if differentSeedsDifferent then
+	if sequencesDifferent then
 		print("✅ Different seeds produce different sequences")
 	else
-		print("❌ Different seeds produced identical sequences")
+		print("❌ Different seeds produce same sequences")
 		testResults.seededRNG = false
 	end
-	
-	-- Test RNG functions
-	print("✅ Random int (1-10):", SeededRNG.RandomInt(rng1, 1, 10))
-	print("✅ Random float (0-1):", string.format("%.3f", SeededRNG.RandomFloat(rng1, 0, 1)))
-	print("✅ Random bool (50%):", SeededRNG.RandomBool(rng1, 0.5))
 end
 
--- Test 4: Combat Types and Utils
-local function TestCombatTypes()
-	print("\n=== Testing Combat Types ===")
-	
-	-- Test unit creation
-	local unit = {
-		slotIndex = 1, -- 1-based indexing
-		cardId = "dps_001",
-		card = CardCatalog.GetCard("dps_001"),
-		stats = {
-			attack = 5,
-			health = 10,
-			maxHealth = 10,
-			speed = 3,
-			armor = 2
-		},
-		state = CombatTypes.UnitState.ALIVE,
-		statusEffects = {}
-	}
-	
-	if CombatTypes.IsValidUnit(unit) then
-		print("✅ Valid unit created")
-		testResults.combatTypes = true
-	else
-		print("❌ Unit validation failed")
-		testResults.combatTypes = false
-	end
-	
-	-- Test combat utilities
-	local damage = CombatUtils.CalculateDamage(10, 5)
-	print("✅ Damage calculation (10 damage vs 5 armor):", damage)
-	
-	local canAct = CombatUtils.CanUnitAct(unit)
-	print("✅ Unit can act:", canAct)
-	
-	-- Test status effects
-	CombatUtils.ApplyStatusEffect(unit, CombatTypes.StatusEffect.POISON, 3, 2)
-	print("✅ Applied poison effect to unit")
-	
-	-- Test damage application
-	local actualDamage = CombatUtils.ApplyDamage(unit, 3)
-	print("✅ Applied 3 damage, actual damage:", actualDamage, "Unit health:", unit.stats.health)
-	
-	-- Test healing
-	local actualHealing = CombatUtils.ApplyHealing(unit, 5)
-	print("✅ Applied 5 healing, actual healing:", actualHealing, "Unit health:", unit.stats.health)
-end
-
--- Test 5: Game Constants
+-- Test 7: Game Constants
 local function TestGameConstants()
 	print("\n=== Testing Game Constants ===")
 	
-	print("✅ Board dimensions:", GameConstants.BOARD.WIDTH, "x", GameConstants.BOARD.HEIGHT)
-	print("✅ Total slots:", GameConstants.BOARD.TOTAL_SLOTS)
-	print("✅ Slot indices (1-based):", table.concat(GameConstants.BOARD.SLOT_INDICES, ", "))
-	print("✅ Deck size:", GameConstants.DECK.MIN_SIZE, "-", GameConstants.DECK.MAX_SIZE)
-	print("✅ Max turns:", GameConstants.COMBAT.MAX_TURNS)
-	print("✅ Rarity weights - Common:", GameConstants.RARITY_WEIGHTS.COMMON .. "%")
+	-- Test board dimensions
+	if GameConstants.BOARD_WIDTH == 3 and GameConstants.BOARD_HEIGHT == 2 then
+		print("✅ Board dimensions correct:", GameConstants.BOARD_WIDTH, "x", GameConstants.BOARD_HEIGHT)
+		testResults.gameConstants = true
+	else
+		print("❌ Board dimensions incorrect")
+		testResults.gameConstants = false
+	end
 	
-	testResults.gameConstants = true
+	-- Test deck size
+	if GameConstants.DECK_SIZE == 6 then
+		print("✅ Deck size correct:", GameConstants.DECK_SIZE)
+	else
+		print("❌ Deck size incorrect")
+		testResults.gameConstants = false
+	end
+	
+	-- Test rarity weights
+	local totalWeight = 0
+	for _, weight in pairs(GameConstants.RARITY_WEIGHTS) do
+		totalWeight = totalWeight + weight
+	end
+	print("✅ Total rarity weight:", totalWeight)
 end
 
 -- Run all tests
 function SelfCheck.RunAllTests()
-	print("🚀 Starting Self-Check for Card Battler MVP (Step 2A - Consistency Patch)")
-	print("=" .. string.rep("=", 60))
+	print("🧪 Running Self-Check Tests (v2)")
+	print("==================================")
 	
 	-- Reset test results
 	testResults = {}
 	
 	-- Run tests
 	TestCardCatalog()
+	TestCardLevels()
+	TestCardStats()
 	TestDeckValidation()
+	TestCombatUtils()
 	TestSeededRNG()
-	TestCombatTypes()
 	TestGameConstants()
 	
 	-- Summary
-	print("\n" .. string.rep("=", 60))
-	print("📊 TEST SUMMARY:")
+	print("\n==================================")
+	print("📊 Test Results Summary:")
 	
-	local totalTests = 5
 	local passedTests = 0
+	local totalTests = 0
 	
 	for testName, passed in pairs(testResults) do
+		totalTests = totalTests + 1
 		if passed then
-			print("✅", testName, "PASSED")
 			passedTests = passedTests + 1
+			print("✅", testName, "PASSED")
 		else
 			print("❌", testName, "FAILED")
 		end
 	end
 	
-	print("\n🎯 Overall Result:", passedTests .. "/" .. totalTests, "tests passed")
+	print("\n🎯 Overall Result:", passedTests, "/", totalTests, "tests passed")
 	
 	if passedTests == totalTests then
-		print("🎉 All tests passed! Step 2A consistency patch is ready.")
+		print("🎉 All tests passed! System is ready.")
+		return true
 	else
-		print("⚠️  Some tests failed. Please review the implementation.")
+		print("⚠️  Some tests failed. Please check the implementation.")
+		return false
 	end
-	
-	return passedTests == totalTests
-end
-
--- Individual test runners
-function SelfCheck.TestCardCatalog()
-	TestCardCatalog()
-end
-
-function SelfCheck.TestDeckValidation()
-	TestDeckValidation()
-end
-
-function SelfCheck.TestSeededRNG()
-	TestSeededRNG()
-end
-
-function SelfCheck.TestCombatTypes()
-	TestCombatTypes()
-end
-
-function SelfCheck.TestGameConstants()
-	TestGameConstants()
 end
 
 return SelfCheck

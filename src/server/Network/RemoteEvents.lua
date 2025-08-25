@@ -142,15 +142,22 @@ local function CleanupRateLimit(player)
 end
 
 local function SendProfileUpdate(player, payload)
+	-- Add serverNow timestamp to all profile updates (non-breaking)
+	payload.serverNow = os.time()
 	ProfileUpdated:FireClient(player, payload)
 end
 
 local function CreateCollectionSummary(collection)
 	local summary = {}
-	for cardId, count in pairs(collection) do
+	for cardId, entry in pairs(collection) do
+		-- Handle v2 format: {count, level}
+		local count = type(entry) == "table" and entry.count or entry
+		local level = type(entry) == "table" and entry.level or 1
+		
 		table.insert(summary, {
 			cardId = cardId,
-			count = count
+			count = count,
+			level = level
 		})
 	end
 	return summary
@@ -285,7 +292,8 @@ local function HandleRequestStartMatch(player, requestData)
 			error = {
 				code = "RATE_LIMITED",
 				message = errorMessage
-			}
+			},
+			serverNow = os.time()
 		})
 		return
 	end
@@ -299,6 +307,9 @@ local function HandleRequestStartMatch(player, requestData)
 	
 	-- Execute match via MatchService
 	local result = MatchService.ExecuteMatch(player, matchRequestData)
+	
+	-- Add serverNow timestamp to match response (non-breaking)
+	result.serverNow = os.time()
 	
 	-- Reply on the same event (as per contract)
 	RequestStartMatch:FireClient(player, result)

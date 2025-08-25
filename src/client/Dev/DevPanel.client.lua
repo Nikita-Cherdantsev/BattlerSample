@@ -1,0 +1,270 @@
+--[[
+	Dev Panel - Minimal developer UI for testing flows
+	
+	Provides a small, non-intrusive panel with buttons to test
+	common UI flows. Only appears when Config.SHOW_DEV_PANEL is true.
+]]
+
+local DevPanel = {}
+
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Modules
+local Config = require(script.Parent.Parent.Config)
+local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
+local ClientState = require(script.Parent.Parent.State.ClientState)
+local Utilities = require(ReplicatedStorage.Modules.Utilities)
+local CardCatalog = Utilities.CardCatalog
+
+-- State
+local panel = nil
+local statusLabel = nil
+local isInitialized = false
+
+-- Utility functions
+local function log(message, ...)
+	print(string.format("[DevPanel] %s", string.format(message, ...)))
+end
+
+local function createButton(parent, text, onClick)
+	local button = Instance.new("TextButton")
+	button.Text = text
+	button.Size = UDim2.new(1, -20, 0, 30)
+	button.Position = UDim2.new(0, 10, 0, 0)
+	button.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.Font = Enum.Font.SourceSans
+	button.TextSize = 14
+	button.Parent = parent
+	
+	-- Add hover effect
+	button.MouseEnter:Connect(function()
+		button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+	end)
+	
+	button.MouseLeave:Connect(function()
+		button.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	end)
+	
+	button.MouseButton1Click:Connect(onClick)
+	
+	return button
+end
+
+local function updateStatus()
+	if not statusLabel then return end
+	
+	local state = ClientState.getState()
+	local serverNow = NetworkClient.getServerNow()
+	local squadPower = state.profile and state.profile.squadPower or 0
+	local mockStatus = Config.USE_MOCKS and "ON" or "OFF"
+	
+	statusLabel.Text = string.format(
+		"Server: %d\nPower: %d\nMocks: %s",
+		serverNow,
+		squadPower,
+		mockStatus
+	)
+end
+
+-- Create the dev panel
+function DevPanel.create()
+	if not Config.SHOW_DEV_PANEL then
+		log("Dev panel disabled in config")
+		return
+	end
+	
+	if panel then
+		log("Dev panel already exists")
+		return
+	end
+	
+	log("Creating dev panel")
+	
+	-- Create ScreenGui
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "DevPanel"
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	
+	-- Create main frame
+	panel = Instance.new("Frame")
+	panel.Name = "MainFrame"
+	panel.Size = Config.DEV_PANEL_SETTINGS.SIZE
+	panel.Position = Config.DEV_PANEL_SETTINGS.POSITION
+	panel.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	panel.BorderSizePixel = 0
+	panel.ZIndex = Config.DEV_PANEL_SETTINGS.Z_INDEX
+	panel.Parent = screenGui
+	
+	-- Create title
+	local title = Instance.new("TextLabel")
+	title.Text = "Dev Panel"
+	title.Size = UDim2.new(1, 0, 0, 25)
+	title.Position = UDim2.new(0, 0, 0, 0)
+	title.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	title.Font = Enum.Font.SourceSansBold
+	title.TextSize = 16
+	title.Parent = panel
+	
+	-- Create status label
+	statusLabel = Instance.new("TextLabel")
+	statusLabel.Text = "Loading..."
+	statusLabel.Size = UDim2.new(1, -20, 0, 40)
+	statusLabel.Position = UDim2.new(0, 10, 0, 30)
+	statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	statusLabel.Font = Enum.Font.SourceSans
+	statusLabel.TextSize = 12
+	statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+	statusLabel.TextYAlignment = Enum.TextYAlignment.Top
+	statusLabel.Parent = panel
+	
+	-- Create button container
+	local buttonContainer = Instance.new("Frame")
+	buttonContainer.Name = "Buttons"
+	buttonContainer.Size = UDim2.new(1, -20, 1, -80)
+	buttonContainer.Position = UDim2.new(0, 10, 0, 80)
+	buttonContainer.BackgroundTransparency = 1
+	buttonContainer.Parent = panel
+	
+	-- Create buttons
+	local buttonY = 0
+	local buttonHeight = 35
+	local buttonSpacing = 5
+	
+	-- Refresh Profile button
+	local refreshButton = createButton(buttonContainer, "Refresh Profile", function()
+		log("Refresh Profile clicked")
+		NetworkClient.requestProfile()
+	end)
+	refreshButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Set Sample Deck button
+	local sampleDeckButton = createButton(buttonContainer, "Set Sample Deck", function()
+		log("Set Sample Deck clicked")
+		
+		-- Get first 6 unique card IDs from catalog (by slotNumber)
+		local allCards = {}
+		for cardId, card in pairs(CardCatalog.GetAllCards()) do
+			table.insert(allCards, {id = cardId, slotNumber = card.slotNumber})
+		end
+		
+		-- Sort by slotNumber
+		table.sort(allCards, function(a, b)
+			return a.slotNumber < b.slotNumber
+		end)
+		
+		-- Take first 6
+		local deckIds = {}
+		for i = 1, math.min(6, #allCards) do
+			table.insert(deckIds, allCards[i].id)
+		end
+		
+		if #deckIds == 6 then
+			log("Setting sample deck: %s", table.concat(deckIds, ", "))
+			NetworkClient.requestSetDeck(deckIds)
+		else
+			log("Not enough cards for sample deck")
+		end
+	end)
+	sampleDeckButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Start PvE button
+	local pveButton = createButton(buttonContainer, "Start PvE", function()
+		log("Start PvE clicked")
+		NetworkClient.requestStartMatch({mode = "PvE"})
+	end)
+	pveButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Toggle Mocks button
+	local toggleMocksButton = createButton(buttonContainer, "Toggle Mocks", function()
+		log("Toggle Mocks clicked")
+		
+		-- Toggle config
+		Config.USE_MOCKS = not Config.USE_MOCKS
+		
+		-- Reinitialize NetworkClient and ClientState
+		NetworkClient.reinitialize()
+		
+		-- Clean up existing subscriptions
+		if isInitialized then
+			-- Note: In a real implementation, you'd want to properly clean up subscriptions
+			-- For now, we'll just reinitialize ClientState
+			ClientState.init(NetworkClient)
+		end
+		
+		-- Request profile immediately
+		NetworkClient.requestProfile()
+		
+		-- Update status
+		updateStatus()
+		
+		log("Mocks toggled to: %s", Config.USE_MOCKS and "ON" or "OFF")
+	end)
+	toggleMocksButton.Position = UDim2.new(0, 0, 0, buttonY)
+	
+	-- Set up status updates
+	ClientState.subscribe(function()
+		updateStatus()
+	end)
+	
+	-- Initial status update
+	updateStatus()
+	
+	log("Dev panel created successfully")
+end
+
+-- Initialize the dev panel
+function DevPanel.init()
+	if isInitialized then
+		log("Dev panel already initialized")
+		return
+	end
+	
+	log("Initializing dev panel")
+	
+	-- Create the panel
+	DevPanel.create()
+	
+	-- Auto-request profile if configured
+	if Config.AUTO_REQUEST_PROFILE then
+		log("Auto-requesting profile")
+		NetworkClient.requestProfile()
+	end
+	
+	isInitialized = true
+	log("Dev panel initialized")
+end
+
+-- Destroy the dev panel
+function DevPanel.destroy()
+	if panel then
+		panel:Destroy()
+		panel = nil
+		statusLabel = nil
+		isInitialized = false
+		log("Dev panel destroyed")
+	end
+end
+
+-- Toggle the dev panel
+function DevPanel.toggle()
+	if panel then
+		DevPanel.destroy()
+	else
+		DevPanel.create()
+	end
+end
+
+-- Auto-initialize when script runs
+DevPanel.init()
+
+return DevPanel

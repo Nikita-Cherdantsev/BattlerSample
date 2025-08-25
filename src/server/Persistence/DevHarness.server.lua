@@ -74,8 +74,11 @@ local function PrintProfile(profile, label)
 	
 	print("\n📚 Collection:")
 	if next(profile.collection) then
-		for cardId, count in pairs(profile.collection) do
-			print("  " .. cardId .. ": " .. count)
+		for cardId, entry in pairs(profile.collection) do
+			-- Handle v2 format: {count, level}
+			local count = type(entry) == "table" and entry.count or entry
+			local level = type(entry) == "table" and entry.level or 1
+			print("  " .. cardId .. ": " .. count .. " (L" .. level .. ")")
 		end
 	else
 		print("  (empty)")
@@ -155,10 +158,11 @@ local function TestProfileManager()
 		LogSuccess("Profile loaded/created successfully")
 		PrintProfile(profile, "Initial Profile")
 		
-		-- Store baseline values for delta checks
+		-- Store baseline values for delta checks (v2 format)
 		testBaseline.softCurrency = profile.currencies.soft
 		testBaseline.loginStreak = profile.loginStreak
-		testBaseline.dps002Count = profile.collection["dps_002"] or 0
+		local dps002Entry = profile.collection["dps_002"]
+		testBaseline.dps002Count = dps002Entry and dps002Entry.count or 0
 		LogInfo("📊 Baseline values stored for delta checks")
 		
 		-- Test profile stats
@@ -232,7 +236,7 @@ local function TestProfileMutations(profile)
 	LogInfo("Updating deck...")
 	WaitForBudget()
 	
-	local newDeck = {"dps_002", "support_002", "tank_001", "dps_001", "support_001", "tank_001"}
+	local newDeck = {"dps_002", "support_002", "tank_001", "dps_001", "support_001", "tank_002"}
 	success = ProfileManager.UpdateDeck(MOCK_USER_ID, newDeck)
 	if success then
 		LogSuccess("Updated deck successfully")
@@ -278,12 +282,14 @@ local function TestProfileReadback()
 			LogError("Login streak mismatch. Expected: %d, Got: %d", expectedLoginStreak, reloadedProfile.loginStreak)
 		end
 		
-		-- Check if new cards were added
+		-- Check if new cards were added (v2 format)
 		local expectedDps002Count = testBaseline.dps002Count + 2
-		if reloadedProfile.collection["dps_002"] == expectedDps002Count then
+		local dps002Entry = reloadedProfile.collection["dps_002"]
+		local actualCount = dps002Entry and dps002Entry.count or 0
+		if actualCount == expectedDps002Count then
 			LogSuccess("New cards persisted correctly: dps_002 x%d (baseline +2)", expectedDps002Count)
 		else
-			LogError("New cards not persisted correctly. Expected: %d, Got: %d", expectedDps002Count, reloadedProfile.collection["dps_002"] or 0)
+			LogError("New cards not persisted correctly. Expected: %d, Got: %d", expectedDps002Count, actualCount)
 		end
 		
 	else
@@ -298,7 +304,7 @@ local function TestErrorHandling()
 	LogInfo("Testing invalid deck update...")
 	WaitForBudget()
 	
-	local invalidDeck = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_001", "support_001"}
+	local invalidDeck = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_002", "support_002"}
 	local success, errorMessage = ProfileManager.UpdateDeck(MOCK_USER_ID, invalidDeck)
 	
 	if not success then
