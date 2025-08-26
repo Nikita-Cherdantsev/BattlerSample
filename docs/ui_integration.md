@@ -63,6 +63,108 @@ The server communicates with clients through these key RemoteEvents:
 }
 ```
 
+## Assets Manifest
+
+The UI uses a centralized assets manifest for consistent styling and easy asset management:
+
+### Accessing Assets
+
+```lua
+local Utilities = require(game:GetService("ReplicatedStorage").Modules.Utilities)
+local Assets = Utilities.Assets
+
+-- Get asset IDs
+local cardImage = Assets.Resolver.getCardImage("dps_001")
+local classIcon = Assets.Resolver.getClassIcon("DPS")
+local rarityFrame = Assets.Resolver.getRarityFrame("Rare")
+local rarityColor = Assets.Resolver.getRarityColor("Epic")
+```
+
+### Available Assets
+
+- **Card Images**: `Assets.Manifest.CardImages[cardId]` - Card artwork
+- **Class Icons**: `Assets.Manifest.ClassIcons[class]` - DPS/Support/Tank icons
+- **Rarity Frames**: `Assets.Manifest.RarityFrames[rarity]` - Card frame borders
+- **Rarity Colors**: `Assets.Manifest.RarityColors[rarity]` - Color3 values for UI
+- **Placeholder Assets**: Fallback assets when real content is missing
+
+### Adding New Assets
+
+1. Add asset ID to `Assets.Manifest.CardImages[newCardId]`
+2. Add corresponding entry in `Assets.Resolver.getCardImage()`
+3. Assets automatically fall back to placeholders if missing
+
+## Config Flags
+
+Client-side configuration for development and debugging:
+
+### Available Flags
+
+```lua
+-- In src/client/Config.lua
+Config.USE_MOCKS = false        -- Route networking through mocks
+Config.SHOW_DEV_PANEL = true    -- Show dev panel UI
+Config.DEBUG_LOGS = false       -- Enable verbose logging
+Config.AUTO_REQUEST_PROFILE = true  -- Auto-request profile on startup
+```
+
+### Recommended Settings
+
+**Development:**
+```lua
+Config.USE_MOCKS = true
+Config.SHOW_DEV_PANEL = true
+Config.DEBUG_LOGS = true
+Config.AUTO_REQUEST_PROFILE = true
+```
+
+**Production:**
+```lua
+Config.USE_MOCKS = false
+Config.SHOW_DEV_PANEL = false
+Config.DEBUG_LOGS = false
+Config.AUTO_REQUEST_PROFILE = true
+```
+
+## Mock Layer
+
+The mock system provides offline development capabilities without requiring a running server:
+
+### Enabling Mocks
+
+```lua
+-- Set in Config.lua
+Config.USE_MOCKS = true
+```
+
+### Mock Features
+
+- **Profile Simulation**: Realistic profile data with 8 valid cards
+- **Deck Validation**: Client-side validation matching server logic
+- **Network Latency**: Simulated network delays for realistic testing
+- **Error Simulation**: All error codes from ErrorMap
+- **Time Synchronization**: Mock server timestamps for lootboxes
+
+### Mock Data Structure
+
+The mock system uses exactly the same card data as the server:
+- **8 Valid Cards**: `dps_001`, `support_001`, `tank_001`, `dps_002`, `support_002`, `dps_003`, `tank_002`, `dps_004`
+- **Rarity Values**: `"common"`, `"rare"`, `"epic"`, `"legendary"` (lowercase)
+- **Class Values**: `"dps"`, `"support"`, `"tank"` (lowercase)
+- **Slot Numbers**: 10, 20, 30, 40, 50, 60, 70, 80
+
+### Switching Between Mocks and Real Server
+
+```lua
+-- Toggle at runtime via Dev Panel
+-- Or change Config.USE_MOCKS and restart
+
+-- The system automatically:
+-- 1. Cleans up existing subscriptions
+-- 2. Reinitializes NetworkClient and ClientState
+-- 3. Immediately requests fresh profile data
+```
+
 ## Shared Modules
 
 Import the shared modules from `ReplicatedStorage.Modules.Utilities`:
@@ -480,36 +582,77 @@ Config.USE_MOCKS = true
 
 ## Dev Panel
 
-The Dev Panel provides a minimal UI for testing common flows:
+The Dev Panel provides a minimal UI for testing common flows during development:
 
 ### Enabling the Dev Panel
 
 ```lua
--- In Config.lua
+-- In src/client/Config.lua
 Config.SHOW_DEV_PANEL = true
 ```
 
-### Available Actions
+### Panel Features
 
-1. **Refresh Profile** - Request fresh profile data
-2. **Set Sample Deck** - Set deck with first 6 cards by slotNumber
-3. **Start PvE** - Start a PvE match
-4. **Toggle Mocks** - Switch between mock and real server
+**Available Actions:**
+1. **Refresh Profile** - Request fresh profile data from server/mocks
+2. **Set Sample Deck** - Automatically create a valid 6-card deck using available cards
+3. **Start PvE** - Initiate a PvE match request
+4. **Toggle Mocks** - Switch between mock and real server at runtime
 
-### Status Display
-
-The panel shows:
-- Current server time
-- Squad power
-- Mock status (ON/OFF)
+**Status Display:**
+- **Server Time**: Last known server timestamp
+- **Squad Power**: Current deck's computed power
+- **Mock Status**: Shows "ON" or "OFF" for current mode
 
 ### Using the Dev Panel
 
-1. Enable in `Config.lua`
-2. Run the game in Studio
-3. Panel appears in top-left corner
-4. Click buttons to test flows
-5. Use "Toggle Mocks" to switch between offline/online
+1. **Enable in Config**: Set `Config.SHOW_DEV_PANEL = true`
+2. **Run in Studio**: Panel appears automatically in top-left corner
+3. **Test Flows**: Click buttons to test different client-server interactions
+4. **Switch Modes**: Use "Toggle Mocks" to test offline/online functionality
+5. **Monitor Status**: Watch status updates in real-time
+
+### Panel Behavior
+
+- **Auto-Initialization**: Creates UI automatically when enabled
+- **Non-Intrusive**: Small, collapsible panel that doesn't interfere with gameplay
+- **Runtime Toggle**: Mocks can be enabled/disabled without restarting
+- **Status Updates**: Real-time updates based on ClientState changes
+
+## Client-Side Architecture
+
+The client-side system is designed for maximum developer ergonomics with offline development capabilities:
+
+### File Structure
+
+```
+src/client/
+├── Config.lua                    -- Configuration flags
+├── Utilities.lua                 -- Client-side utilities (ModuleScript)
+├── Controllers/
+│   └── NetworkClient.lua         -- Network client (ModuleScript)
+├── Dev/
+│   ├── DevPanel.client.lua       -- Dev panel UI (LocalScript)
+│   ├── MockData.lua              -- Mock data generators (ModuleScript)
+│   ├── MockNetwork.lua           -- Mock network layer (ModuleScript)
+│   └── VMHarness.client.lua      -- View model testing (LocalScript)
+└── State/
+    ├── ClientState.client.lua    -- State management (LocalScript)
+    └── selectors.lua             -- State selectors (ModuleScript)
+```
+
+### Module Types
+
+- **`.lua` files**: Become `ModuleScript` objects (can be required)
+- **`.client.lua` files**: Become `LocalScript` objects (run on client)
+- **`.server.lua` files**: Become `Script` objects (run on server)
+
+### Key Components
+
+**NetworkClient**: Unified interface for both mock and real server communication
+**MockSystem**: Drop-in replacement for server networking during development
+**ClientState**: Centralized state management with subscription system
+**DevPanel**: Runtime development tools for testing and debugging
 
 ## Troubleshooting
 
@@ -555,6 +698,28 @@ Check these items in order:
 - **Mock Not Working**: Verify `USE_MOCKS = true` and mock initialization
 - **Dev Panel Missing**: Check `SHOW_DEV_PANEL = true` and PlayerGui permissions
 - **Assets Not Loading**: Verify asset IDs in `Assets.Manifest` and fallback handling
+
+### Recent Fixes (Today's Updates)
+
+**File Extension Issues:**
+- **Problem**: `.client.lua` files become `LocalScript` objects that can't be required
+- **Solution**: Use `.lua` for modules that need to be required, `.client.lua` for execution scripts
+- **Result**: All require statements now work correctly
+
+**Path Resolution:**
+- **Problem**: Incorrect relative paths between client modules
+- **Solution**: Fixed all require paths to use correct folder navigation
+- **Result**: No more "Utilities is not a valid member" errors
+
+**Card Data Mismatch:**
+- **Problem**: Client mock system used card IDs that don't exist on server
+- **Solution**: Updated client card data to match exactly what server has
+- **Result**: "Set Sample Deck" button now works without validation errors
+
+**Data Format Consistency:**
+- **Problem**: Client and server used different case for rarity/class values
+- **Solution**: Standardized on lowercase values (`"common"`, `"dps"`, etc.)
+- **Result**: Seamless integration between mock and real server modes
 
 ## Deck Uniqueness and Ordering
 

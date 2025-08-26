@@ -5,8 +5,7 @@
 	from ClientState for UI consumption.
 ]]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Utilities = require(ReplicatedStorage.Modules.Utilities)
+local Utilities = require(script.Parent.Parent.Utilities)
 local Types = Utilities.Types
 local CardCatalog = Utilities.CardCatalog
 local CardStats = Utilities.CardStats

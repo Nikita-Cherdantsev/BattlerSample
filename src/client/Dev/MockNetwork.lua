@@ -7,8 +7,10 @@
 
 local MockData = require(script.Parent.MockData)
 local Config = require(script.Parent.Parent.Config)
-local Utilities = require(game:GetService("ReplicatedStorage").Modules.Utilities)
-local DeckValidator = Utilities.DeckValidator
+local Utilities = require(script.Parent.Parent.Utilities)
+local Types = Utilities.Types
+
+
 
 local MockNetwork = {}
 
@@ -64,8 +66,8 @@ function MockNetwork.requestSetDeck(deckIds)
 	
 	log("Requesting deck update (mock): %s", table.concat(deckIds, ", "))
 	
-	-- Validate deck using existing validator
-	local isValid, errorMessage = DeckValidator.ValidateDeck(deckIds)
+	-- Validate deck using client-side validator
+	local isValid, errorMessage = Utilities.DeckValidator.ValidateDeck(deckIds)
 	if not isValid then
 		log("Deck validation failed: %s", errorMessage)
 		return false, errorMessage
@@ -77,10 +79,31 @@ function MockNetwork.requestSetDeck(deckIds)
 	if currentProfile then
 		currentProfile.deck = deckIds
 		
-		-- Recompute squad power
-		local deckVM = require(game:GetService("ReplicatedStorage").Modules.ViewModels.DeckVM)
-		local newDeckVM = deckVM.build(deckIds, currentProfile.collection)
-		currentProfile.squadPower = newDeckVM and newDeckVM.squadPower or 0
+		-- Recompute squad power (simplified for client)
+		currentProfile.squadPower = 0
+		for _, cardId in ipairs(deckIds) do
+			-- Simple power calculation (same as in MockData)
+			local basePower = 100
+			local rarityBonus = {
+				[Types.Rarity.Common] = 0,
+				[Types.Rarity.Rare] = 50,
+				[Types.Rarity.Epic] = 150,
+				[Types.Rarity.Legendary] = 300
+			}
+			-- Get rarity from collection or use Common as default
+			local rarity = Types.Rarity.Common
+			if currentProfile.collection[cardId] then
+				-- For now, assign rarity based on card ID pattern
+				if string.find(cardId, "Legendary") then
+					rarity = Types.Rarity.Legendary
+				elseif string.find(cardId, "Epic") then
+					rarity = Types.Rarity.Epic
+				elseif string.find(cardId, "Rare") then
+					rarity = Types.Rarity.Rare
+				end
+			end
+			currentProfile.squadPower = currentProfile.squadPower + basePower + (rarityBonus[rarity] or 0)
+		end
 		
 		-- Emit profile update
 		local payload = MockData.makeProfileUpdatedPayload(currentProfile)

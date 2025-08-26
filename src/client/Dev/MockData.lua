@@ -5,20 +5,19 @@
 	the current v2 data shapes for UI development without a server.
 ]]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Utilities = require(ReplicatedStorage.Modules.Utilities)
+local Utilities = require(script.Parent.Parent.Utilities)
 local Types = Utilities.Types
-local CardCatalog = Utilities.CardCatalog
-local CardStats = Utilities.CardStats
-local DeckVM = require(ReplicatedStorage.Modules.ViewModels.DeckVM)
 local TimeUtils = Utilities.TimeUtils
+
+-- Use card data from Utilities
+local CLIENT_CARD_DATA = Utilities.CardCatalog.GetAllCards()
 
 local MockData = {}
 
--- Get valid card IDs from catalog
+-- Get valid card IDs from client card data
 local function getValidCardIds()
 	local cardIds = {}
-	for cardId, _ in pairs(CardCatalog.GetAllCards()) do
+	for cardId, _ in pairs(CLIENT_CARD_DATA) do
 		table.insert(cardIds, cardId)
 	end
 	table.sort(cardIds) -- Ensure consistent ordering
@@ -52,9 +51,22 @@ function MockData.makeProfileSnapshot()
 		}
 	end
 	
-	-- Compute squad power using existing helpers
-	local deckVM = DeckVM.build(deck, collection)
-	local squadPower = deckVM and deckVM.squadPower or 0
+	-- Compute squad power (simplified for client)
+	local squadPower = 0
+	for _, cardId in ipairs(deck) do
+		local card = CLIENT_CARD_DATA[cardId]
+		if card then
+			-- Simple power calculation: base + rarity bonus
+			local basePower = 100
+			local rarityBonus = {
+				[Types.Rarity.Common] = 0,
+				[Types.Rarity.Rare] = 50,
+				[Types.Rarity.Epic] = 150,
+				[Types.Rarity.Legendary] = 300
+			}
+			squadPower = squadPower + basePower + (rarityBonus[card.rarity] or 0)
+		end
+	end
 	
 	-- Create lootboxes
 	local lootboxes = {

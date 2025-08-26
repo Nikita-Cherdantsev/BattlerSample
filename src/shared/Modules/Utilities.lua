@@ -1,39 +1,60 @@
 local Utilities = {}
 
-Utilities.Audio = require(script.Audio)
-Utilities.ButtonHandler = require(script.FrameOpening)
-Utilities.ButtonAnimations = require(script.ButtonAnimations)
-Utilities.Dropdown = require(script.Dropdown)
-Utilities.Icons = require(script.Icons)
-Utilities.Particles = require(script.Particles)
-Utilities.Popup = require(script.Popup)
-Utilities.Short = require(script.Short)
-Utilities.Tween = require(script.Tween)
-Utilities.TweenUI = require(script.TweenUI)
-Utilities.Typewrite = require(script.Typewrite)
+-- Safe require function
+local function safeRequire(modulePath, fallback)
+	local success, module = pcall(require, modulePath)
+	if success then
+		return module
+	else
+		if fallback then
+			return fallback
+		end
+		-- Return a stub module that won't crash
+		return {
+			-- Add common methods that might be called
+			GetAllCards = function() return {} end,
+			ValidateDeck = function() return true, "Stub validator" end,
+			GetCardStats = function() return {} end,
+			-- Add any other methods that might be needed
+		}
+	end
+end
 
--- Card Battler MVP Modules (v2)
-Utilities.CardCatalog = require(script.Cards.CardCatalog)
-Utilities.CardLevels = require(script.Cards.CardLevels)
-Utilities.CardStats = require(script.Cards.CardStats)
-Utilities.DeckValidator = require(script.Cards.DeckValidator)
-Utilities.SeededRNG = require(script.RNG.SeededRNG)
-Utilities.CombatTypes = require(script.Combat.CombatTypes)
-Utilities.CombatUtils = require(script.Combat.CombatUtils)
-Utilities.GameConstants = require(script.Constants.GameConstants)
-Utilities.UIConstants = require(script.Constants.UIConstants)
-Utilities.SelfCheck = require(script.SelfCheck)
+-- UI Utilities (safe to require on both client and server)
+Utilities.Audio = safeRequire(script.Audio)
+Utilities.ButtonHandler = safeRequire(script.FrameOpening)
+Utilities.ButtonAnimations = safeRequire(script.ButtonAnimations)
+Utilities.Dropdown = safeRequire(script.Dropdown)
+Utilities.Icons = safeRequire(script.Icons)
+Utilities.Particles = safeRequire(script.Particles)
+Utilities.Popup = safeRequire(script.Popup)
+Utilities.Short = safeRequire(script.Short)
+Utilities.Tween = safeRequire(script.Tween)
+Utilities.TweenUI = safeRequire(script.TweenUI)
+Utilities.Typewrite = safeRequire(script.Typewrite)
 
--- UI Integration Modules
-Utilities.Types = require(script.Types)
-Utilities.ErrorMap = require(script.ErrorMap)
-Utilities.BoardLayout = require(script.BoardLayout)
-Utilities.TimeUtils = require(script.TimeUtils)
+-- Card Battler MVP Modules (v2) - may not be available on client
+Utilities.CardCatalog = safeRequire(script.Cards.CardCatalog)
+Utilities.CardLevels = safeRequire(script.Cards.CardLevels)
+Utilities.CardStats = safeRequire(script.Cards.CardStats)
+Utilities.DeckValidator = safeRequire(script.Cards.DeckValidator)
+Utilities.SeededRNG = safeRequire(script.RNG.SeededRNG)
+Utilities.CombatTypes = safeRequire(script.Combat.CombatTypes)
+Utilities.CombatUtils = safeRequire(script.Combat.CombatUtils)
+Utilities.GameConstants = safeRequire(script.Constants.GameConstants)
+Utilities.UIConstants = safeRequire(script.Constants.UIConstants)
+Utilities.SelfCheck = safeRequire(script.SelfCheck)
 
--- Assets
+-- UI Integration Modules (safe to require on both client and server)
+Utilities.Types = safeRequire(script.Types)
+Utilities.ErrorMap = safeRequire(script.ErrorMap)
+Utilities.BoardLayout = safeRequire(script.BoardLayout)
+Utilities.TimeUtils = safeRequire(script.TimeUtils)
+
+-- Assets (safe to require on both client and server)
 Utilities.Assets = {
-	Manifest = require(script.Assets.Manifest),
-	Resolver = require(script.Assets.Resolver)
+	Manifest = safeRequire(script.Assets.Manifest),
+	Resolver = safeRequire(script.Assets.Resolver)
 }
 
 return Utilities

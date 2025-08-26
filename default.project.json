@@ -197,7 +197,7 @@
         "Controllers": {
           "$className": "Folder",
           "NetworkClient": {
-            "$path": "src/client/Controllers/NetworkClient.client.lua"
+            "$path": "src/client/Controllers/NetworkClient.lua"
           }
         },
         "Dev": {
@@ -218,7 +218,7 @@
         "State": {
           "$className": "Folder",
           "ClientState": {
-            "$path": "src/client/State/ClientState.client.lua"
+            "$path": "src/client/State/ClientState.lua"
           },
           "selectors": {
             "$path": "src/client/State/selectors.lua"
@@ -235,6 +235,9 @@
         },
         "NetworkTest": {
           "$path": "src/client/NetworkTest.client.lua"
+        },
+        "Utilities": {
+          "$path": "src/client/Utilities.lua"
         }
       }
     }

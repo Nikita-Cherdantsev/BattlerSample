@@ -15,13 +15,175 @@ local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
 local ClientState = require(script.Parent.Parent.State.ClientState)
 local selectors = require(script.Parent.Parent.State.selectors)
 
--- Shared modules
-local Utilities = require(ReplicatedStorage.Modules.Utilities)
+local Utilities = require(script.Parent.Parent.Utilities)
 local Types = Utilities.Types
-local CardCatalog = Utilities.CardCatalog
 local TimeUtils = Utilities.TimeUtils
-local DeckVM = require(ReplicatedStorage.Modules.ViewModels.DeckVM)
-local ProfileVM = require(ReplicatedStorage.Modules.ViewModels.ProfileVM)
+
+-- Use card data from Utilities
+local CLIENT_CARD_DATA = Utilities.CardCatalog.GetAllCards()
+
+-- Client-side simplified ViewModels
+local ClientDeckVM = {}
+
+function ClientDeckVM.build(deckIds, collection)
+	if not deckIds or #deckIds ~= 6 then
+		return nil
+	end
+	
+	local slots = {}
+	for i, cardId in ipairs(deckIds) do
+		local card = CLIENT_CARD_DATA[cardId]
+		if card then
+			-- Simple grid layout: 3x2 grid
+			local row = i <= 3 and 1 or 2
+			local col = ((i - 1) % 3) + 1
+			
+			table.insert(slots, {
+				slot = i,
+				row = row,
+				col = col,
+				card = {
+					id = cardId,
+					level = collection and collection[cardId] and collection[cardId].level or 1,
+					power = 100 + (card.rarity == "Rare" and 50 or card.rarity == "Epic" and 150 or card.rarity == "Legendary" and 300 or 0)
+				}
+			})
+		end
+	end
+	
+	return {
+		slots = slots,
+		cardIds = deckIds,
+		squadPower = 0 -- Will be computed by caller
+	}
+end
+
+function ClientDeckVM.getComposition(deckVM)
+	if not deckVM or not deckVM.slots then
+		return { classes = {}, rarities = {} }
+	end
+	
+	local classes = { DPS = 0, Support = 0, Tank = 0 }
+	local rarities = { Common = 0, Rare = 0, Epic = 0, Legendary = 0 }
+	
+	for _, slot in ipairs(deckVM.slots) do
+		local card = CLIENT_CARD_DATA[slot.card.id]
+		if card then
+			classes[card.class] = (classes[card.class] or 0) + 1
+			rarities[card.rarity] = (rarities[card.rarity] or 0) + 1
+		end
+	end
+	
+	return { classes = classes, rarities = rarities }
+end
+
+function ClientDeckVM.getAverageLevel(deckVM)
+	if not deckVM or not deckVM.slots then
+		return 1
+	end
+	
+	local totalLevel = 0
+	local count = 0
+	
+	for _, slot in ipairs(deckVM.slots) do
+		totalLevel = totalLevel + (slot.card.level or 1)
+		count = count + 1
+	end
+	
+	return count > 0 and math.floor(totalLevel / count) or 1
+end
+
+local ClientProfileVM = {}
+
+function ClientProfileVM.buildFromState(state)
+	if not state.profile then
+		return nil
+	end
+	
+	local profile = state.profile
+	
+	-- Build deck VM
+	local deckVM = ClientDeckVM.build(profile.deck, profile.collection)
+	
+	-- Compute squad power
+	local squadPower = 0
+	if profile.deck then
+		for _, cardId in ipairs(profile.deck) do
+			local card = CLIENT_CARD_DATA[cardId]
+			if card then
+				local basePower = 100
+				local rarityBonus = {
+					["Common"] = 0,
+					["Rare"] = 50,
+					["Epic"] = 150,
+					["Legendary"] = 300
+				}
+				squadPower = squadPower + basePower + (rarityBonus[card.rarity] or 0)
+			end
+		end
+	end
+	
+	-- Update deck VM squad power
+	if deckVM then
+		deckVM.squadPower = squadPower
+	end
+	
+	-- Build collection VM
+	local collectionVM = {
+		cardCount = 0,
+		uniqueCards = 0,
+		highestLevel = 1
+	}
+	
+	if profile.collection then
+		for cardId, entry in pairs(profile.collection) do
+			collectionVM.cardCount = collectionVM.cardCount + (entry.count or 0)
+			collectionVM.uniqueCards = collectionVM.uniqueCards + 1
+			collectionVM.highestLevel = math.max(collectionVM.highestLevel, entry.level or 1)
+		end
+	end
+	
+	return {
+		deckVM = deckVM,
+		collectionVM = collectionVM,
+		squadPower = squadPower,
+		collectionSize = collectionVM.uniqueCards,
+		loginInfo = {
+			loginStreak = profile.loginStreak or 0
+		},
+		currencies = profile.currencies or { soft = 0, hard = 0 },
+		lootboxCount = profile.lootboxes and #profile.lootboxes or 0,
+		unlockingLootboxes = 0,
+		readyLootboxes = 0,
+		lootboxes = profile.lootboxes or {}
+	}
+end
+
+function ClientProfileVM.getCollectionSorted(profileVM, sortBy)
+	if not profileVM or not profileVM.collectionVM then
+		return {}
+	end
+	
+	-- Simplified sorting - just return first few cards
+	local sorted = {}
+	local count = 0
+	for cardId, _ in pairs(CLIENT_CARD_DATA) do
+		if count < 5 then
+			table.insert(sorted, { cardId = cardId, name = cardId })
+			count = count + 1
+		end
+	end
+	
+	return sorted
+end
+
+function ClientProfileVM.getStats(profileVM)
+	return {
+		totalCards = profileVM and profileVM.collectionSize or 0,
+		squadPower = profileVM and profileVM.squadPower or 0,
+		loginStreak = profileVM and profileVM.loginInfo and profileVM.loginInfo.loginStreak or 0
+	}
+end
 
 -- State
 local isInitialized = false
@@ -51,7 +213,7 @@ function VMHarness.init()
 	-- Subscribe to state changes
 	ClientState.subscribe(function(state)
 		if state.profile then
-			profileVM = ProfileVM.buildFromState(state)
+			profileVM = ClientProfileVM.buildFromState(state)
 			log("Profile VM updated: squadPower=%d, collectionSize=%d", 
 				profileVM.squadPower, profileVM.collectionSize)
 		end
@@ -101,7 +263,7 @@ function VMHarness.PrintProfile()
 		end
 		
 		-- Deck composition
-		local composition = DeckVM.getComposition(profileVM.deckVM)
+		local composition = ClientDeckVM.getComposition(profileVM.deckVM)
 		log("Deck Composition:")
 		log("  Classes: %s", table.concat({composition.classes.DPS or 0, composition.classes.Support or 0, composition.classes.Tank or 0}, "/"))
 		log("  Rarities: %s", table.concat({composition.rarities.Common or 0, composition.rarities.Rare or 0, composition.rarities.Epic or 0, composition.rarities.Legendary or 0}, "/"))
@@ -113,7 +275,7 @@ function VMHarness.PrintProfile()
 		log("COLLECTION PREVIEW (first 5 cards)")
 		printSeparator()
 		
-		local sortedCollection = ProfileVM.getCollectionSorted(profileVM, "power")
+		local sortedCollection = ClientProfileVM.getCollectionSorted(profileVM, "power")
 		for i = 1, math.min(5, #sortedCollection) do
 			local card = sortedCollection[i]
 			log("%d. %s (L%d, P%d, %s %s)", 
@@ -207,7 +369,7 @@ function VMHarness.PrintCollection(sortBy)
 	log("COLLECTION SORTED BY %s", string.upper(sortBy))
 	printSeparator()
 	
-	local sortedCollection = ProfileVM.getCollectionSorted(profileVM, sortBy)
+			local sortedCollection = ClientProfileVM.getCollectionSorted(profileVM, sortBy)
 	
 	for i, card in ipairs(sortedCollection) do
 		log("%d. %s (L%d, P%d, %s %s, Count: %d)", 
@@ -229,8 +391,8 @@ function VMHarness.PrintDeckAnalysis()
 	printSeparator()
 	
 	local deck = profileVM.deckVM
-	local composition = DeckVM.getComposition(deck)
-	local averageLevel = DeckVM.getAverageLevel(deck)
+			local composition = ClientDeckVM.getComposition(deck)
+	local averageLevel = ClientDeckVM.getAverageLevel(deck)
 	
 	log("Squad Power: %d", deck.squadPower)
 	log("Average Level: %.1f", averageLevel)
@@ -258,7 +420,7 @@ function VMHarness.PrintStats()
 	log("PROFILE STATISTICS")
 	printSeparator()
 	
-	local stats = ProfileVM.getStats(profileVM)
+	local stats = ClientProfileVM.getStats(profileVM)
 	
 	log("Collection Stats:")
 	log("  Total Cards: %d", stats.totalCards)

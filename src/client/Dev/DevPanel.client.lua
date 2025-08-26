@@ -15,8 +15,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(script.Parent.Parent.Config)
 local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
 local ClientState = require(script.Parent.Parent.State.ClientState)
-local Utilities = require(ReplicatedStorage.Modules.Utilities)
-local CardCatalog = Utilities.CardCatalog
+local Utilities = require(script.Parent.Parent.Utilities)
+
+-- Use card data from Utilities
+local CLIENT_CARD_DATA = Utilities.CardCatalog.GetAllCards()
 
 -- State
 local panel = nil
@@ -149,9 +151,9 @@ function DevPanel.create()
 	local sampleDeckButton = createButton(buttonContainer, "Set Sample Deck", function()
 		log("Set Sample Deck clicked")
 		
-		-- Get first 6 unique card IDs from catalog (by slotNumber)
+		-- Get first 6 unique card IDs from client card data (by slotNumber)
 		local allCards = {}
-		for cardId, card in pairs(CardCatalog.GetAllCards()) do
+		for cardId, card in pairs(CLIENT_CARD_DATA) do
 			table.insert(allCards, {id = cardId, slotNumber = card.slotNumber})
 		end
 		

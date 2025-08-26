@@ -9,6 +9,7 @@ local NetworkClient = {}
 
 -- Config
 local Config = require(script.Parent.Parent.Config)
+
 local MockNetwork = require(script.Parent.Parent.Dev.MockNetwork)
 
 -- Debug flag
@@ -17,8 +18,8 @@ local DEBUG = Config.DEBUG_LOGS
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Shared modules
-local Utilities = require(ReplicatedStorage.Modules.Utilities)
+-- Client modules
+local Utilities = require(script.Parent.Parent.Utilities)
 local Types = Utilities.Types
 local ErrorMap = Utilities.ErrorMap
 
