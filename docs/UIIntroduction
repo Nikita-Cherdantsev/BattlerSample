@@ -1,0 +1,118 @@
+Cаммари для UI
+
+## 1) Единые контракты и утилиты (shared)
+
+* **Types.lua** (`src/shared/Modules/Types.lua`)
+  Энамы и типы: `Rarity`, `Class`, `LootboxState`, `ProfileV2`, `CollectionEntry`, `Deck`, `LootboxEntry`, сетевые payload’ы (`ProfileUpdatedPayload`, `MatchResponse`).
+  👉 Один источник правды для форм данных на клиенте и сервере.
+* **BoardLayout.lua** (`src/shared/Modules/BoardLayout.lua`)
+  Каноническая сетка 3×2 и слоты: визуально `5 3 1 / 6 4 2`.
+  Хелперы: `gridForDeck(deck)`, `SLOT_ORDER()` (ходы 1→6), `oppositeSlot(slot)`.
+* **TimeUtils.lua** (`src/shared/Modules/TimeUtils.lua`)
+  `nowUnix()`, константы длительностей лутбоксов, базовые time-хелперы.
+  Плюс: **`serverNow` теперь приезжает во все ответы сервера** (и в `ProfileUpdated`, и в ответ на `RequestStartMatch`) — удобно для таймеров без рассинхрона.
+* **ErrorMap.lua** (`src/shared/Modules/ErrorMap.lua`)
+  `code → {title, message}` + `toUserMessage(code, fallback?)` для единых человекочитаемых ошибок.
+
+## 2) Клиентский слой (готовые «крючки» для UI)
+
+* **NetworkClient** (`src/client/Controllers/NetworkClient.client.lua`)
+  Методы:
+  `requestProfile()`, `requestSetDeck(deckIds)`, `requestStartMatch(opts)`, события: `onProfileUpdated(cb)`, `onceProfile(cb)`.
+  Вшиты: дебаунс, нормализация ошибок через ErrorMap, трекинг `serverNow`.
+* **ClientState** (`src/client/State/ClientState.client.lua`)
+  Централизованный стор: профиль v2, `serverNow`, флаги UI-состояния, последний error. Автомердж снапшотов из `ProfileUpdated`.
+* **selectors.lua** (`src/client/State/selectors.lua`)
+  Чистые селекторы: получить деку, коллекцию списком (с сортировками: по имени/редкости/уровню/slotNumber), валюты, лутбоксы и т.д.
+* **ViewModels** (`src/shared/Modules/ViewModels/`)
+
+  * `CardVM.build(cardId, entry?) → { id, name, rarity, class, level, stats, power, slotNumber, description }`
+  * `DeckVM.build(deckIds, collection) → { slots[{slot,row,col,card}], squadPower }`
+  * `ProfileVM.build(profile) → { deckVM, collectionVM[], lootboxes[], currencies, loginInfo, squadPower }`
+    👉 UI получает «готовые к отрисовке» структуры без доменной логики.
+
+## 3) Ассеты, моки, конфиги, дев-панель
+
+* **Assets Manifest** (`src/shared/Modules/Assets/Manifest.lua`) + **Resolver**
+  `Resolver.getCardImage(cardId)`, `getClassIcon(class)`, `getRarityFrame(rarity)`, `getRarityColor(rarity)` — с фолбэками.
+* **Config.lua** (`src/client/Config.lua`)
+  Флаги:
+  `USE_MOCKS` (моки вместо сервера), `SHOW_DEV_PANEL` (показать дев-панель),
+  `DEBUG_LOGS`, `AUTO_REQUEST_PROFILE` (авто-запрос профиля на старте).
+* **MockData / MockNetwork** (`src/client/Dev/`)
+  Полноценный оффлайн-режим: моковые `ProfileUpdated`/матчи, совместимые по схеме, с `serverNow`. Позволяет верстать UI без сервера.
+* **DevPanel** (`src/client/Dev/DevPanel.client.lua`)
+  Небольшая панелька (ScreenGui):
+
+  * Refresh Profile
+  * Set Sample Deck (6 уникальных карт)
+  * Start PvE
+  * Toggle Mocks (горячее переключение оффлайн/онлайн с ре-инициализацией)
+    Плюс статус: `serverNow`, `squadPower`, Mock ON/OFF.
+
+---
+
+# Быстрый старт для UI-разработчика
+
+1. **Включить оффлайн-режим (по желанию):**
+   В `Config.lua`:
+
+   ```lua
+   USE_MOCKS = true
+   SHOW_DEV_PANEL = true
+   AUTO_REQUEST_PROFILE = true
+   ```
+
+   Запустить игру — панель в левом верхнем углу. Есть профиль, коллекция, дека, таймеры лутбоксов (на моках).
+2. **Подписка на профиль и построение VM:**
+
+   ```lua
+   local Utilities = require(ReplicatedStorage.Modules.Utilities)
+   local NetworkClient = require(StarterPlayer.StarterPlayerScripts.Controllers.NetworkClient)
+   local ClientState = require(StarterPlayer.StarterPlayerScripts.State.ClientState)
+   local ProfileVM = Utilities.ViewModels.ProfileVM
+
+   ClientState.init(NetworkClient)
+   NetworkClient.requestProfile()
+
+   -- где-нибудь в вашем контроллере/роутере:
+   local state = ClientState.getState()
+   if state.profile then
+     local vm = ProfileVM.build(state.profile)
+     -- vm.deckVM.slots → для грид-рендера (row/col/slot/карта)
+     -- vm.collectionVM → список карточек с level/stats/power
+     -- vm.lootboxes → для таймеров используйте serverNow из state
+   end
+   ```
+3. **Меняем деку:**
+   Соберите **6 уникальных** `cardId` → `NetworkClient.requestSetDeck(deckIds)` → ловите `ProfileUpdated` → в стейте появится новый `squadPower`.
+   Позиции на поле определяются **по `slotNumber`** из каталога (сервер), превью можно получить `DeckVM.build(...)`.
+4. **Матч (для теста):**
+   `NetworkClient.requestStartMatch({ mode = "PvE" })` → получите `{ ok, result, log, serverNow }` и покажите резюме боя.
+5. **Ассеты:**
+
+   ```lua
+   local Assets = Utilities.Assets
+   local img = Assets.Resolver.getCardImage(cardId)
+   local color = Assets.Resolver.getRarityColor("Epic")
+   ```
+
+---
+
+# Важные нюансы (коротко)
+
+* **serverNow** всегда приходит в `ProfileUpdated` и ответе матча → таймеры считают «от сервера».
+* **Дека**: всегда 6 **уникальных** карт, порядок ходов фиксирован 1→6; раскладка (где чья карта стоит) задаётся **`slotNumber`**.
+* **Сетка борда**: используйте `BoardLayout.gridForDeck` (визуальная матрица `5 3 1 / 6 4 2`).
+* **Ошибки** показываем через `ErrorMap.toUserMessage(code)` — не нужно городить разнобой.
+* **ViewModels** и **selectors** — чистые функции, без сайд-эффектов, их можно спокойно вызывать в React-подобном UI.
+
+---
+
+# Где лежит что (быстрый путеводитель)
+
+* Shared контракты/утилиты: `src/shared/Modules/{Types, BoardLayout, TimeUtils, ErrorMap}`
+* Ассеты: `src/shared/Modules/Assets/{Manifest, Resolver}`
+* Card/Deck/Stats/Levels: `src/shared/Modules/Cards/{CardCatalog, DeckValidator, CardStats, CardLevels}`
+* VM: `src/shared/Modules/ViewModels/{CardVM, DeckVM, ProfileVM}`
+* Клиентский слой: `src/client/{Controllers/NetworkClient.client.lua, State/*, Dev/*, Config.lua}`
