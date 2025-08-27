@@ -523,9 +523,7 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 **For New Team Members**: Run the self-checks first, then explore the dev harnesses to understand the system behavior.
 
 ---
-
-Да, вижу оба файла — **README.md** и **default.project.json** — и опираюсь на них (плюс на актуальный **docs/ui\_integration.md**).  &#x20;
-
+---
 ---
 
 # Спецификация проекта (Russian language version)
