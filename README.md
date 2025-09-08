@@ -22,6 +22,7 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 **MVP Features Implemented:**
 - ✅ Profile system with v2 schema (collection, deck, currencies, lootboxes)
 - ✅ Card catalog with 8 cards (4 rarities, 3 classes, slot-based ordering)
+- ✅ Card level-up system (1-7 levels, atomic persistence, squad power recomputation)
 - ✅ Deck validation (6 unique cards, slot mapping by slotNumber)
 - ✅ Deterministic combat engine (fixed turn order, same-index targeting, defence soak)
 - ✅ Network layer with rate limiting and concurrency guards
@@ -119,6 +120,8 @@ Profile = {
 - **Autosave**: On profile changes with `BindToClose` safety
 - **Key Pattern**: `"profile_" .. playerId` for isolation
 - **Validation**: Structural constraints only (no business logic validation on write)
+- **Atomic Operations**: Level-up mutations use `UpdateAsync` for atomic resource deduction and level increment
+- **Squad Power**: Automatically recomputed when upgraded card is in active deck
 
 **v1→v2 Migration:**
 - **Collection Format**: `count: number` → `{ count: number, level: number }`
@@ -227,6 +230,7 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 **Profile Management:**
 - **`RequestProfile`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestSetDeck`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestLevelUpCard`** (C→S) → **`ProfileUpdated`** (S→C)
 
 **Match System:**
 - **`RequestStartMatch`** (C→S) → **Response on same event** (S→C)
@@ -281,6 +285,7 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 - **RequestSetDeck**: 2s cooldown, 5/minute
 - **RequestProfile**: 1s cooldown, 10/minute  
 - **RequestStartMatch**: 1s cooldown, 5/minute
+- **RequestLevelUpCard**: 1s cooldown, 10/minute
 
 **Concurrency Guards:**
 - **Per-Player State**: `isInMatch` flag prevents overlapping matches
@@ -297,6 +302,10 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 | `NO_DECK` | Player has no active deck |
 | `INVALID_DECK` | Deck violates rules (duplicates, wrong size) |
 | `BUSY` | Player already in match |
+| `CARD_NOT_OWNED` | Card not found in collection |
+| `LEVEL_MAXED` | Card already at maximum level |
+| `INSUFFICIENT_COPIES` | Not enough card copies for level-up |
+| `INSUFFICIENT_SOFT` | Not enough soft currency for level-up |
 | `INTERNAL` | Server-side error |
 
 ## Client Integration Layer
@@ -304,16 +313,17 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 **Reference**: See [docs/ui_integration.md](docs/ui_integration.md) for complete UI integration guide.
 
 **Core Components:**
-- **NetworkClient**: Unified interface for mock/real server communication
-- **ClientState**: Centralized state store with subscription system
-- **Selectors**: Pure functions for data extraction and transformation
-- **ViewModels**: UI-ready data structures (CardVM, DeckVM, ProfileVM)
+- **NetworkClient**: Unified interface for mock/real server communication (`requestLevelUpCard()`)
+- **ClientState**: Centralized state store with subscription system (`isLeveling`, `lastError`)
+- **Selectors**: Pure functions for data extraction and transformation (upgradeability computation)
+- **ViewModels**: UI-ready data structures (CardVM with level-up fields, DeckVM, ProfileVM)
 
 **Key Features:**
 - **Time Sync**: `serverNow` for accurate timers and lootbox countdowns
 - **Grid Layout**: `BoardLayout.gridForDeck()` for 3×2 board rendering
 - **Assets**: Centralized manifest and resolver for consistent UI styling
 - **Configuration**: Feature flags for development vs production
+- **Level-Up Flow**: Complete UI integration guide in [Level-Up Flow section](docs/ui_integration.md#level-up-flow)
 
 **Quickstart Example:**
 ```lua
@@ -377,6 +387,11 @@ Utilities.SelfCheck.RunAllTests()
 - **Run**: Automatically on server start
 - **Tests**: Card granting, login streak bumps, profile validation
 
+**LevelUpDevHarness** (`src/server/Services/LevelUpDevHarness.server.lua`):
+- **Purpose**: Test card level-up functionality and validation
+- **Run**: Automatically on server start
+- **Tests**: Happy path level-up, validation errors, rate limiting, squad power recomputation
+
 ### Client-Side Testing
 
 **NetworkTest** (`src/client/NetworkTest.client.lua`):
@@ -388,11 +403,12 @@ Utilities.SelfCheck.RunAllTests()
 - **Purpose**: Test ViewModels and client state
 - **Run**: Automatically on client start
 - **Tests**: ProfileVM building, deck rendering, squad power calculation
+- **Level-Up Commands**: `VMHarness.LevelUpFirstUpgradeable()`, `VMHarness.LevelUp(cardId)`, `VMHarness.PrintUpgradeableCards()`
 
 **DevPanel** (`src/client/Dev/DevPanel.client.lua`):
 - **Purpose**: Runtime testing UI
 - **Enable**: `Config.SHOW_DEV_PANEL = true`
-- **Features**: Profile refresh, sample deck, PvE match, mock toggle
+- **Features**: Profile refresh, sample deck, PvE match, level-up testing, mock toggle
 
 ### Coverage Status
 
@@ -428,6 +444,7 @@ Utilities.SelfCheck.RunAllTests()
 2. **Studio**: Open `test-build.rbxlx` and sync with Rojo
 3. **Enable Dev Mode**: Set `Config.USE_MOCKS = true` and `Config.SHOW_DEV_PANEL = true`
 4. **Test**: Run game, verify dev panel appears, test mock functionality
+5. **Level-Up Testing**: Use "Level Up First Upgradeable" button in DevPanel for one-click testing
 
 **Rojo Commands:**
 ```bash
@@ -442,7 +459,7 @@ rojo upload         # Upload to Roblox (requires auth)
 ```lua
 -- In src/client/Config.lua
 Config.DEBUG_LOGS = true        -- Verbose client logging
-Config.USE_MOCKS = true         -- Offline development
+Config.USE_MOCKS = true         -- Offline development (mock payloads match server shape including serverNow)
 Config.SHOW_DEV_PANEL = true    -- Development UI
 ```
 
@@ -521,6 +538,19 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 **For Game Developers**: Focus on `src/shared/Modules/` for core game logic and `src/server/Services/` for server architecture.
 
 **For New Team Members**: Run the self-checks first, then explore the dev harnesses to understand the system behavior.
+
+---
+
+## What Changed in This Release
+
+**Card Level-Up System:**
+- ✅ **Server Implementation**: `RequestLevelUpCard` RemoteEvent with atomic persistence and squad power recomputation
+- ✅ **Client Integration**: `NetworkClient.requestLevelUpCard()`, `ClientState.isLeveling`, upgradeability selectors
+- ✅ **ViewModels**: CardVM with level-up fields (`canLevelUp`, `requiredCount`, `softAmount`, `shortfallCount`, `shortfallSoft`)
+- ✅ **Mock Parity**: MockNetwork mirrors server validation, error codes, and payload structure
+- ✅ **Dev Tools**: DevPanel "Level Up First Upgradeable" button, VMHarness console commands
+- ✅ **Documentation**: Complete Level-Up Flow section in [docs/ui_integration.md](docs/ui_integration.md)
+- ✅ **Testing**: LevelUpDevHarness server-side validation, comprehensive error case coverage
 
 ---
 ---

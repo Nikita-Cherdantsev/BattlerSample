@@ -472,6 +472,185 @@ end)
 NetworkClient.requestProfile()
 ```
 
+## Level-Up Flow
+
+The Level-Up system allows players to upgrade their cards by spending copies and soft currency. This section covers the complete flow from UI rendering to server communication.
+
+### Reading Upgradeability
+
+Use selectors to determine if a card can be leveled up:
+
+```lua
+local selectors = require(game.ReplicatedStorage.Modules.ViewModels.selectors)
+
+-- Check if a specific card can be leveled up
+local canLevelUp = selectors.selectCanLevelUp(state, "dps_001")
+if canLevelUp.can then
+    print(string.format("Can level up to level %d", canLevelUp.nextLevel))
+    print(string.format("Cost: %d copies, %d soft currency", 
+        canLevelUp.requiredCount, canLevelUp.softAmount))
+else
+    print("Cannot level up:", canLevelUp.reason)
+    if canLevelUp.shortfallCount > 0 then
+        print(string.format("Need %d more copies", canLevelUp.shortfallCount))
+    end
+    if canLevelUp.shortfallSoft > 0 then
+        print(string.format("Need %d more soft currency", canLevelUp.shortfallSoft))
+    end
+end
+
+-- Get all upgradeable cards
+local upgradeableCards = selectors.selectUpgradeableCards(state)
+for _, card in ipairs(upgradeableCards) do
+    print(string.format("%s: Level %d → %d (cost: %d copies, %d soft)", 
+        card.cardId, card.currentLevel, card.nextLevel, 
+        card.requiredCount, card.softAmount))
+end
+```
+
+### Using CardVM for UI
+
+CardVM provides upgrade-related fields for easy UI integration:
+
+```lua
+local CardVM = require(game.ReplicatedStorage.Modules.ViewModels.CardVM)
+
+-- Build card view model with upgrade info
+local cardVM = CardVM.build("dps_001", collectionEntry, profileState)
+
+-- UI can directly use these fields:
+if cardVM.canLevelUp then
+    upgradeButton.Visible = true
+    upgradeButton.Text = string.format("Level Up (%d copies, %d soft)", 
+        cardVM.requiredCount, cardVM.softAmount)
+else
+    upgradeButton.Visible = false
+    -- Show reason why can't level up
+    if cardVM.upgradeReason == "LEVEL_MAXED" then
+        reasonLabel.Text = "Max Level Reached"
+    elseif cardVM.upgradeReason == "INSUFFICIENT_COPIES" then
+        reasonLabel.Text = string.format("Need %d more copies", cardVM.shortfallCount)
+    elseif cardVM.upgradeReason == "INSUFFICIENT_SOFT" then
+        reasonLabel.Text = string.format("Need %d more soft currency", cardVM.shortfallSoft)
+    end
+end
+```
+
+### Triggering Level-Up
+
+Use NetworkClient to request a level-up:
+
+```lua
+local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
+
+-- Request level-up for a specific card
+local success, errorMessage = NetworkClient.requestLevelUpCard("dps_001")
+if not success then
+    print("Level-up request failed:", errorMessage)
+end
+
+-- Check if any request is in flight
+if NetworkClient.isBusy() then
+    print("Request in progress, please wait...")
+end
+```
+
+### Handling Responses
+
+Listen for ProfileUpdated events to refresh UI state:
+
+```lua
+local ClientState = require(script.Parent.Parent.State.ClientState)
+
+-- Subscribe to state changes
+ClientState.subscribe(function(state)
+    if state.isLeveling then
+        -- Show loading state
+        upgradeButton.Text = "Leveling Up..."
+        upgradeButton.Active = false
+    elseif state.lastError then
+        -- Handle error
+        local errorMap = require(game.ReplicatedStorage.Modules.Utilities.ErrorMap)
+        local userMessage = errorMap.toUserMessage(state.lastError.code, state.lastError.message)
+        print("Level-up failed:", userMessage.title, "-", userMessage.message)
+        
+        -- Re-enable button
+        upgradeButton.Active = true
+    else
+        -- Success or idle state
+        upgradeButton.Active = true
+        -- Refresh card display with new level/stats
+        refreshCardDisplay()
+    end
+end)
+```
+
+### Error Codes
+
+The following error codes can be returned from level-up requests:
+
+| Code | Meaning | User Message |
+|------|---------|--------------|
+| `INVALID_REQUEST` | Malformed request | "Invalid request" |
+| `CARD_NOT_OWNED` | Card not in collection | "Card not found in collection" |
+| `LEVEL_MAXED` | Card already at max level | "Card is already at maximum level" |
+| `INSUFFICIENT_COPIES` | Not enough card copies | "Need X more copies" |
+| `INSUFFICIENT_SOFT` | Not enough soft currency | "Need X more soft currency" |
+| `RATE_LIMITED` | Too many requests | "Please wait before trying again" |
+| `INTERNAL` | Server error | "An error occurred, please try again" |
+
+Use ErrorMap to convert codes to user-friendly messages:
+
+```lua
+local ErrorMap = require(game.ReplicatedStorage.Modules.Utilities.ErrorMap)
+local userMessage = ErrorMap.toUserMessage(errorCode, fallbackMessage)
+errorLabel.Text = userMessage.message
+```
+
+### Time Synchronization
+
+Always use `serverNow` from ProfileUpdated payloads for consistent timing:
+
+```lua
+-- In ProfileUpdated handler
+if payload.serverNow then
+    -- Update local time reference
+    local timeDiff = payload.serverNow - os.time()
+    -- Use for countdown timers, etc.
+end
+```
+
+### Complete Level-Up Button Example
+
+```lua
+local function createLevelUpButton(cardId, cardVM)
+    local button = Instance.new("TextButton")
+    button.Text = "Level Up"
+    button.Size = UDim2.new(0, 100, 0, 30)
+    
+    local function updateButton()
+        if cardVM.canLevelUp then
+            button.Visible = true
+            button.Active = true
+            button.Text = string.format("Level Up (%d copies, %d soft)", 
+                cardVM.requiredCount, cardVM.softAmount)
+        else
+            button.Visible = false
+        end
+    end
+    
+    button.MouseButton1Click:Connect(function()
+        if not NetworkClient.isBusy() then
+            NetworkClient.requestLevelUpCard(cardId)
+        end
+    end)
+    
+    -- Update button when card data changes
+    updateButton()
+    return button
+end
+```
+
 ## Dev Harness
 
 The `VMHarness` provides console-only testing of the client integration layer:
@@ -493,7 +672,40 @@ VMHarness.PrintDeckAnalysis()
 
 -- Print profile statistics
 VMHarness.PrintStats()
+
+-- Level-Up specific commands
+VMHarness.LevelUpFirstUpgradeable()  -- Level up first available card
+VMHarness.LevelUp("dps_001")         -- Level up specific card
+VMHarness.PrintUpgradeableCards()    -- Show all upgradeable cards
 ```
+
+### How to Test Level-Up (Mocks)
+
+1. **Enable dev flags** in `Config.lua`:
+   ```lua
+   Config.USE_MOCKS = true
+   Config.SHOW_DEV_PANEL = true
+   ```
+
+2. **Start the game** in Studio and wait for the Dev Panel to appear
+
+3. **Click "Refresh Profile"** to load initial data
+
+4. **Click "Level Up First Upgradeable"** to test the level-up flow
+
+5. **Observe console output** for before/after stats:
+   - Card level and power changes
+   - Squad power updates (if card is in deck)
+   - Resource consumption (copies and soft currency)
+   - Error messages (if any) via ErrorMap
+
+6. **Test error cases** by trying to level up cards that:
+   - Are already at max level (7)
+   - Don't have enough copies
+   - Don't have enough soft currency
+   - Are not in the collection
+
+The mock system provides the same validation and error codes as the real server, making it perfect for UI development and testing.
 
 ## Assets
 

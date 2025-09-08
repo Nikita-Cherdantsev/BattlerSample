@@ -262,6 +262,57 @@ function ProfileManager.UpdateDeck(userId, newDeck)
 	return true
 end
 
+-- Level up a card (v2: atomic persistence)
+function ProfileManager.LevelUpCard(userId, cardId, requiredCount, softAmount)
+	userId = tostring(userId)
+	local profile = ProfileManager.GetCachedProfile(userId)
+	
+	if not profile then
+		return false, "Profile not loaded"
+	end
+	
+	-- Validate card exists in collection
+	local collectionEntry = profile.collection[cardId]
+	if not collectionEntry then
+		return false, "Card not in collection"
+	end
+	
+	-- Validate sufficient resources
+	if collectionEntry.count < requiredCount then
+		return false, "Insufficient copies"
+	end
+	
+	if profile.currencies.soft < softAmount then
+		return false, "Insufficient soft currency"
+	end
+	
+	-- Perform atomic level-up
+	collectionEntry.count = collectionEntry.count - requiredCount
+	collectionEntry.level = collectionEntry.level + 1
+	profile.currencies.soft = profile.currencies.soft - softAmount
+	
+	-- Check if this card is in the active deck and recompute squad power
+	local isInDeck = false
+	for _, deckCardId in ipairs(profile.deck) do
+		if deckCardId == cardId then
+			isInDeck = true
+			break
+		end
+	end
+	
+	if isInDeck then
+		profile.squadPower = ComputeSquadPower(profile)
+	end
+	
+	-- Save the profile
+	local saveSuccess = ProfileManager.SaveProfile(userId, profile)
+	if not saveSuccess then
+		return false, "Failed to save profile"
+	end
+	
+	return true
+end
+
 -- Add cards to collection (v2 format)
 function ProfileManager.AddCardsToCollection(userId, cardId, count)
 	userId = tostring(userId)

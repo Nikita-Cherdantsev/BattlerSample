@@ -29,11 +29,13 @@ local RequestProfile = Network:WaitForChild("RequestProfile")
 local ProfileUpdated = Network:WaitForChild("ProfileUpdated")
 local RequestSetDeck = Network:WaitForChild("RequestSetDeck")
 local RequestStartMatch = Network:WaitForChild("RequestStartMatch")
+local RequestLevelUpCard = Network:WaitForChild("RequestLevelUpCard")
 
 -- State
 local lastServerNow = 0
 local lastProfileRequest = 0
 local lastSetDeckRequest = 0
+local lastLevelUpRequest = 0
 local DEBOUNCE_MS = 300
 
 -- Utility functions
@@ -108,6 +110,28 @@ function NetworkClient.requestStartMatch(opts)
 	RequestStartMatch:FireServer(requestData)
 end
 
+-- Request card level-up
+function NetworkClient.requestLevelUpCard(cardId)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestLevelUpCard(cardId)
+	end
+	
+	if not cardId or type(cardId) ~= "string" then
+		return false, "Invalid card ID"
+	end
+	
+	if debounce(lastLevelUpRequest) then
+		log("Debouncing level-up request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastLevelUpRequest = tick() * 1000
+	log("Requesting level-up for card: %s", cardId)
+	RequestLevelUpCard:FireServer({cardId = cardId})
+	
+	return true
+end
+
 -- Subscribe to profile updates
 function NetworkClient.onProfileUpdated(callback)
 	if Config.USE_MOCKS then
@@ -179,6 +203,20 @@ function NetworkClient.getClientTime()
 	-- Estimate current time based on last server time
 	local timeSinceLastUpdate = os.time() - lastServerNow
 	return lastServerNow + timeSinceLastUpdate
+end
+
+-- Check if any request is currently in flight
+function NetworkClient.isBusy()
+	if Config.USE_MOCKS then
+		return MockNetwork.isBusy()
+	end
+	
+	local now = tick() * 1000
+	local recentThreshold = DEBOUNCE_MS * 2  -- Consider busy if request was made within 2x debounce time
+	
+	return (now - lastProfileRequest < recentThreshold) or
+		   (now - lastSetDeckRequest < recentThreshold) or
+		   (now - lastLevelUpRequest < recentThreshold)
 end
 
 -- Reinitialize NetworkClient (for mock toggle)

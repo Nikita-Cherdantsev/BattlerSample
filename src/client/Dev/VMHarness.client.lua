@@ -213,9 +213,24 @@ function VMHarness.init()
 	-- Subscribe to state changes
 	ClientState.subscribe(function(state)
 		if state.profile then
+			-- Check if this is a level-up completion
+			local wasLeveling = profileVM and profileVM.isLeveling
+			local isLeveling = state.isLeveling
+			
 			profileVM = ClientProfileVM.buildFromState(state)
-			log("Profile VM updated: squadPower=%d, collectionSize=%d", 
-				profileVM.squadPower, profileVM.collectionSize)
+			if profileVM then
+				log("Profile VM updated: squadPower=%d, collectionSize=%d", 
+					profileVM.squadPower, profileVM.collectionSize)
+			end
+			
+			-- If we were leveling and now we're not, print the after state
+			if wasLeveling and not isLeveling and not state.lastError then
+				log("Level-up completed successfully!")
+				-- The before state was already printed by the LevelUp function
+				-- Here we just confirm completion
+			elseif wasLeveling and not isLeveling and state.lastError then
+				log("Level-up failed: %s", state.lastError.message or "Unknown error")
+			end
 		end
 	end)
 	
@@ -440,6 +455,136 @@ function VMHarness.PrintStats()
 		log("    Rare: %d", stats.rarityCounts.Rare or 0)
 		log("    Epic: %d", stats.rarityCounts.Epic or 0)
 		log("    Legendary: %d", stats.rarityCounts.Legendary or 0)
+	end
+	
+	printSeparator()
+end
+
+-- Level up the first upgradeable card
+function VMHarness.LevelUpFirstUpgradeable()
+	if not isInitialized or not profileVM then
+		log("No profile available")
+		return
+	end
+	
+	local upgradeableCards = ClientProfileVM.getCardsCanLevelUp(profileVM)
+	if #upgradeableCards == 0 then
+		log("No cards can be leveled up")
+		return
+	end
+	
+	local firstCard = upgradeableCards[1]
+	log("Leveling up first upgradeable card: %s", firstCard.id)
+	
+	-- Set leveling state
+	ClientState.setIsLeveling(true)
+	
+	-- Request level-up
+	local success, errorMessage = NetworkClient.requestLevelUpCard(firstCard.id)
+	if not success then
+		log("Level-up request failed: %s", errorMessage or "Unknown error")
+		ClientState.setIsLeveling(false)
+	end
+end
+
+-- Level up a specific card
+function VMHarness.LevelUp(cardId)
+	if not isInitialized or not profileVM then
+		log("No profile available")
+		return
+	end
+	
+	if not cardId or type(cardId) ~= "string" then
+		log("Invalid card ID")
+		return
+	end
+	
+	-- Get current state
+	local currentState = ClientState.getState()
+	local collection = selectors.selectCollectionMap(currentState)
+	local currencies = selectors.selectCurrencies(currentState)
+	local squadPower = selectors.selectSquadPower(currentState)
+	
+	-- Check if card exists in collection
+	local entry = collection[cardId]
+	if not entry then
+		log("Card %s not found in collection", cardId)
+		return
+	end
+	
+	-- Print before state
+	log("BEFORE Level-Up:")
+	log("  Card: %s", cardId)
+	log("  Level: %d", entry.level)
+	log("  Count: %d", entry.count)
+	log("  Soft Currency: %d", currencies.soft)
+	log("  Squad Power: %d", squadPower)
+	
+	-- Check if card is in deck
+	local deckIds = selectors.selectDeckIds(currentState)
+	local isInDeck = false
+	if deckIds then
+		for _, deckCardId in ipairs(deckIds) do
+			if deckCardId == cardId then
+				isInDeck = true
+				break
+			end
+		end
+	end
+	log("  In Deck: %s", tostring(isInDeck))
+	
+	-- Check upgradeability
+	local canLevelUp = selectors.selectCanLevelUp(currentState, cardId)
+	if not canLevelUp.can then
+		log("Cannot level up: %s", canLevelUp.reason or "Unknown reason")
+		return
+	end
+	
+	log("  Can Level Up: YES (to level %d, cost: %d copies, %d soft)", 
+		canLevelUp.nextLevel, canLevelUp.requiredCount, canLevelUp.softAmount)
+	
+	-- Set leveling state
+	ClientState.setIsLeveling(true)
+	
+	-- Request level-up
+	local success, errorMessage = NetworkClient.requestLevelUpCard(cardId)
+	if not success then
+		log("Level-up request failed: %s", errorMessage or "Unknown error")
+		ClientState.setIsLeveling(false)
+		return
+	end
+	
+	log("Level-up request sent successfully")
+	log("Waiting for server response...")
+	
+	-- Note: The actual after state will be printed when the ProfileUpdated event is received
+	-- This is handled by the existing state subscription in init()
+end
+
+-- Print upgradeable cards
+function VMHarness.PrintUpgradeableCards()
+	if not isInitialized or not profileVM then
+		log("No profile available")
+		return
+	end
+	
+	local upgradeableCards = ClientProfileVM.getCardsCanLevelUp(profileVM)
+	
+	printSeparator()
+	log("UPGRADEABLE CARDS (%d total)", #upgradeableCards)
+	printSeparator()
+	
+	if #upgradeableCards == 0 then
+		log("No cards can be leveled up")
+		printSeparator()
+		return
+	end
+	
+	for i, card in ipairs(upgradeableCards) do
+		log("%d. %s (Level %d → %d)", i, card.id, card.level, card.nextLevel or (card.level + 1))
+		log("   Cost: %d copies, %d soft currency", card.requiredCount or 0, card.softAmount or 0)
+		log("   Current: %d copies, %d soft available", card.count or 0, 
+			selectors.selectCurrencies(ClientState.getState()).soft)
 	end
 	
 	printSeparator()

@@ -186,6 +186,71 @@ function DevPanel.create()
 	pveButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
 	
+	-- Level Up First Upgradeable button
+	local levelUpButton = createButton(buttonContainer, "Level Up First Upgradeable", function()
+		log("Level Up First Upgradeable clicked")
+		
+		-- Get current state
+		local state = ClientState.getState()
+		if not state.profile or not state.profile.collection then
+			log("No profile available for level-up")
+			return
+		end
+		
+		-- Find first upgradeable card using selectors
+		local selectors = require(script.Parent.Parent.State.selectors)
+		local upgradeableCards = selectors.selectUpgradeableCards(state)
+		
+		if #upgradeableCards == 0 then
+			log("No cards can be leveled up")
+			return
+		end
+		
+		local firstCard = upgradeableCards[1]
+		local cardId = firstCard.cardId
+		
+		-- Get before state for logging
+		local collection = selectors.selectCollectionMap(state)
+		local currencies = selectors.selectCurrencies(state)
+		local squadPower = selectors.selectSquadPower(state)
+		local entry = collection[cardId]
+		
+		-- Check if card is in deck
+		local deckIds = selectors.selectDeckIds(state)
+		local isInDeck = false
+		if deckIds then
+			for _, deckCardId in ipairs(deckIds) do
+				if deckCardId == cardId then
+					isInDeck = true
+					break
+				end
+			end
+		end
+		
+		-- Print before state
+		log("BEFORE Level-Up:")
+		log("  Card: %s", cardId)
+		log("  Level: %d", entry.level)
+		log("  Count: %d", entry.count)
+		log("  Soft Currency: %d", currencies.soft)
+		log("  Squad Power: %d", squadPower)
+		log("  In Deck: %s", tostring(isInDeck))
+		
+		-- Set leveling state
+		ClientState.setIsLeveling(true)
+		
+		-- Request level-up
+		local success, errorMessage = NetworkClient.requestLevelUpCard(cardId)
+		if not success then
+			log("Level-up request failed: %s", errorMessage or "Unknown error")
+			ClientState.setIsLeveling(false)
+		else
+			log("Level-up request sent successfully")
+		end
+	end)
+	levelUpButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
 	-- Toggle Mocks button
 	local toggleMocksButton = createButton(buttonContainer, "Toggle Mocks", function()
 		log("Toggle Mocks clicked")

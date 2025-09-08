@@ -134,6 +134,106 @@ function MockNetwork.requestStartMatch(opts)
 	return response
 end
 
+-- Request card level-up
+function MockNetwork.requestLevelUpCard(cardId)
+	if not cardId or type(cardId) ~= "string" then
+		local payload = MockData.makeErrorResponse("INVALID_REQUEST", "Invalid card ID")
+		emitProfileUpdate(payload)
+		return false, "Invalid card ID"
+	end
+	
+	log("Requesting level-up for card (mock): %s", cardId)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		local payload = MockData.makeErrorResponse("INTERNAL", "No profile available")
+		emitProfileUpdate(payload)
+		return false, "No profile available"
+	end
+	
+	-- Validation 1: Card exists in catalog
+	local card = Utilities.CardCatalog.GetCard(cardId)
+	if not card then
+		local payload = MockData.makeErrorResponse("INVALID_REQUEST", "Card ID not found in catalog: " .. cardId)
+		emitProfileUpdate(payload)
+		return false, "Card ID not found in catalog: " .. cardId
+	end
+	
+	-- Validation 2: Player owns this card
+	local entry = currentProfile.collection[cardId]
+	if not entry then
+		local payload = MockData.makeErrorResponse("CARD_NOT_OWNED", "Card not found in collection")
+		emitProfileUpdate(payload)
+		return false, "CARD_NOT_OWNED"
+	end
+	
+	-- Validation 3: Current level < 7
+	if entry.level >= Utilities.CardLevels.MAX_LEVEL then
+		local payload = MockData.makeErrorResponse("LEVEL_MAXED", "Card is already at maximum level")
+		emitProfileUpdate(payload)
+		return false, "LEVEL_MAXED"
+	end
+	
+	-- Validation 4: Check next level cost
+	local nextLevel = entry.level + 1
+	local cost = Utilities.CardLevels.GetLevelCost(nextLevel)
+	if not cost then
+		local payload = MockData.makeErrorResponse("INTERNAL", "Invalid level cost for level " .. nextLevel)
+		emitProfileUpdate(payload)
+		return false, "Invalid level cost for level " .. nextLevel
+	end
+	
+	-- Validation 5: Sufficient copies
+	if entry.count < cost.requiredCount then
+		local payload = MockData.makeErrorResponse("INSUFFICIENT_COPIES", "Need " .. cost.requiredCount .. " copies (have " .. entry.count .. ")")
+		emitProfileUpdate(payload)
+		return false, "INSUFFICIENT_COPIES"
+	end
+	
+	-- Validation 6: Sufficient soft currency
+	if currentProfile.currencies.soft < cost.softAmount then
+		local payload = MockData.makeErrorResponse("INSUFFICIENT_SOFT", "Need " .. cost.softAmount .. " soft currency (have " .. currentProfile.currencies.soft .. ")")
+		emitProfileUpdate(payload)
+		return false, "INSUFFICIENT_SOFT"
+	end
+	
+	-- Perform atomic level-up (mirror server behavior)
+	entry.count = entry.count - cost.requiredCount
+	entry.level = entry.level + 1
+	currentProfile.currencies.soft = currentProfile.currencies.soft - cost.softAmount
+	
+	-- Check if this card is in the active deck and recompute squad power
+	local isInDeck = false
+	for _, deckCardId in ipairs(currentProfile.deck) do
+		if deckCardId == cardId then
+			isInDeck = true
+			break
+		end
+	end
+	
+	if isInDeck then
+		-- Recompute squad power (simplified for mocks)
+		local totalPower = 0
+		for _, deckCardId in ipairs(currentProfile.deck) do
+			local deckEntry = currentProfile.collection[deckCardId]
+			if deckEntry then
+				local stats = Utilities.CardStats.ComputeStats(deckCardId, deckEntry.level)
+				totalPower = totalPower + Utilities.CardStats.ComputePower(stats)
+			end
+		end
+		currentProfile.squadPower = totalPower
+	end
+	
+	-- Emit profile update with server-like payload structure
+	local payload = MockData.makeProfileUpdatedPayload(currentProfile)
+	log("Card %s leveled up successfully (mock) to level %d (cost: %d copies, %d soft)", 
+		cardId, entry.level, cost.requiredCount, cost.softAmount)
+	emitProfileUpdate(payload)
+	
+	return true
+end
+
 -- Subscribe to profile updates
 function MockNetwork.onProfileUpdated(callback)
 	local id = tostring(callback)
@@ -175,6 +275,11 @@ function MockNetwork.getClientTime()
 	-- Estimate current time based on last server time
 	local timeSinceLastUpdate = os.time() - lastServerNow
 	return lastServerNow + timeSinceLastUpdate
+end
+
+-- Check if any request is currently in flight (mock always returns false)
+function MockNetwork.isBusy()
+	return false  -- Mock network is always available
 end
 
 -- Mock-specific methods

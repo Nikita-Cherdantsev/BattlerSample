@@ -12,6 +12,7 @@ local state = {
 	profile = nil,           -- Types.ProfileV2?
 	serverNow = 0,           -- number?
 	isSavingDeck = false,    -- boolean
+	isLeveling = false,      -- boolean
 	lastError = nil,         -- { code: string, message: string }?
 }
 
@@ -51,12 +52,17 @@ function ClientState.applyProfileUpdate(payload)
 			code = payload.error.code,
 			message = payload.error.message
 		})
+		-- Clear loading flags on error
+		state.isSavingDeck = false
+		state.isLeveling = false
 		log("Profile update error: %s", payload.error.message)
 		return
 	end
 	
-	-- Clear any previous errors
+	-- Clear any previous errors and loading flags on success
 	ClientState.setLastError(nil)
+	state.isSavingDeck = false
+	state.isLeveling = false
 	
 	-- Update server time
 	if payload.serverNow then
@@ -129,6 +135,13 @@ end
 function ClientState.setSavingDeck(isSaving)
 	state.isSavingDeck = isSaving
 	log("Saving deck: %s", tostring(isSaving))
+	notifySubscribers()
+end
+
+-- Set leveling state
+function ClientState.setIsLeveling(isLeveling)
+	state.isLeveling = isLeveling
+	log("Leveling: %s", tostring(isLeveling))
 	notifySubscribers()
 end
 

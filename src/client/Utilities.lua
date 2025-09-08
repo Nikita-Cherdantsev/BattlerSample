@@ -73,15 +73,41 @@ Utilities.DeckValidator = {
 	end
 }
 
+-- Client-side card levels (matching server CardLevels)
+Utilities.CardLevels = {
+	MAX_LEVEL = 7,
+	GetLevelCost = function(level)
+		local levelCosts = {
+			[1] = { requiredCount = 1, softAmount = 0 },
+			[2] = { requiredCount = 10, softAmount = 12000 },
+			[3] = { requiredCount = 20, softAmount = 50000 },
+			[4] = { requiredCount = 40, softAmount = 200000 },
+			[5] = { requiredCount = 80, softAmount = 500000 },
+			[6] = { requiredCount = 160, softAmount = 800000 },
+			[7] = { requiredCount = 320, softAmount = 1200000 }
+		}
+		return levelCosts[level]
+	end
+}
+
 -- Client-side card stats
 Utilities.CardStats = {
 	GetCardStats = function(cardId, level)
+		-- Simple power calculation for mocks
+		local basePower = 100
+		local levelBonus = (level - 1) * 5
 		return {
 			attack = 3,
 			health = 4,
 			defence = 1,
-			power = 100
+			power = basePower + levelBonus
 		}
+	end,
+	ComputeStats = function(cardId, level)
+		return Utilities.CardStats.GetCardStats(cardId, level)
+	end,
+	ComputePower = function(stats)
+		return stats.power or 100
 	end
 }
 

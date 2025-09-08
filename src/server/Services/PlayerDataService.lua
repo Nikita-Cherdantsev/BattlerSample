@@ -9,6 +9,8 @@ local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistenc
 local ProfileSchema = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileSchema"))
 local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("DeckValidator"))
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
+local CardLevels = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardLevels"))
+local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 
 -- Configuration
 local AUTOSAVE_INTERVAL = 300 -- 5 minutes in seconds
@@ -173,8 +175,9 @@ local function OnPlayerAdded(player)
 	-- Start autosave
 	StartAutosave(player)
 	
+	local stats = ProfileManager.GetProfileStats(player.UserId)
 	LogInfo(player, "Profile loaded successfully. Collection: %d unique cards, Deck: %d cards", 
-		ProfileManager.GetProfileStats(player.UserId).uniqueCards, #profile.deck)
+		stats and stats.uniqueCards or 0, profile and #profile.deck or 0)
 end
 
 local function OnPlayerRemoving(player)
@@ -308,6 +311,87 @@ function PlayerDataService.SetDeck(player, deckIds)
 	end
 end
 
+-- Level up a card (v2: atomic persistence, squad power recomputation)
+function PlayerDataService.LevelUpCard(player, cardId)
+	if not player or not playerProfiles[player] then
+		return false, "Player profile not loaded"
+	end
+	
+	local profile = playerProfiles[player]
+	
+	-- Validation 1: Card exists in catalog
+	local card = CardCatalog.GetCard(cardId)
+	if not card then
+		return false, "Card ID not found in catalog: " .. tostring(cardId)
+	end
+	
+	-- Validation 2: Player owns this card
+	local collectionEntry = profile.collection[cardId]
+	if not collectionEntry then
+		return false, "CARD_NOT_OWNED"
+	end
+	
+	-- Validation 3: Current level < 7
+	if collectionEntry.level >= CardLevels.MAX_LEVEL then
+		return false, "LEVEL_MAXED"
+	end
+	
+	-- Validation 4: Check next level cost
+	local nextLevel = collectionEntry.level + 1
+	local cost = CardLevels.GetLevelCost(nextLevel)
+	if not cost then
+		return false, "Invalid level cost for level " .. nextLevel
+	end
+	
+	-- Validation 5: Sufficient copies
+	if collectionEntry.count < cost.requiredCount then
+		return false, "INSUFFICIENT_COPIES"
+	end
+	
+	-- Validation 6: Sufficient soft currency
+	if profile.currencies.soft < cost.softAmount then
+		return false, "INSUFFICIENT_SOFT"
+	end
+	
+	-- Perform atomic level-up via ProfileManager
+	local success = ProfileManager.LevelUpCard(player.UserId, cardId, cost.requiredCount, cost.softAmount)
+	if success then
+		-- Update local cache atomically
+		collectionEntry.count = collectionEntry.count - cost.requiredCount
+		collectionEntry.level = collectionEntry.level + 1
+		profile.currencies.soft = profile.currencies.soft - cost.softAmount
+		
+		-- Check if this card is in the active deck and recompute squad power
+		local isInDeck = false
+		for _, deckCardId in ipairs(profile.deck) do
+			if deckCardId == cardId then
+				isInDeck = true
+				break
+			end
+		end
+		
+		if isInDeck then
+			-- Recompute squad power
+			local totalPower = 0
+			for _, deckCardId in ipairs(profile.deck) do
+				local deckCardEntry = profile.collection[deckCardId]
+				if deckCardEntry then
+					local stats = CardStats.ComputeStats(deckCardId, deckCardEntry.level)
+					totalPower = totalPower + CardStats.ComputePower(stats)
+				end
+			end
+			profile.squadPower = totalPower
+		end
+		
+		LogInfo(player, "Card %s leveled up to level %d (cost: %d copies, %d soft)", 
+			cardId, collectionEntry.level, cost.requiredCount, cost.softAmount)
+		return true
+	else
+		LogWarning(player, "Failed to persist level-up for card %s", cardId)
+		return false, "INTERNAL"
+	end
+end
+
 -- Grant cards to player (v2 format)
 function PlayerDataService.GrantCards(player, rewards)
 	if not player or not playerProfiles[player] then
@@ -371,7 +455,12 @@ function PlayerDataService.GetCollection(player)
 	end
 	
 	-- Return a copy to prevent external modification
-	return table.clone(playerProfiles[player].collection)
+	local collection = playerProfiles[player].collection
+	local copy = {}
+	for k, v in pairs(collection) do
+		copy[k] = v
+	end
+	return copy
 end
 
 -- Get login information

@@ -12,6 +12,7 @@ local PlayerDataService = require(ServerScriptService:WaitForChild("Services"):W
 local MatchService = require(ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local CombatEngine = require(ServerScriptService:WaitForChild("Services"):WaitForChild("CombatEngine"))
 local RemoteEvents = require(ServerScriptService:WaitForChild("Network"):WaitForChild("RemoteEvents"))
+local LevelUpDevHarness = require(ServerScriptService:WaitForChild("Services"):WaitForChild("LevelUpDevHarness"))
 
 -- Runtime verification: ensure all required modules are properly loaded
 local function VerifyModuleTypes()
@@ -24,7 +25,8 @@ local function VerifyModuleTypes()
 		{name = "PlayerDataService", instance = PlayerDataService},
 		{name = "MatchService", instance = MatchService},
 		{name = "CombatEngine", instance = CombatEngine},
-		{name = "RemoteEvents", instance = RemoteEvents}
+		{name = "RemoteEvents", instance = RemoteEvents},
+		{name = "LevelUpDevHarness", instance = LevelUpDevHarness}
 	}
 	
 	for _, module in ipairs(modules) do
@@ -75,6 +77,14 @@ local function InitializeServer()
 		print("✅ MatchService initialized")
 	else
 		print("⚠️ MatchService has no Init function")
+	end
+	
+	-- Run Level-Up Dev Harness (Studio only)
+	if LevelUpDevHarness.RunAllTests then
+		LevelUpDevHarness.RunAllTests()
+		print("✅ Level-Up Dev Harness completed")
+	else
+		print("⚠️ LevelUpDevHarness has no RunAllTests function")
 	end
 	
 	print("🎉 Server initialization complete!")

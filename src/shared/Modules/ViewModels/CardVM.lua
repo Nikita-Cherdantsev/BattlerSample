@@ -14,7 +14,7 @@ local CardStats = Utilities.CardStats
 local CardVM = {}
 
 -- Build a card view model
-function CardVM.build(cardId, collectionEntry)
+function CardVM.build(cardId, collectionEntry, profileState)
 	if not cardId then
 		error("CardVM.build: cardId is required")
 	end
@@ -39,6 +39,39 @@ function CardVM.build(cardId, collectionEntry)
 	-- Compute power
 	local power = CardStats.ComputePower(stats)
 	
+	-- Compute upgrade information if profile state is provided
+	local upgradeInfo = {}
+	if profileState then
+		-- Use selectors to compute upgradeability
+		local selectors = require(game:GetService("ReplicatedStorage").Modules.ViewModels.selectors)
+		if selectors and selectors.selectCanLevelUp then
+			local canLevelUp = selectors.selectCanLevelUp(profileState, cardId)
+			upgradeInfo = {
+				canLevelUp = canLevelUp.can,
+				nextLevel = canLevelUp.nextLevel,
+				requiredCount = canLevelUp.requiredCount,
+				softAmount = canLevelUp.softAmount,
+				shortfallCount = canLevelUp.shortfallCount,
+				shortfallSoft = canLevelUp.shortfallSoft,
+				reason = canLevelUp.reason
+			}
+		else
+			-- Fallback to simple check
+			upgradeInfo = {
+				canLevelUp = level < 7 and count >= 10,
+				nextLevel = level < 7 and (level + 1) or nil,
+				reason = level >= 7 and "LEVEL_MAXED" or (count < 10 and "INSUFFICIENT_COPIES" or nil)
+			}
+		end
+	else
+		-- No profile state, use simple check
+		upgradeInfo = {
+			canLevelUp = level < 7 and count >= 10,
+			nextLevel = level < 7 and (level + 1) or nil,
+			reason = level >= 7 and "LEVEL_MAXED" or (count < 10 and "INSUFFICIENT_COPIES" or nil)
+		}
+	end
+	
 	-- Build view model
 	local vm = {
 		id = cardId,
@@ -60,8 +93,15 @@ function CardVM.build(cardId, collectionEntry)
 		levelIncrements = card.levelIncrements,
 		-- Computed properties
 		isOwned = count > 0,
-		canLevelUp = level < 7 and count >= 10, -- Simplified level-up check
-		maxLevel = 7
+		maxLevel = 7,
+		-- Upgrade information
+		canLevelUp = upgradeInfo.canLevelUp,
+		nextLevel = upgradeInfo.nextLevel,
+		requiredCount = upgradeInfo.requiredCount,
+		softAmount = upgradeInfo.softAmount,
+		shortfallCount = upgradeInfo.shortfallCount,
+		shortfallSoft = upgradeInfo.shortfallSoft,
+		upgradeReason = upgradeInfo.reason
 	}
 	
 	return vm
@@ -120,6 +160,40 @@ function CardVM.canLevelUp(cardId, currentLevel, currentCount, softCurrency)
 	-- Import CardLevels for validation
 	local CardLevels = Utilities.CardLevels
 	return CardLevels.CanLevelUp(cardId, currentLevel, currentCount, softCurrency)
+end
+
+-- Build list of upgradeable cards from profile state
+function CardVM.buildUpgradeableList(profileState)
+	if not profileState or not profileState.profile or not profileState.profile.collection then
+		return {}
+	end
+	
+	-- Use selectors to get upgradeable cards
+	local selectors = require(game:GetService("ReplicatedStorage").Modules.ViewModels.selectors)
+	if selectors and selectors.selectUpgradeableCards then
+		local upgradeableData = selectors.selectUpgradeableCards(profileState)
+		local vms = {}
+		
+		for _, data in ipairs(upgradeableData) do
+			local collectionEntry = profileState.profile.collection[data.cardId]
+			local vm = CardVM.build(data.cardId, collectionEntry, profileState)
+			table.insert(vms, vm)
+		end
+		
+		return vms
+	else
+		-- Fallback: build all cards and filter
+		local allVms = CardVM.buildCollection(profileState.profile.collection)
+		local upgradeable = {}
+		
+		for _, vm in ipairs(allVms) do
+			if vm.canLevelUp then
+				table.insert(upgradeable, vm)
+			end
+		end
+		
+		return upgradeable
+	end
 end
 
 return CardVM

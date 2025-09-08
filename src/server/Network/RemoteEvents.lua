@@ -14,6 +14,7 @@ local RequestSetDeck = nil
 local RequestProfile = nil
 local ProfileUpdated = nil
 local RequestStartMatch = nil
+local RequestLevelUpCard = nil
 local OpenLootbox = nil
 
 -- Rate limiting configuration (explicit, module-scoped)
@@ -29,6 +30,10 @@ local RATE_LIMITS = {
 	RequestStartMatch = {
 		cooldownSec = 1,
 		maxPerMinute = 5
+	},
+	RequestLevelUpCard = {
+		cooldownSec = 1,
+		maxPerMinute = 10
 	},
 	OpenLootbox = {
 		cooldownSec = 2,
@@ -79,6 +84,11 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestStartMatch = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestLevelUpCard = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -144,7 +154,9 @@ end
 local function SendProfileUpdate(player, payload)
 	-- Add serverNow timestamp to all profile updates (non-breaking)
 	payload.serverNow = os.time()
-	ProfileUpdated:FireClient(player, payload)
+	if ProfileUpdated then
+		ProfileUpdated:FireClient(player, payload)
+	end
 end
 
 local function CreateCollectionSummary(collection)
@@ -287,14 +299,16 @@ local function HandleRequestStartMatch(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartMatch")
 	if not canProceed then
-		RequestStartMatch:FireClient(player, {
-			ok = false,
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		if RequestStartMatch then
+			RequestStartMatch:FireClient(player, {
+				ok = false,
+				error = {
+					code = "RATE_LIMITED",
+					message = errorMessage
+				},
+				serverNow = os.time()
+			})
+		end
 		return
 	end
 	
@@ -312,12 +326,77 @@ local function HandleRequestStartMatch(player, requestData)
 	result.serverNow = os.time()
 	
 	-- Reply on the same event (as per contract)
-	RequestStartMatch:FireClient(player, result)
+	if RequestStartMatch then
+		RequestStartMatch:FireClient(player, result)
+	end
 	
 	if result.ok then
 		LogInfo(player, "Match completed successfully: %s", result.matchId)
 	else
 		LogWarning(player, "Match failed: %s", result.error.message)
+	end
+end
+
+local function HandleRequestLevelUpCard(player, requestData)
+	LogInfo(player, "Processing level-up request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestLevelUpCard")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate request data
+	if not requestData or not requestData.cardId then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing cardId"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Execute level-up via PlayerDataService
+	local success, errorMessage = PlayerDataService.LevelUpCard(player, requestData.cardId)
+	
+	if success then
+		-- Get updated profile data
+		local profile = PlayerDataService.GetProfile(player)
+		local collection = PlayerDataService.GetCollection(player)
+		
+		-- Send success response
+		SendProfileUpdate(player, {
+			collectionSummary = CreateCollectionSummary(collection),
+			currencies = {
+				soft = profile.currencies.soft,
+				hard = profile.currencies.hard
+			},
+			squadPower = profile.squadPower,
+			updatedAt = os.time(),
+			serverNow = os.time()
+		})
+		
+		LogInfo(player, "Card %s leveled up successfully", requestData.cardId)
+	else
+		-- Send error response
+		SendProfileUpdate(player, {
+			error = {
+				code = "LEVEL_UP_FAILED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		
+		LogWarning(player, "Level-up failed: %s", errorMessage)
 	end
 end
 
@@ -328,6 +407,7 @@ RemoteEvents.RequestSetDeck = RequestSetDeck
 RemoteEvents.RequestProfile = RequestProfile
 RemoteEvents.ProfileUpdated = ProfileUpdated
 RemoteEvents.RequestStartMatch = RequestStartMatch
+RemoteEvents.RequestLevelUpCard = RequestLevelUpCard
 RemoteEvents.OpenLootbox = OpenLootbox
 
 -- Init function for bootstrap
@@ -359,6 +439,10 @@ function RemoteEvents.Init()
 	RequestStartMatch.Name = "RequestStartMatch"
 	RequestStartMatch.Parent = NetworkFolder
 	
+	RequestLevelUpCard = Instance.new("RemoteEvent")
+	RequestLevelUpCard.Name = "RequestLevelUpCard"
+	RequestLevelUpCard.Parent = NetworkFolder
+	
 	OpenLootbox = Instance.new("RemoteEvent")
 	OpenLootbox.Name = "OpenLootbox"
 	OpenLootbox.Parent = NetworkFolder
@@ -370,6 +454,7 @@ function RemoteEvents.Init()
 			{name = "RequestSetDeck", instance = RequestSetDeck},
 			{name = "RequestProfile", instance = RequestProfile},
 			{name = "RequestStartMatch", instance = RequestStartMatch},
+			{name = "RequestLevelUpCard", instance = RequestLevelUpCard},
 			{name = "OpenLootbox", instance = OpenLootbox}
 		}
 		
@@ -390,6 +475,7 @@ function RemoteEvents.Init()
 	RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
 	RequestProfile.OnServerEvent:Connect(HandleRequestProfile)
 	RequestStartMatch.OnServerEvent:Connect(HandleRequestStartMatch)
+	RequestLevelUpCard.OnServerEvent:Connect(HandleRequestLevelUpCard)
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)
