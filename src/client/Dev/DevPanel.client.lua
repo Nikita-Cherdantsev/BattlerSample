@@ -251,6 +251,143 @@ function DevPanel.create()
 	levelUpButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
 	
+	-- Print Collection Summary button
+	local collectionSummaryButton = createButton(buttonContainer, "Print Collection Summary", function()
+		log("Print Collection Summary clicked")
+		
+		-- Get current state
+		local state = ClientState.getState()
+		if not state.profile then
+			log("No profile available for collection summary")
+			return
+		end
+		
+		-- Get unified collection using selectors
+		local selectors = require(script.Parent.Parent.State.selectors)
+		local unifiedCollection = selectors.selectUnifiedCollection(state)
+		
+		-- Calculate summary statistics
+		local totalCatalogSize = #unifiedCollection
+		local ownedCount = 0
+		local rarityBreakdown = {}
+		local topPowerCards = {}
+		local unownedNotable = {}
+		
+		-- Initialize rarity breakdown
+		local rarityOrder = { legendary = 4, epic = 3, rare = 2, common = 1 }
+		for rarity, _ in pairs(rarityOrder) do
+			rarityBreakdown[rarity] = { owned = 0, total = 0 }
+		end
+		
+		-- Process each card
+		for _, card in ipairs(unifiedCollection) do
+			-- Count owned cards
+			if card.owned then
+				ownedCount = ownedCount + 1
+				
+				-- Add to power ranking (only owned cards have power)
+				if card.power then
+					table.insert(topPowerCards, {
+						cardId = card.cardId,
+						name = card.name,
+						power = card.power,
+						level = card.level
+					})
+				end
+			else
+				-- Add to unowned notable (first few by rarity/slot)
+				table.insert(unownedNotable, {
+					cardId = card.cardId,
+					name = card.name,
+					rarity = card.rarity,
+					slotNumber = card.slotNumber
+				})
+			end
+			
+			-- Update rarity breakdown
+			if rarityBreakdown[card.rarity] then
+				rarityBreakdown[card.rarity].total = rarityBreakdown[card.rarity].total + 1
+				if card.owned then
+					rarityBreakdown[card.rarity].owned = rarityBreakdown[card.rarity].owned + 1
+				end
+			end
+		end
+		
+		-- Sort top power cards
+		table.sort(topPowerCards, function(a, b)
+			return a.power > b.power
+		end)
+		
+		-- Sort unowned notable by rarity then slot
+		table.sort(unownedNotable, function(a, b)
+			local rarityA = rarityOrder[a.rarity] or 0
+			local rarityB = rarityOrder[b.rarity] or 0
+			if rarityA ~= rarityB then
+				return rarityA > rarityB
+			end
+			return a.slotNumber < b.slotNumber
+		end)
+		
+		-- Calculate coverage percentage
+		local coveragePercent = totalCatalogSize > 0 and math.floor((ownedCount / totalCatalogSize) * 100) or 0
+		
+		-- Print summary
+		log("=== COLLECTION SUMMARY ===")
+		log("Total Catalog Size: %d", totalCatalogSize)
+		log("Owned Count: %d", ownedCount)
+		log("Coverage: %d%%", coveragePercent)
+		log("")
+		
+		-- Print rarity breakdown
+		log("Rarity Breakdown:")
+		for _, rarity in ipairs({"legendary", "epic", "rare", "common"}) do
+			local breakdown = rarityBreakdown[rarity]
+			if breakdown.total > 0 then
+				local ownedPercent = breakdown.total > 0 and math.floor((breakdown.owned / breakdown.total) * 100) or 0
+				log("  %s: %d/%d (%d%%)", 
+					string.upper(rarity), 
+					breakdown.owned, 
+					breakdown.total, 
+					ownedPercent
+				)
+			end
+		end
+		log("")
+		
+		-- Print top power cards (top 5)
+		if #topPowerCards > 0 then
+			log("Top Power Cards:")
+			for i = 1, math.min(5, #topPowerCards) do
+				local card = topPowerCards[i]
+				log("  %d. %s (Lv.%d) - %d power", 
+					i, 
+					card.name, 
+					card.level, 
+					card.power
+				)
+			end
+		end
+		log("")
+		
+		-- Print unowned notable (first 5)
+		if #unownedNotable > 0 then
+			log("Unowned Notable (First 5):")
+			for i = 1, math.min(5, #unownedNotable) do
+				local card = unownedNotable[i]
+				log("  %d. %s (%s, slot %d)", 
+					i, 
+					card.name, 
+					card.rarity, 
+					card.slotNumber
+				)
+			end
+		end
+		
+		log("=== END SUMMARY ===")
+	end)
+	collectionSummaryButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
 	-- Toggle Mocks button
 	local toggleMocksButton = createButton(buttonContainer, "Toggle Mocks", function()
 		log("Toggle Mocks clicked")

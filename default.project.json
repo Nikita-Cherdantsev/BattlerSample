@@ -169,6 +169,12 @@
             "Enabled": true
           }
         },
+        "LevelUpDevHarness": {
+          "$path": "src/server/Services/LevelUpDevHarness.server.lua",
+          "$properties": {
+            "Enabled": true
+          }
+        },
         "MatchService": {
           "$path": "src/server/Services/MatchService.lua"
         }, 

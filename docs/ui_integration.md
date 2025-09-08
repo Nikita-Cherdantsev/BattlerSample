@@ -651,6 +651,154 @@ local function createLevelUpButton(cardId, cardVM)
 end
 ```
 
+## Collection View
+
+The Collection View provides a unified interface for displaying all cards in the catalog with ownership overlay. This enables building a comprehensive collection screen that shows both owned and unowned cards.
+
+### Getting the Unified Collection
+
+Use the `selectUnifiedCollection` selector to get all catalog cards with ownership data:
+
+```lua
+local selectors = require(script.Parent.Parent.State.selectors)
+local state = ClientState.getState()
+
+-- Get all cards with ownership overlay
+local unifiedCollection = selectors.selectUnifiedCollection(state)
+
+-- Apply filters and sorting
+local ownedOnly = selectors.selectUnifiedCollection(state, {
+    ownedOnly = true,
+    sortBy = "power"
+})
+
+-- Search and filter
+local searchResults = selectors.selectUnifiedCollection(state, {
+    searchTerm = "fighter",
+    rarityIn = {"rare", "epic"},
+    sortBy = "rarity"
+})
+```
+
+### Collection Data Structure
+
+Each card in the unified collection has this structure:
+
+```lua
+{
+    cardId = "dps_001",
+    name = "Recruit Fighter",
+    rarity = "common",
+    class = "dps", 
+    slotNumber = 10,
+    description = "A basic fighter with balanced stats.",
+    owned = true,  -- Ownership flag
+    
+    -- Only present when owned = true:
+    level = 3,
+    count = 25,
+    stats = { atk = 15, hp = 20, defence = 7 },
+    power = 42
+}
+```
+
+### Building ViewModels
+
+Pass unified collection data through `CardVM.buildFromUnifiedCollection`:
+
+```lua
+local CardVM = require(game:GetService("ReplicatedStorage").Modules.ViewModels.CardVM)
+
+-- Build VMs from unified collection
+local vms = CardVM.buildFromUnifiedCollection(unifiedCollection, state)
+
+-- Each VM will have the same structure as above, plus upgradeability fields
+for _, vm in ipairs(vms) do
+    if vm.owned then
+        -- Show full card with stats, level, power
+        print(string.format("%s (Lv.%d) - %d power", vm.name, vm.level, vm.power))
+    else
+        -- Show greyed out card without stats
+        print(string.format("%s (Not Owned)", vm.name))
+    end
+end
+```
+
+### UI Implementation Example
+
+```lua
+-- In your Collection screen UI
+local function renderCollectionCard(vm)
+    local cardFrame = createCardFrame()
+    
+    -- Always show basic info
+    cardFrame.NameLabel.Text = vm.name
+    cardFrame.RarityLabel.Text = string.upper(vm.rarity)
+    cardFrame.ClassLabel.Text = string.upper(vm.class)
+    
+    if vm.owned then
+        -- Show owned card with full data
+        cardFrame.LevelLabel.Text = "Lv." .. vm.level
+        cardFrame.CountLabel.Text = "x" .. vm.count
+        cardFrame.PowerLabel.Text = vm.power .. " power"
+        cardFrame.StatsLabel.Text = string.format("ATK:%d HP:%d DEF:%d", 
+            vm.stats.atk, vm.stats.hp, vm.stats.defence)
+        
+        -- Normal styling
+        cardFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        cardFrame.TextColor3 = Color3.fromRGB(0, 0, 0)
+    else
+        -- Show unowned card (greyed out)
+        cardFrame.LevelLabel.Text = "???"
+        cardFrame.CountLabel.Text = "???"
+        cardFrame.PowerLabel.Text = "???"
+        cardFrame.StatsLabel.Text = "ATK:??? HP:??? DEF:???"
+        
+        -- Greyed styling
+        cardFrame.BackgroundColor3 = Color3.fromRGB(128, 128, 128)
+        cardFrame.TextColor3 = Color3.fromRGB(200, 200, 200)
+    end
+end
+```
+
+### Sorting and Grouping
+
+The unified collection supports various sorting and grouping options:
+
+```lua
+-- Sort by different criteria
+local byRarity = selectors.selectUnifiedCollection(state, { sortBy = "rarity" })
+local byPower = selectors.selectUnifiedCollection(state, { sortBy = "power" })
+local byName = selectors.selectUnifiedCollection(state, { sortBy = "name" })
+
+-- Group by rarity or class
+local groupedByRarity = selectors.selectUnifiedCollection(state, { 
+    groupBy = "rarity" 
+})
+-- Returns: { {groupKey = "legendary", items = {...}}, {groupKey = "epic", items = {...}}, ... }
+
+-- Filter options
+local ownedOnly = selectors.selectUnifiedCollection(state, { ownedOnly = true })
+local rareAndEpic = selectors.selectUnifiedCollection(state, { 
+    rarityIn = {"rare", "epic"} 
+})
+local dpsOnly = selectors.selectUnifiedCollection(state, { 
+    classIn = {"dps"} 
+})
+local searchResults = selectors.selectUnifiedCollection(state, { 
+    searchTerm = "fighter" 
+})
+```
+
+### Collection Summary
+
+Use the DevPanel "Print Collection Summary" button to get diagnostic information about the collection, including:
+- Total catalog size and owned count
+- Coverage percentage
+- Rarity breakdown (owned/total per rarity)
+- Top power cards among owned
+- Notable unowned cards
+
 ## Dev Harness
 
 The `VMHarness` provides console-only testing of the client integration layer:

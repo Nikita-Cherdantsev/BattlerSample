@@ -2,9 +2,9 @@ local CombatUtils = {}
 
 local CombatTypes = require(script.Parent.CombatTypes)
 
--- Calculate damage with 50% defence soak model
--- While defence > 0: soak = floor(0.5 * damage), defence -= soak, hp -= (damage - soak)
--- If defence == 0: apply 100% damage to hp
+-- Calculate damage with pure armor pool model
+-- If damage <= defence: defence -= damage; HP unchanged
+-- If damage > defence: residual = damage - defence; defence = 0; HP -= residual
 function CombatUtils.CalculateDamage(baseDamage, targetDefence)
 	if not baseDamage or baseDamage <= 0 then
 		return 0
@@ -15,19 +15,17 @@ function CombatUtils.CalculateDamage(baseDamage, targetDefence)
 		return baseDamage
 	end
 	
-	-- Calculate soak amount (50% of incoming damage)
-	local soak = math.floor(0.5 * baseDamage)
-	
-	-- Determine actual soak (limited by available defence)
-	local actualSoak = math.min(soak, targetDefence)
-	
-	-- Calculate damage to hp (remaining damage after soak)
-	local damageToHp = baseDamage - actualSoak
-	
-	return damageToHp
+	-- Pure armor pool: damage depletes defence first, residual goes to HP
+	if baseDamage <= targetDefence then
+		-- Full absorb: no damage to HP
+		return 0
+	else
+		-- Partial absorb: residual damage to HP
+		return baseDamage - targetDefence
+	end
 end
 
--- Apply damage with defence soak model
+-- Apply damage with pure armor pool model
 -- Returns: { damageToHp, defenceReduced }
 function CombatUtils.ApplyDamageWithDefence(unit, damage)
 	if not unit or not damage or damage <= 0 then
@@ -37,12 +35,19 @@ function CombatUtils.ApplyDamageWithDefence(unit, damage)
 	local damageToHp = 0
 	local defenceReduced = 0
 	
-	-- If unit has defence, apply soak model
+	-- If unit has defence, apply armor pool model
 	if unit.stats.defence and unit.stats.defence > 0 then
-		local soak = math.floor(0.5 * damage)
-		defenceReduced = math.min(soak, unit.stats.defence)
-		unit.stats.defence = unit.stats.defence - defenceReduced
-		damageToHp = damage - defenceReduced
+		if damage <= unit.stats.defence then
+			-- Full absorb: damage <= defence
+			defenceReduced = damage
+			unit.stats.defence = unit.stats.defence - defenceReduced
+			damageToHp = 0
+		else
+			-- Partial absorb: damage > defence
+			defenceReduced = unit.stats.defence
+			unit.stats.defence = 0
+			damageToHp = damage - defenceReduced
+		end
 	else
 		-- No defence, apply full damage to hp
 		damageToHp = damage
@@ -61,14 +66,14 @@ function CombatUtils.ApplyDamageWithDefence(unit, damage)
 	return { damageToHp = actualDamage, defenceReduced = defenceReduced }
 end
 
--- Legacy function for backward compatibility (now uses defence soak)
+-- Legacy function for backward compatibility (now uses armor pool)
 function CombatUtils.CalculateDamageLegacy(baseDamage, targetArmor)
-	-- Note: This function now uses defence instead of armor
+	-- Note: This function now uses defence as armor pool instead of armor
 	-- The old armor parameter is treated as defence
 	return CombatUtils.CalculateDamage(baseDamage, targetArmor)
 end
 
--- Legacy function for backward compatibility (now uses defence soak)
+-- Legacy function for backward compatibility (now uses armor pool)
 function CombatUtils.ApplyDamage(unit, damage)
 	local result = CombatUtils.ApplyDamageWithDefence(unit, damage)
 	return result.damageToHp

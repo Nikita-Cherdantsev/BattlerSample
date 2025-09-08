@@ -307,4 +307,202 @@ function selectors.selectUpgradeableCards(state)
 	return upgradeable
 end
 
+-- Collection data surface - unified catalog + ownership
+
+-- Get unified collection (all catalog cards with ownership overlay)
+function selectors.selectUnifiedCollection(state, opts)
+	opts = opts or {}
+	local collection = selectors.selectCollectionMap(state)
+	
+	-- Get all cards from catalog
+	local allCards = CardCatalog.GetAllCards()
+	if not allCards then
+		return {}
+	end
+	
+	local unified = {}
+	
+	-- Merge catalog with ownership data
+	for cardId, cardData in pairs(allCards) do
+		local collectionEntry = collection[cardId]
+		local owned = collectionEntry ~= nil
+		
+		local unifiedCard = {
+			cardId = cardId,
+			name = cardData.name,
+			rarity = cardData.rarity,
+			class = cardData.class,
+			slotNumber = cardData.slotNumber,
+			description = cardData.description,
+			owned = owned
+		}
+		
+		-- Add ownership data if owned
+		if owned then
+			unifiedCard.level = collectionEntry.level
+			unifiedCard.count = collectionEntry.count
+			
+			-- Compute stats and power for owned cards
+			local stats = CardStats.ComputeStats(cardId, collectionEntry.level)
+			if stats then
+				unifiedCard.stats = {
+					atk = stats.atk,
+					hp = stats.hp,
+					defence = stats.defence
+				}
+				unifiedCard.power = CardStats.ComputePower(stats)
+			end
+		end
+		
+		table.insert(unified, unifiedCard)
+	end
+	
+	-- Apply sorting/grouping/filtering
+	return selectors.applyCollectionFilters(unified, opts)
+end
+
+-- Apply sorting, grouping, and filtering to unified collection
+function selectors.applyCollectionFilters(unified, opts)
+	opts = opts or {}
+	local filtered = {}
+	
+	-- Apply filters
+	for _, card in ipairs(unified) do
+		local include = true
+		
+		-- Owned only filter
+		if opts.ownedOnly and not card.owned then
+			include = false
+		end
+		
+		-- Search term filter
+		if include and opts.searchTerm then
+			local searchLower = string.lower(opts.searchTerm)
+			local nameMatch = string.find(string.lower(card.name), searchLower, 1, true)
+			local idMatch = string.find(string.lower(card.cardId), searchLower, 1, true)
+			if not nameMatch and not idMatch then
+				include = false
+			end
+		end
+		
+		-- Rarity filter
+		if include and opts.rarityIn and #opts.rarityIn > 0 then
+			local rarityMatch = false
+			for _, rarity in ipairs(opts.rarityIn) do
+				if card.rarity == rarity then
+					rarityMatch = true
+					break
+				end
+			end
+			if not rarityMatch then
+				include = false
+			end
+		end
+		
+		-- Class filter
+		if include and opts.classIn and #opts.classIn > 0 then
+			local classMatch = false
+			for _, class in ipairs(opts.classIn) do
+				if card.class == class then
+					classMatch = true
+					break
+				end
+			end
+			if not classMatch then
+				include = false
+			end
+		end
+		
+		if include then
+			table.insert(filtered, card)
+		end
+	end
+	
+	-- Apply sorting
+	local sortBy = opts.sortBy or "slotNumber"
+	table.sort(filtered, function(a, b)
+		if sortBy == "rarity" then
+			local rarityOrder = { legendary = 4, epic = 3, rare = 2, common = 1 }
+			local rarityA = rarityOrder[a.rarity] or 0
+			local rarityB = rarityOrder[b.rarity] or 0
+			
+			if rarityA ~= rarityB then
+				return rarityA > rarityB -- Higher rarity first
+			end
+			-- Tie-breaker: slot number
+			return a.slotNumber < b.slotNumber
+			
+		elseif sortBy == "class" then
+			if a.class ~= b.class then
+				return a.class < b.class
+			end
+			-- Tie-breaker: slot number
+			return a.slotNumber < b.slotNumber
+			
+		elseif sortBy == "name" then
+			if a.name ~= b.name then
+				return a.name < b.name
+			end
+			-- Tie-breaker: slot number
+			return a.slotNumber < b.slotNumber
+			
+		elseif sortBy == "power" then
+			-- Only owned cards have power, unowned cards go to end
+			if a.owned and not b.owned then
+				return true
+			elseif not a.owned and b.owned then
+				return false
+			elseif a.owned and b.owned then
+				if a.power ~= b.power then
+					return a.power > b.power -- Higher power first
+				end
+			end
+			-- Tie-breaker: slot number
+			return a.slotNumber < b.slotNumber
+			
+		else -- "slotNumber" (default)
+			return a.slotNumber < b.slotNumber
+		end
+	end)
+	
+	-- Apply grouping if requested
+	if opts.groupBy then
+		return selectors.groupCollection(filtered, opts.groupBy)
+	end
+	
+	return filtered
+end
+
+-- Group collection by specified field
+function selectors.groupCollection(collection, groupBy)
+	local groups = {}
+	local groupMap = {}
+	
+	for _, card in ipairs(collection) do
+		local groupKey = card[groupBy]
+		if not groupMap[groupKey] then
+			groupMap[groupKey] = {
+				groupKey = groupKey,
+				items = {}
+			}
+			table.insert(groups, groupMap[groupKey])
+		end
+		table.insert(groupMap[groupKey].items, card)
+	end
+	
+	-- Sort groups
+	if groupBy == "rarity" then
+		table.sort(groups, function(a, b)
+			local rarityOrder = { legendary = 4, epic = 3, rare = 2, common = 1 }
+			return rarityOrder[a.groupKey] > rarityOrder[b.groupKey]
+		end)
+	elseif groupBy == "class" then
+		table.sort(groups, function(a, b)
+			return a.groupKey < b.groupKey
+		end)
+	end
+	
+	return groups
+end
+
 return selectors

@@ -24,7 +24,7 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 - ✅ Card catalog with 8 cards (4 rarities, 3 classes, slot-based ordering)
 - ✅ Card level-up system (1-7 levels, atomic persistence, squad power recomputation)
 - ✅ Deck validation (6 unique cards, slot mapping by slotNumber)
-- ✅ Deterministic combat engine (fixed turn order, same-index targeting, defence soak)
+- ✅ Deterministic combat engine (fixed turn order, same-index targeting, armour pool)
 - ✅ Network layer with rate limiting and concurrency guards
 - ✅ Client-side integration (NetworkClient, ClientState, ViewModels)
 - ✅ Offline development (mocks, dev panel, comprehensive testing)
@@ -74,7 +74,7 @@ Client UI ←→ ClientState ←→ NetworkClient ←→ RemoteEvents ←→ Ser
 - **Turn Order**: Fixed sequence 1→2→3→4→5→6 (slot-based)
 - **Targeting**: Same-index priority, nearest living fallback, lower index tiebreaker
 - **RNG**: Seeded random number generation for reproducible combat outcomes
-- **Combat**: Integer math with 50% defence soak damage reduction
+- **Combat**: Integer math with armour pool damage reduction (defence depletes first, residual to HP)
 
 ## Data & Persistence
 
@@ -218,8 +218,8 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 3. **Tiebreaker**: If multiple equidistant, choose lower slot number
 
 **Combat Mechanics:**
-- **Damage**: `attack - (defence * 0.5)` with integer math
-- **Defence Soak**: 50% damage reduction from defence stat
+- **Damage**: Defence acts as a depleting armor pool; residual damage reduces HP
+- **Armor Pool**: Defence depletes first, then HP takes remaining damage
 - **Round Cap**: Maximum 50 rounds to prevent infinite battles
 - **Draw Rules**: Survivor count determines winner
 
@@ -310,7 +310,7 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 
 ## Client Integration Layer
 
-**Reference**: See [docs/ui_integration.md](docs/ui_integration.md) for complete UI integration guide.
+**Reference**: See [docs/ui_integration.md](docs/ui_integration.md) for complete UI integration guide including combat mechanics and defence semantics.
 
 **Core Components:**
 - **NetworkClient**: Unified interface for mock/real server communication (`requestLevelUpCard()`)
@@ -364,6 +364,8 @@ Utilities.SelfCheck.RunAllTests()
 ```
 
 **Validates**: Card catalog consistency, deck validation rules, combat mechanics, time utilities
+
+**Armor Pool Tests**: Comprehensive combat validation including full absorb (damage ≤ defence), partial absorb (damage > defence), exact match scenarios, overkill cases, edge conditions (0/1 damage), and combat invariants (dead units cannot act, survivors have HP > 0)
 
 ### Dev Harnesses
 
@@ -514,7 +516,7 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - **Deck**: Collection of exactly 6 unique cards for battle
 - **Slot Number**: Integer (10-80) determining deck→slot mapping order
 - **Squad Power**: Computed metric representing deck strength
-- **Defence Soak**: 50% damage reduction from defence stat in combat
+- **Armor Pool**: Defence acts as depleting armor; residual damage reduces HP
 - **Same-Index Targeting**: Combat targeting priority (same slot first)
 
 **System Terms:**
@@ -552,6 +554,12 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Documentation**: Complete Level-Up Flow section in [docs/ui_integration.md](docs/ui_integration.md)
 - ✅ **Testing**: LevelUpDevHarness server-side validation, comprehensive error case coverage
 
+**Combat Defence Update:**
+- ✅ **Armor Pool Model**: Defence now acts as depleting armor pool instead of 50% soak
+- ✅ **Simplified Mechanics**: Damage depletes defence first, residual reduces HP
+- ✅ **Comprehensive Testing**: 10 new self-check cases covering all armor scenarios
+- ✅ **Documentation**: Updated README combat mechanics and glossary sections
+
 ---
 ---
 ---
@@ -564,7 +572,7 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 
 Игра — **детерминированный аниме card-battler** на сетке 3×2. Сервер — единственный источник правды: расчёт боя, валидации, персист. Клиент — рендер и ввод. Уже реализовано: профиль v2, каталог карт, уровни и статы, валидация дек, детерминированный бой, матч-сервис, минимальные RemoteEvents, клиентская интеграция (NetworkClient/ClientState/VM), моки, дев-панель.&#x20;
 
-**Детерминизм:** фиксированный порядок ходов по слотам (1→6), таргетинг «тот же индекс → ближайшая живая цель (tie → меньший индекс)», 50% soak в защиту (целочисленная арифметика). Во все серверные ответы добавлен `serverNow` для синхронизации таймеров. &#x20;
+**Детерминизм:** фиксированный порядок ходов по слотам (1→6), таргетинг «тот же индекс → ближайшая живая цель (tie → меньший индекс)», armour pool в защиту (целочисленная арифметика). Во все серверные ответы добавлен `serverNow` для синхронизации таймеров. &#x20;
 
 ## 2) Структура репозитория (Rojo)
 
@@ -607,7 +615,7 @@ Client UI  ──(RemoteEvents)──► Server Services ──► Persistence (
 * **CardLevels**: ур. 1–7; для каждого уровня задаются `requiredCount`, `softAmount`.&#x20;
 * **CardStats**: вычисляет эффективные статы карточки с учётом уровня; `power` = функция (`atk/hp/defence`), используется для `squadPower`.&#x20;
 * **DeckValidator**: принимает **ровно 6 уникальных** id; маппинг к слотам (1..6) по возрастанию `slotNumber`; клиент может визуализировать сетку через BoardLayout. &#x20;
-* **CombatEngine**: ходят слоты 1→6; таргет «тот же индекс», иначе ближайший живой (tie → меньший индекс); **defence soak 50%** (shield-подобная механика); кап по раундам, ничьи — корректно обрабатываются.&#x20;
+* **CombatEngine**: ходят слоты 1→6; таргет «тот же индекс», иначе ближайший живой (tie → меньший индекс); **armour pool** (defence depletes first, residual to HP); кап по раундам, ничьи — корректно обрабатываются.&#x20;
 
 ## 6) Сетевой слой (RemoteEvents)
 
@@ -693,6 +701,6 @@ Utilities.SelfCheck.RunAllTests()
 
 * **Deck** — 6 уникальных `cardId`.
 * **slotNumber** — упорядочивает карты в слоты 1..6; визуально сетка `5 3 1 / 6 4 2`.&#x20;
-* **Defence soak** — 50% входящего урона уходит в «щит».&#x20;
+* **Armor pool** — defence действует как истощаемый щит; остаточный урон идёт в HP.&#x20;
 * **squadPower** — сумма `power` карт из активной деки.&#x20;
 * **serverNow** — метка времени сервера в каждом ответе/ивенте.&#x20;

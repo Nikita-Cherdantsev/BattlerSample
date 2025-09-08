@@ -25,84 +25,93 @@ function CardVM.build(cardId, collectionEntry, profileState)
 		error("CardVM.build: Invalid card ID: " .. tostring(cardId))
 	end
 	
-	-- Determine level (from collection or default to 1)
+	-- Determine ownership and level/count
+	local owned = collectionEntry ~= nil
 	local level = 1
 	local count = 0
-	if collectionEntry then
+	if owned then
 		level = collectionEntry.level or 1
 		count = collectionEntry.count or 0
 	end
 	
-	-- Compute stats for this level
-	local stats = CardStats.ComputeStats(cardId, level)
+	-- Build base view model
+	local vm = {
+		id = cardId,
+		name = card.name,
+		rarity = card.rarity,
+		class = card.class,
+		slotNumber = card.slotNumber,
+		description = card.description,
+		-- Additional metadata
+		baseStats = card.baseStats,
+		levelIncrements = card.levelIncrements,
+		-- Ownership flag
+		owned = owned,
+		maxLevel = 7
+	}
 	
-	-- Compute power
-	local power = CardStats.ComputePower(stats)
-	
-	-- Compute upgrade information if profile state is provided
-	local upgradeInfo = {}
-	if profileState then
-		-- Use selectors to compute upgradeability
-		local selectors = require(game:GetService("ReplicatedStorage").Modules.ViewModels.selectors)
-		if selectors and selectors.selectCanLevelUp then
-			local canLevelUp = selectors.selectCanLevelUp(profileState, cardId)
-			upgradeInfo = {
-				canLevelUp = canLevelUp.can,
-				nextLevel = canLevelUp.nextLevel,
-				requiredCount = canLevelUp.requiredCount,
-				softAmount = canLevelUp.softAmount,
-				shortfallCount = canLevelUp.shortfallCount,
-				shortfallSoft = canLevelUp.shortfallSoft,
-				reason = canLevelUp.reason
+	-- Add ownership-specific data only if owned
+	if owned then
+		vm.level = level
+		vm.count = count
+		
+		-- Compute stats for this level
+		local stats = CardStats.ComputeStats(cardId, level)
+		if stats then
+			vm.stats = {
+				atk = stats.atk,
+				hp = stats.hp,
+				defence = stats.defence
 			}
+			vm.power = CardStats.ComputePower(stats)
+		end
+		
+		-- Compute upgrade information if profile state is provided
+		local upgradeInfo = {}
+		if profileState then
+			-- Use selectors to compute upgradeability
+			local selectors = require(game:GetService("ReplicatedStorage").Modules.ViewModels.selectors)
+			if selectors and selectors.selectCanLevelUp then
+				local canLevelUp = selectors.selectCanLevelUp(profileState, cardId)
+				upgradeInfo = {
+					canLevelUp = canLevelUp.can,
+					nextLevel = canLevelUp.nextLevel,
+					requiredCount = canLevelUp.requiredCount,
+					softAmount = canLevelUp.softAmount,
+					shortfallCount = canLevelUp.shortfallCount,
+					shortfallSoft = canLevelUp.shortfallSoft,
+					reason = canLevelUp.reason
+				}
+			else
+				-- Fallback to simple check
+				upgradeInfo = {
+					canLevelUp = level < 7 and count >= 10,
+					nextLevel = level < 7 and (level + 1) or nil,
+					reason = level >= 7 and "LEVEL_MAXED" or (count < 10 and "INSUFFICIENT_COPIES" or nil)
+				}
+			end
 		else
-			-- Fallback to simple check
+			-- No profile state, use simple check
 			upgradeInfo = {
 				canLevelUp = level < 7 and count >= 10,
 				nextLevel = level < 7 and (level + 1) or nil,
 				reason = level >= 7 and "LEVEL_MAXED" or (count < 10 and "INSUFFICIENT_COPIES" or nil)
 			}
 		end
+		
+		-- Add upgrade information
+		vm.canLevelUp = upgradeInfo.canLevelUp
+		vm.nextLevel = upgradeInfo.nextLevel
+		vm.requiredCount = upgradeInfo.requiredCount
+		vm.softAmount = upgradeInfo.softAmount
+		vm.shortfallCount = upgradeInfo.shortfallCount
+		vm.shortfallSoft = upgradeInfo.shortfallSoft
+		vm.upgradeReason = upgradeInfo.reason
 	else
-		-- No profile state, use simple check
-		upgradeInfo = {
-			canLevelUp = level < 7 and count >= 10,
-			nextLevel = level < 7 and (level + 1) or nil,
-			reason = level >= 7 and "LEVEL_MAXED" or (count < 10 and "INSUFFICIENT_COPIES" or nil)
-		}
+		-- For unowned cards, set upgrade fields to indicate not upgradeable
+		vm.canLevelUp = false
+		vm.upgradeReason = "CARD_NOT_OWNED"
 	end
-	
-	-- Build view model
-	local vm = {
-		id = cardId,
-		name = card.name,
-		rarity = card.rarity,
-		class = card.class,
-		level = level,
-		count = count,
-		stats = {
-			atk = stats.atk,
-			hp = stats.hp,
-			defence = stats.defence
-		},
-		power = power,
-		slotNumber = card.slotNumber,
-		description = card.description,
-		-- Additional metadata
-		baseStats = card.baseStats,
-		levelIncrements = card.levelIncrements,
-		-- Computed properties
-		isOwned = count > 0,
-		maxLevel = 7,
-		-- Upgrade information
-		canLevelUp = upgradeInfo.canLevelUp,
-		nextLevel = upgradeInfo.nextLevel,
-		requiredCount = upgradeInfo.requiredCount,
-		softAmount = upgradeInfo.softAmount,
-		shortfallCount = upgradeInfo.shortfallCount,
-		shortfallSoft = upgradeInfo.shortfallSoft,
-		upgradeReason = upgradeInfo.reason
-	}
 	
 	return vm
 end
@@ -194,6 +203,26 @@ function CardVM.buildUpgradeableList(profileState)
 		
 		return upgradeable
 	end
+end
+
+-- Build VMs from unified collection data (for Collection screen)
+function CardVM.buildFromUnifiedCollection(unifiedCollection, profileState)
+	local vms = {}
+	
+	for _, unifiedCard in ipairs(unifiedCollection) do
+		local collectionEntry = nil
+		if unifiedCard.owned then
+			collectionEntry = {
+				level = unifiedCard.level,
+				count = unifiedCard.count
+			}
+		end
+		
+		local vm = CardVM.build(unifiedCard.cardId, collectionEntry, profileState)
+		table.insert(vms, vm)
+	end
+	
+	return vms
 end
 
 return CardVM

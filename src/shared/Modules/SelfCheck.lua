@@ -216,28 +216,122 @@ local function TestDeckValidation()
 	end
 end
 
--- Test 5: Combat Utils (v2)
+-- Test 5: Combat Utils (v2) - Armor Pool Model
 local function TestCombatUtils()
-	print("\n=== Testing Combat Utils (v2) ===")
+	print("\n=== Testing Combat Utils (v2) - Armor Pool ===")
 	
-	-- Test defence soak damage calculation
-	local damageWithDefence = CombatUtils.CalculateDamage(10, 5)
-	print("✅ 10 damage vs 5 defence =", damageWithDefence, "damage to HP")
+	-- Test 1: Full absorb (damage <= defence)
+	local damageFullAbsorb = CombatUtils.CalculateDamage(3, 5)
+	if damageFullAbsorb == 0 then
+		print("✅ PASS: 3 damage vs 5 defence = 0 damage to HP (full absorb)")
+	else
+		print("❌ FAIL: 3 damage vs 5 defence =", damageFullAbsorb, "expected 0")
+		testResults.combatUtils = false
+	end
 	
+	-- Test 2: Partial absorb (damage > defence)
+	local damagePartialAbsorb = CombatUtils.CalculateDamage(8, 5)
+	if damagePartialAbsorb == 3 then
+		print("✅ PASS: 8 damage vs 5 defence = 3 damage to HP (partial absorb)")
+	else
+		print("❌ FAIL: 8 damage vs 5 defence =", damagePartialAbsorb, "expected 3")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 3: Exact match (damage == defence)
+	local damageExactMatch = CombatUtils.CalculateDamage(5, 5)
+	if damageExactMatch == 0 then
+		print("✅ PASS: 5 damage vs 5 defence = 0 damage to HP (exact match)")
+	else
+		print("❌ FAIL: 5 damage vs 5 defence =", damageExactMatch, "expected 0")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 4: No defence
 	local damageNoDefence = CombatUtils.CalculateDamage(10, 0)
-	print("✅ 10 damage vs 0 defence =", damageNoDefence, "damage to HP")
+	if damageNoDefence == 10 then
+		print("✅ PASS: 10 damage vs 0 defence = 10 damage to HP (no defence)")
+	else
+		print("❌ FAIL: 10 damage vs 0 defence =", damageNoDefence, "expected 10")
+		testResults.combatUtils = false
+	end
 	
-	-- Test damage application with defence
-	local mockUnit = {
+	-- Test 5: Overkill after armor
+	local damageOverkill = CombatUtils.CalculateDamage(100, 5)
+	if damageOverkill == 95 then
+		print("✅ PASS: 100 damage vs 5 defence = 95 damage to HP (overkill)")
+	else
+		print("❌ FAIL: 100 damage vs 5 defence =", damageOverkill, "expected 95")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 6: Zero/one damage edges
+	local damageZero = CombatUtils.CalculateDamage(0, 5)
+	local damageOne = CombatUtils.CalculateDamage(1, 5)
+	if damageZero == 0 and damageOne == 0 then
+		print("✅ PASS: 0/1 damage vs 5 defence = 0 damage to HP (edge cases)")
+	else
+		print("❌ FAIL: 0/1 damage vs 5 defence =", damageZero, damageOne, "expected 0, 0")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 7: Damage application with full absorb
+	local mockUnit1 = {
 		stats = { health = 20, defence = 5 },
 		state = CombatTypes.UnitState.ALIVE
 	}
 	
-	local damageResult = CombatUtils.ApplyDamageWithDefence(mockUnit, 10)
-	print("✅ Applied 10 damage:", "HP damage:", damageResult.damageToHp, "Defence reduced:", damageResult.defenceReduced)
-	print("✅ Unit state:", "HP:", mockUnit.stats.health, "Defence:", mockUnit.stats.defence)
+	local damageResult1 = CombatUtils.ApplyDamageWithDefence(mockUnit1, 3)
+	if damageResult1.damageToHp == 0 and damageResult1.defenceReduced == 3 and mockUnit1.stats.health == 20 and mockUnit1.stats.defence == 2 then
+		print("✅ PASS: Full absorb - HP unchanged, defence reduced by damage")
+	else
+		print("❌ FAIL: Full absorb - HP:", mockUnit1.stats.health, "Defence:", mockUnit1.stats.defence, "Expected HP:20, Defence:2")
+		testResults.combatUtils = false
+	end
 	
-	testResults.combatUtils = true
+	-- Test 8: Damage application with partial absorb
+	local mockUnit2 = {
+		stats = { health = 20, defence = 5 },
+		state = CombatTypes.UnitState.ALIVE
+	}
+	
+	local damageResult2 = CombatUtils.ApplyDamageWithDefence(mockUnit2, 8)
+	if damageResult2.damageToHp == 3 and damageResult2.defenceReduced == 5 and mockUnit2.stats.health == 17 and mockUnit2.stats.defence == 0 then
+		print("✅ PASS: Partial absorb - defence→0, HP reduced by residual")
+	else
+		print("❌ FAIL: Partial absorb - HP:", mockUnit2.stats.health, "Defence:", mockUnit2.stats.defence, "Expected HP:17, Defence:0")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 9: Invariants - dead units never act
+	local deadUnit = {
+		stats = { health = 0, defence = 5 },
+		state = CombatTypes.UnitState.DEAD
+	}
+	
+	if not CombatUtils.CanUnitAct(deadUnit) then
+		print("✅ PASS: Dead units cannot act")
+	else
+		print("❌ FAIL: Dead units can act")
+		testResults.combatUtils = false
+	end
+	
+	-- Test 10: Invariants - survivors have HP > 0
+	local aliveUnit = {
+		stats = { health = 1, defence = 0 },
+		state = CombatTypes.UnitState.ALIVE
+	}
+	
+	if CombatUtils.CanUnitAct(aliveUnit) then
+		print("✅ PASS: Alive units can act")
+	else
+		print("❌ FAIL: Alive units cannot act")
+		testResults.combatUtils = false
+	end
+	
+	if testResults.combatUtils == nil then
+		testResults.combatUtils = true
+	end
 end
 
 -- Test 6: Seeded RNG
