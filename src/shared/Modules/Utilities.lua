@@ -57,4 +57,13 @@ Utilities.Assets = {
 	Resolver = safeRequire(script.Assets.Resolver)
 }
 
+-- Lootbox System Modules (safe to require on both client and server)
+Utilities.BoxTypes = safeRequire(script.Loot.BoxTypes)
+Utilities.BoxDropTables = safeRequire(script.Loot.BoxDropTables)
+Utilities.BoxRoller = safeRequire(script.Loot.BoxRoller)
+Utilities.BoxValidator = safeRequire(script.Loot.BoxValidator)
+
+-- Shop System Modules (safe to require on both client and server)
+Utilities.ShopPacksCatalog = safeRequire(script.Shop.ShopPacksCatalog)
+
 return Utilities

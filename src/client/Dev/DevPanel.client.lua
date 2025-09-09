@@ -63,11 +63,26 @@ local function updateStatus()
 	local squadPower = state.profile and state.profile.squadPower or 0
 	local mockStatus = Config.USE_MOCKS and "ON" or "OFF"
 	
+	-- Get lootbox info
+	local lootboxes = state.profile and state.profile.lootboxes or {}
+	local pendingLootbox = state.profile and state.profile.pendingLootbox
+	local unlockingCount = 0
+	for _, lootbox in ipairs(lootboxes) do
+		if lootbox.state == "unlocking" then
+			unlockingCount = unlockingCount + 1
+		end
+	end
+	
+	local pendingStatus = pendingLootbox and "Y" or "N"
+	
 	statusLabel.Text = string.format(
-		"Server: %d\nPower: %d\nMocks: %s",
+		"Server: %d\nPower: %d\nMocks: %s\nLoot: %d slots\nUnlocking: %d\nPending: %s",
 		serverNow,
 		squadPower,
-		mockStatus
+		mockStatus,
+		#lootboxes,
+		unlockingCount,
+		pendingStatus
 	)
 end
 
@@ -386,6 +401,82 @@ function DevPanel.create()
 		log("=== END SUMMARY ===")
 	end)
 	collectionSummaryButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Lootbox buttons
+	local lootRefreshButton = createButton(buttonContainer, "Loot: Refresh", function()
+		log("Loot Refresh clicked")
+		NetworkClient.requestLootState()
+	end)
+	lootRefreshButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Add box buttons (only visible when mocks or debug enabled)
+	if Config.USE_MOCKS or Config.DEBUG_LOGS then
+		local addUncommonButton = createButton(buttonContainer, "Loot: Add Uncommon", function()
+			log("Add Uncommon clicked")
+			NetworkClient.requestAddBox("uncommon", "dev_panel")
+		end)
+		addUncommonButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+		
+		local addRareButton = createButton(buttonContainer, "Loot: Add Rare", function()
+			log("Add Rare clicked")
+			NetworkClient.requestAddBox("rare", "dev_panel")
+		end)
+		addRareButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+		
+		local addEpicButton = createButton(buttonContainer, "Loot: Add Epic", function()
+			log("Add Epic clicked")
+			NetworkClient.requestAddBox("epic", "dev_panel")
+		end)
+		addEpicButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+		
+		local addLegendaryButton = createButton(buttonContainer, "Loot: Add Legendary", function()
+			log("Add Legendary clicked")
+			NetworkClient.requestAddBox("legendary", "dev_panel")
+		end)
+		addLegendaryButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+	end
+	
+	-- Lootbox operations
+	local startUnlockButton = createButton(buttonContainer, "Loot: Start Unlock (slot 1)", function()
+		log("Start Unlock (slot 1) clicked")
+		NetworkClient.requestStartUnlock(1)
+	end)
+	startUnlockButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local completeUnlockButton = createButton(buttonContainer, "Loot: Complete (slot 1)", function()
+		log("Complete Unlock (slot 1) clicked")
+		NetworkClient.requestCompleteUnlock(1)
+	end)
+	completeUnlockButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local openNowButton = createButton(buttonContainer, "Loot: Open Now (slot 1)", function()
+		log("Open Now (slot 1) clicked")
+		NetworkClient.requestOpenNow(1)
+	end)
+	openNowButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Pending resolution
+	local resolveDiscardButton = createButton(buttonContainer, "Loot: Resolve Pending (Discard)", function()
+		log("Resolve Pending Discard clicked")
+		NetworkClient.requestResolvePendingDiscard()
+	end)
+	resolveDiscardButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local resolveReplaceButton = createButton(buttonContainer, "Loot: Resolve Pending (Replace slot 1)", function()
+		log("Resolve Pending Replace (slot 1) clicked")
+		NetworkClient.requestResolvePendingReplace(1)
+	end)
+	resolveReplaceButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
 	
 	-- Toggle Mocks button

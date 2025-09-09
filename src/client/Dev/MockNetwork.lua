@@ -298,6 +298,334 @@ function MockNetwork.setMockProfile(profile)
 	end
 end
 
+-- Lootbox methods
+
+-- Request loot state
+function MockNetwork.requestLootState()
+	log("Requesting loot state (mock)")
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	local payload = {
+		lootboxes = currentProfile.lootboxes or {},
+		pendingLootbox = currentProfile.pendingLootbox,
+		serverNow = os.time()
+	}
+	
+	log("Loot state requested successfully (mock)")
+	emitProfileUpdate(payload)
+end
+
+-- Request add box
+function MockNetwork.requestAddBox(rarity, source)
+	if not rarity or type(rarity) ~= "string" then
+		log("Invalid rarity")
+		return false, "Invalid rarity"
+	end
+	
+	log("Requesting add box (mock): %s", rarity)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	-- Simple mock logic: add to first available slot or set as pending
+	local lootboxes = currentProfile.lootboxes or {}
+	local added = false
+	
+	-- Try to add to first available slot
+	for i = 1, 4 do
+		if not lootboxes[i] then
+			lootboxes[i] = {
+				id = "mock_box_" .. os.time() .. "_" .. i,
+				rarity = rarity,
+				state = "idle",
+				seed = math.random(1, 2147483647),
+				source = source
+			}
+			added = true
+			break
+		end
+	end
+	
+	-- If no slots available, set as pending
+	if not added then
+		currentProfile.pendingLootbox = {
+			id = "mock_box_" .. os.time() .. "_pending",
+			rarity = rarity,
+			seed = math.random(1, 2147483647),
+			source = source
+		}
+	end
+	
+	currentProfile.lootboxes = lootboxes
+	
+	local payload = {
+		lootboxes = lootboxes,
+		pendingLootbox = currentProfile.pendingLootbox,
+		serverNow = os.time()
+	}
+	
+	log("Add box requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
+-- Request resolve pending discard
+function MockNetwork.requestResolvePendingDiscard()
+	log("Requesting resolve pending discard (mock)")
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	currentProfile.pendingLootbox = nil
+	
+	local payload = {
+		lootboxes = currentProfile.lootboxes or {},
+		pendingLootbox = nil,
+		serverNow = os.time()
+	}
+	
+	log("Resolve pending discard requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
+-- Request resolve pending replace
+function MockNetwork.requestResolvePendingReplace(slotIndex)
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		log("Invalid slot index")
+		return false, "Invalid slot index"
+	end
+	
+	log("Requesting resolve pending replace (mock): slot %d", slotIndex)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	local lootboxes = currentProfile.lootboxes or {}
+	local pendingLootbox = currentProfile.pendingLootbox
+	
+	if not pendingLootbox then
+		log("No pending lootbox to replace")
+		return false, "No pending lootbox to replace"
+	end
+	
+	if not lootboxes[slotIndex] then
+		log("No lootbox at slot %d to replace", slotIndex)
+		return false, "No lootbox at slot " .. slotIndex .. " to replace"
+	end
+	
+	-- Replace the slot with pending box
+	lootboxes[slotIndex] = {
+		id = pendingLootbox.id,
+		rarity = pendingLootbox.rarity,
+		state = "idle",
+		seed = pendingLootbox.seed,
+		source = pendingLootbox.source
+	}
+	
+	currentProfile.pendingLootbox = nil
+	currentProfile.lootboxes = lootboxes
+	
+	local payload = {
+		lootboxes = lootboxes,
+		pendingLootbox = nil,
+		serverNow = os.time()
+	}
+	
+	log("Resolve pending replace requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
+-- Request start unlock
+function MockNetwork.requestStartUnlock(slotIndex)
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		log("Invalid slot index")
+		return false, "Invalid slot index"
+	end
+	
+	log("Requesting start unlock (mock): slot %d", slotIndex)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	local lootboxes = currentProfile.lootboxes or {}
+	local lootbox = lootboxes[slotIndex]
+	
+	if not lootbox then
+		log("No lootbox at slot %d", slotIndex)
+		return false, "No lootbox at slot " .. slotIndex
+	end
+	
+	if lootbox.state ~= "idle" then
+		log("Lootbox at slot %d is not idle", slotIndex)
+		return false, "Lootbox at slot " .. slotIndex .. " is not idle"
+	end
+	
+	-- Check if any other box is unlocking
+	for i = 1, 4 do
+		if lootboxes[i] and lootboxes[i].state == "unlocking" then
+			log("Another lootbox is already unlocking")
+			return false, "Another lootbox is already unlocking"
+		end
+	end
+	
+	-- Start unlocking
+	local now = os.time()
+	local duration = 60 -- 1 minute for mock (much shorter than real durations)
+	lootbox.state = "unlocking"
+	lootbox.startedAt = now
+	lootbox.unlocksAt = now + duration
+	
+	local payload = {
+		lootboxes = lootboxes,
+		pendingLootbox = currentProfile.pendingLootbox,
+		serverNow = now
+	}
+	
+	log("Start unlock requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
+-- Request open now
+function MockNetwork.requestOpenNow(slotIndex)
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		log("Invalid slot index")
+		return false, "Invalid slot index"
+	end
+	
+	log("Requesting open now (mock): slot %d", slotIndex)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	local lootboxes = currentProfile.lootboxes or {}
+	local lootbox = lootboxes[slotIndex]
+	
+	if not lootbox then
+		log("No lootbox at slot %d", slotIndex)
+		return false, "No lootbox at slot " .. slotIndex
+	end
+	
+	if lootbox.state ~= "idle" and lootbox.state ~= "unlocking" then
+		log("Lootbox at slot %d cannot be opened", slotIndex)
+		return false, "Lootbox at slot " .. slotIndex .. " cannot be opened"
+	end
+	
+	-- Calculate instant cost (simplified for mock)
+	local instantCost = 10 -- Fixed cost for mock
+	
+	if currentProfile.currencies.hard < instantCost then
+		log("Insufficient hard currency: %d < %d", currentProfile.currencies.hard, instantCost)
+		return false, "Insufficient hard currency"
+	end
+	
+	-- Deduct cost and grant rewards
+	currentProfile.currencies.hard = currentProfile.currencies.hard - instantCost
+	currentProfile.currencies.soft = currentProfile.currencies.soft + 100 -- Mock reward
+	
+	-- Remove lootbox (compact array)
+	local newLootboxes = {}
+	local index = 1
+	for i = 1, 4 do
+		if lootboxes[i] and i ~= slotIndex then
+			newLootboxes[index] = lootboxes[i]
+			index = index + 1
+		end
+	end
+	
+	currentProfile.lootboxes = newLootboxes
+	
+	local payload = {
+		lootboxes = newLootboxes,
+		pendingLootbox = currentProfile.pendingLootbox,
+		currencies = currentProfile.currencies,
+		collectionSummary = {{cardId = "mock_card", count = 1, level = 1}}, -- Mock reward
+		serverNow = os.time()
+	}
+	
+	log("Open now requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
+-- Request complete unlock
+function MockNetwork.requestCompleteUnlock(slotIndex)
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		log("Invalid slot index")
+		return false, "Invalid slot index"
+	end
+	
+	log("Requesting complete unlock (mock): slot %d", slotIndex)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	local lootboxes = currentProfile.lootboxes or {}
+	local lootbox = lootboxes[slotIndex]
+	
+	if not lootbox then
+		log("No lootbox at slot %d", slotIndex)
+		return false, "No lootbox at slot " .. slotIndex
+	end
+	
+	if lootbox.state ~= "unlocking" and lootbox.state ~= "ready" then
+		log("Lootbox at slot %d is not ready to complete", slotIndex)
+		return false, "Lootbox at slot " .. slotIndex .. " is not ready to complete"
+	end
+	
+	-- Grant rewards
+	currentProfile.currencies.soft = currentProfile.currencies.soft + 100 -- Mock reward
+	
+	-- Remove lootbox (compact array)
+	local newLootboxes = {}
+	local index = 1
+	for i = 1, 4 do
+		if lootboxes[i] and i ~= slotIndex then
+			newLootboxes[index] = lootboxes[i]
+			index = index + 1
+		end
+	end
+	
+	currentProfile.lootboxes = newLootboxes
+	
+	local payload = {
+		lootboxes = newLootboxes,
+		pendingLootbox = currentProfile.pendingLootbox,
+		currencies = currentProfile.currencies,
+		collectionSummary = {{cardId = "mock_card", count = 1, level = 1}}, -- Mock reward
+		serverNow = os.time()
+	}
+	
+	log("Complete unlock requested successfully (mock)")
+	emitProfileUpdate(payload)
+	return true
+end
+
 -- Simulate error response
 function MockNetwork.simulateError(errorCode, message)
 	log("Simulating error: %s - %s", errorCode, message)

@@ -30,12 +30,26 @@ local ProfileUpdated = Network:WaitForChild("ProfileUpdated")
 local RequestSetDeck = Network:WaitForChild("RequestSetDeck")
 local RequestStartMatch = Network:WaitForChild("RequestStartMatch")
 local RequestLevelUpCard = Network:WaitForChild("RequestLevelUpCard")
+local RequestLootState = Network:WaitForChild("RequestLootState")
+local RequestAddBox = Network:WaitForChild("RequestAddBox")
+local RequestResolvePendingDiscard = Network:WaitForChild("RequestResolvePendingDiscard")
+local RequestResolvePendingReplace = Network:WaitForChild("RequestResolvePendingReplace")
+local RequestStartUnlock = Network:WaitForChild("RequestStartUnlock")
+local RequestOpenNow = Network:WaitForChild("RequestOpenNow")
+local RequestCompleteUnlock = Network:WaitForChild("RequestCompleteUnlock")
 
 -- State
 local lastServerNow = 0
 local lastProfileRequest = 0
 local lastSetDeckRequest = 0
 local lastLevelUpRequest = 0
+local lastLootStateRequest = 0
+local lastAddBoxRequest = 0
+local lastResolvePendingDiscardRequest = 0
+local lastResolvePendingReplaceRequest = 0
+local lastStartUnlockRequest = 0
+local lastOpenNowRequest = 0
+local lastCompleteUnlockRequest = 0
 local DEBOUNCE_MS = 300
 
 -- Utility functions
@@ -205,6 +219,154 @@ function NetworkClient.getClientTime()
 	return lastServerNow + timeSinceLastUpdate
 end
 
+-- Lootbox methods
+
+-- Request loot state from server
+function NetworkClient.requestLootState()
+	if Config.USE_MOCKS then
+		return MockNetwork.requestLootState()
+	end
+	
+	if debounce(lastLootStateRequest) then
+		log("Debouncing loot state request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastLootStateRequest = tick() * 1000
+	log("Requesting loot state")
+	RequestLootState:FireServer({})
+	
+	return true
+end
+
+-- Request add box (dev/test only)
+function NetworkClient.requestAddBox(rarity, source)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestAddBox(rarity, source)
+	end
+	
+	if not rarity or type(rarity) ~= "string" then
+		return false, "Invalid rarity"
+	end
+	
+	if debounce(lastAddBoxRequest) then
+		log("Debouncing add box request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastAddBoxRequest = tick() * 1000
+	log("Requesting add box: %s", rarity)
+	RequestAddBox:FireServer({rarity = rarity, source = source})
+	
+	return true
+end
+
+-- Request resolve pending discard
+function NetworkClient.requestResolvePendingDiscard()
+	if Config.USE_MOCKS then
+		return MockNetwork.requestResolvePendingDiscard()
+	end
+	
+	if debounce(lastResolvePendingDiscardRequest) then
+		log("Debouncing resolve pending discard request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastResolvePendingDiscardRequest = tick() * 1000
+	log("Requesting resolve pending discard")
+	RequestResolvePendingDiscard:FireServer({})
+	
+	return true
+end
+
+-- Request resolve pending replace
+function NetworkClient.requestResolvePendingReplace(slotIndex)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestResolvePendingReplace(slotIndex)
+	end
+	
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		return false, "Invalid slot index"
+	end
+	
+	if debounce(lastResolvePendingReplaceRequest) then
+		log("Debouncing resolve pending replace request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastResolvePendingReplaceRequest = tick() * 1000
+	log("Requesting resolve pending replace: slot %d", slotIndex)
+	RequestResolvePendingReplace:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
+-- Request start unlock
+function NetworkClient.requestStartUnlock(slotIndex)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestStartUnlock(slotIndex)
+	end
+	
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		return false, "Invalid slot index"
+	end
+	
+	if debounce(lastStartUnlockRequest) then
+		log("Debouncing start unlock request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastStartUnlockRequest = tick() * 1000
+	log("Requesting start unlock: slot %d", slotIndex)
+	RequestStartUnlock:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
+-- Request open now
+function NetworkClient.requestOpenNow(slotIndex)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestOpenNow(slotIndex)
+	end
+	
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		return false, "Invalid slot index"
+	end
+	
+	if debounce(lastOpenNowRequest) then
+		log("Debouncing open now request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastOpenNowRequest = tick() * 1000
+	log("Requesting open now: slot %d", slotIndex)
+	RequestOpenNow:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
+-- Request complete unlock
+function NetworkClient.requestCompleteUnlock(slotIndex)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestCompleteUnlock(slotIndex)
+	end
+	
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		return false, "Invalid slot index"
+	end
+	
+	if debounce(lastCompleteUnlockRequest) then
+		log("Debouncing complete unlock request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastCompleteUnlockRequest = tick() * 1000
+	log("Requesting complete unlock: slot %d", slotIndex)
+	RequestCompleteUnlock:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
 -- Check if any request is currently in flight
 function NetworkClient.isBusy()
 	if Config.USE_MOCKS then
@@ -216,7 +378,14 @@ function NetworkClient.isBusy()
 	
 	return (now - lastProfileRequest < recentThreshold) or
 		   (now - lastSetDeckRequest < recentThreshold) or
-		   (now - lastLevelUpRequest < recentThreshold)
+		   (now - lastLevelUpRequest < recentThreshold) or
+		   (now - lastLootStateRequest < recentThreshold) or
+		   (now - lastAddBoxRequest < recentThreshold) or
+		   (now - lastResolvePendingDiscardRequest < recentThreshold) or
+		   (now - lastResolvePendingReplaceRequest < recentThreshold) or
+		   (now - lastStartUnlockRequest < recentThreshold) or
+		   (now - lastOpenNowRequest < recentThreshold) or
+		   (now - lastCompleteUnlockRequest < recentThreshold)
 end
 
 -- Reinitialize NetworkClient (for mock toggle)
@@ -227,6 +396,14 @@ function NetworkClient.reinitialize()
 	lastServerNow = 0
 	lastProfileRequest = 0
 	lastSetDeckRequest = 0
+	lastLevelUpRequest = 0
+	lastLootStateRequest = 0
+	lastAddBoxRequest = 0
+	lastResolvePendingDiscardRequest = 0
+	lastResolvePendingReplaceRequest = 0
+	lastStartUnlockRequest = 0
+	lastOpenNowRequest = 0
+	lastCompleteUnlockRequest = 0
 	
 	-- Reset mock network if using mocks
 	if Config.USE_MOCKS then

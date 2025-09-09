@@ -1082,6 +1082,358 @@ Check these items in order:
 - **Solution**: Standardized on lowercase values (`"common"`, `"dps"`, etc.)
 - **Result**: Seamless integration between mock and real server modes
 
+## Lootboxes UI
+
+The lootbox system provides a complete client-side integration for managing lootbox operations, timers, and rewards. This section covers how to build lootbox UI using the provided state management and view models.
+
+### Subscribing to Lootbox State
+
+Use ClientState to subscribe to lootbox data changes:
+
+```lua
+local ClientState = require(script.Parent.Parent.State.ClientState)
+local LootboxesVM = require(game.ReplicatedStorage.Modules.ViewModels.LootboxesVM)
+
+-- Subscribe to state changes
+ClientState.subscribe(function(state)
+    if state.profile then
+        -- Build lootbox view model
+        local lootboxVM = LootboxesVM.build(state.profile)
+        
+        -- Update UI with lootbox data
+        updateLootboxSlots(lootboxVM.slots)
+        updatePendingLootbox(lootboxVM.pending)
+        updateLootboxSummary(lootboxVM.summary)
+    end
+end)
+```
+
+### Building LootboxesVM
+
+The LootboxesVM transforms raw profile data into UI-ready structures:
+
+```lua
+local LootboxesVM = require(game.ReplicatedStorage.Modules.ViewModels.LootboxesVM)
+
+-- Build view model from profile state
+local lootboxVM = LootboxesVM.build(profileState)
+
+-- Access slot data
+for i = 1, 4 do
+    local slot = lootboxVM.slots[i]
+    if slot.id then
+        -- Slot has a lootbox
+        print(string.format("Slot %d: %s %s (%s)", 
+            slot.slotIndex, slot.rarity, slot.state, slot.id))
+        
+        -- Check capabilities
+        if slot.canStart then
+            print("  Can start unlocking")
+        end
+        if slot.canOpenNow then
+            print(string.format("  Can open now for %d hard currency", slot.instantCost))
+        end
+        if slot.isUnlocking then
+            print(string.format("  Unlocking: %d seconds remaining", slot.remaining))
+        end
+    else
+        -- Empty slot
+        print(string.format("Slot %d: Empty", slot.slotIndex))
+    end
+end
+
+-- Check pending lootbox
+if lootboxVM.pending then
+    print(string.format("Pending: %s %s", lootboxVM.pending.rarity, lootboxVM.pending.id))
+    print("Can resolve pending:", lootboxVM.canResolvePending)
+end
+
+-- Get summary statistics
+local summary = lootboxVM.summary
+print(string.format("Total: %d, Unlocking: %d", summary.total, summary.unlockingCount))
+```
+
+### Rendering Timers
+
+Use `serverNow` + `unlocksAt` for accurate countdown timers without polling the server:
+
+```lua
+local function updateLootboxTimer(slot)
+    if slot.state == "unlocking" and slot.unlocksAt then
+        local now = os.time() -- Use client time for UI updates
+        local remaining = math.max(0, slot.unlocksAt - now)
+        
+        if remaining > 0 then
+            -- Show countdown
+            local minutes = math.floor(remaining / 60)
+            local seconds = remaining % 60
+            timerLabel.Text = string.format("%02d:%02d", minutes, seconds)
+            
+            -- Update every second
+            task.wait(1)
+            updateLootboxTimer(slot) -- Recursive update
+        else
+            -- Timer finished, lootbox is ready
+            timerLabel.Text = "Ready!"
+            slot.state = "ready" -- Update local state
+        end
+    end
+end
+```
+
+### Button Enable/Disable Logic
+
+Use VM fields to determine button states:
+
+```lua
+local function updateLootboxButtons(slot)
+    -- Start unlock button
+    if slot.canStart then
+        startButton.Visible = true
+        startButton.Active = true
+        startButton.Text = "Start Unlock"
+    else
+        startButton.Visible = false
+    end
+    
+    -- Open now button
+    if slot.canOpenNow then
+        openNowButton.Visible = true
+        openNowButton.Active = true
+        openNowButton.Text = string.format("Open Now (%d)", slot.instantCost)
+    else
+        openNowButton.Visible = false
+    end
+    
+    -- Complete unlock button
+    if slot.state == "ready" then
+        completeButton.Visible = true
+        completeButton.Active = true
+        completeButton.Text = "Open"
+    else
+        completeButton.Visible = false
+    end
+end
+```
+
+### Network Operations
+
+Use NetworkClient for all lootbox operations:
+
+```lua
+local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
+
+-- Request lootbox state
+NetworkClient.requestLootState()
+
+-- Start unlocking a lootbox
+local success, error = NetworkClient.requestStartUnlock(slotIndex)
+if not success then
+    print("Start unlock failed:", error)
+end
+
+-- Complete unlock (when timer finishes)
+NetworkClient.requestCompleteUnlock(slotIndex)
+
+-- Open instantly (with hard currency cost)
+NetworkClient.requestOpenNow(slotIndex)
+
+-- Handle pending lootbox overflow
+NetworkClient.requestResolvePendingDiscard() -- Discard pending
+NetworkClient.requestResolvePendingReplace(slotIndex) -- Replace existing slot
+```
+
+### Error Handling
+
+Use ErrorMap for consistent error handling:
+
+```lua
+local ErrorMap = require(game.ReplicatedStorage.Modules.Utilities.ErrorMap)
+
+-- Handle ProfileUpdated responses
+NetworkClient.onProfileUpdated(function(payload)
+    if payload.error then
+        local userMessage = ErrorMap.toUserMessage(payload.error.code, payload.error.message)
+        
+        -- Show error to user
+        showErrorDialog(userMessage.title, userMessage.message)
+        
+        -- Common lootbox error codes:
+        -- BOX_CAPACITY_FULL_PENDING - Need to resolve pending lootbox
+        -- BOX_DECISION_REQUIRED - Must choose discard or replace
+        -- BOX_ALREADY_UNLOCKING - Another box is already unlocking
+        -- BOX_BAD_STATE - Invalid operation for current state
+        -- BOX_TIME_NOT_REACHED - Timer hasn't finished yet
+        -- INSUFFICIENT_HARD - Not enough hard currency for instant open
+    end
+end)
+```
+
+### Common Flows
+
+#### Adding a Lootbox (Dev/Test Only)
+
+```lua
+-- Only available when Config.USE_MOCKS or Config.DEBUG_LOGS is true
+if Config.USE_MOCKS or Config.DEBUG_LOGS then
+    NetworkClient.requestAddBox("rare", "dev_panel")
+end
+```
+
+#### Overflow Resolution Flow
+
+```lua
+-- When capacity is full and a new box is awarded
+if lootboxVM.canResolvePending then
+    -- Show decision UI
+    showOverflowDialog(function(choice)
+        if choice == "discard" then
+            NetworkClient.requestResolvePendingDiscard()
+        elseif choice == "replace" then
+            -- Let user select which slot to replace
+            showSlotSelectionDialog(function(slotIndex)
+                NetworkClient.requestResolvePendingReplace(slotIndex)
+            end)
+        end
+    end)
+end
+```
+
+#### Complete Lootbox Flow
+
+```lua
+-- 1. Start unlocking
+NetworkClient.requestStartUnlock(slotIndex)
+
+-- 2. Wait for timer (client-side countdown)
+-- Timer updates happen automatically via LootboxesVM
+
+-- 3. Complete when ready
+if slot.state == "ready" then
+    NetworkClient.requestCompleteUnlock(slotIndex)
+end
+
+-- 4. Handle rewards in ProfileUpdated
+-- payload.collectionSummary contains new cards
+-- payload.currencies contains updated currency amounts
+```
+
+### Array Compaction
+
+The lootbox array is automatically compacted after operations:
+
+```lua
+-- Before: [box1, box2, box3, box4]
+-- After opening box2: [box1, box3, box4] (no holes)
+
+-- UI should handle this by rebuilding the entire slot list
+-- rather than trying to track individual slot changes
+local function rebuildLootboxUI(lootboxVM)
+    -- Clear all slots
+    for i = 1, 4 do
+        clearSlot(i)
+    end
+    
+    -- Rebuild from compacted array
+    for i = 1, #lootboxVM.slots do
+        local slot = lootboxVM.slots[i]
+        if slot.id then
+            renderSlot(i, slot)
+        end
+    end
+end
+```
+
+### Rate Limiting
+
+All lootbox operations are rate-limited on the server:
+
+```lua
+-- Check if any request is in flight
+if NetworkClient.isBusy() then
+    print("Request in progress, please wait...")
+    return
+end
+
+-- Rate limits (per endpoint):
+-- RequestLootState: 1s cooldown, 10/min
+-- RequestAddBox: 1s cooldown, 5/min
+-- RequestResolvePending*: 1s cooldown, 10/min
+-- RequestStartUnlock/CompleteUnlock/OpenNow: 1s cooldown, 10/min
+```
+
+### Testing with DevPanel
+
+The DevPanel provides buttons for testing all lootbox operations:
+
+1. **Enable dev panel** in Config: `Config.SHOW_DEV_PANEL = true`
+2. **Use mock mode** for offline testing: `Config.USE_MOCKS = true`
+3. **Test operations**:
+   - "Loot: Refresh" - Get current state
+   - "Loot: Add [Rarity]" - Add test lootboxes (mock only)
+   - "Loot: Start Unlock (slot 1)" - Start unlocking
+   - "Loot: Complete (slot 1)" - Complete unlock
+   - "Loot: Open Now (slot 1)" - Instant open
+   - "Loot: Resolve Pending (Discard/Replace)" - Handle overflow
+
+### Complete Lootbox UI Example
+
+```lua
+local function createLootboxUI()
+    local lootboxFrame = createLootboxFrame()
+    
+    -- Subscribe to state changes
+    ClientState.subscribe(function(state)
+        if state.profile then
+            local lootboxVM = LootboxesVM.build(state.profile)
+            updateLootboxUI(lootboxFrame, lootboxVM)
+        end
+    end)
+    
+    return lootboxFrame
+end
+
+local function updateLootboxUI(frame, lootboxVM)
+    -- Update slots
+    for i = 1, 4 do
+        local slotFrame = frame:FindFirstChild("Slot" .. i)
+        local slot = lootboxVM.slots[i]
+        
+        if slot.id then
+            -- Show lootbox
+            slotFrame.Visible = true
+            slotFrame.RarityLabel.Text = string.upper(slot.rarity)
+            slotFrame.StateLabel.Text = string.upper(slot.state)
+            
+            -- Update buttons
+            updateSlotButtons(slotFrame, slot)
+            
+            -- Update timer
+            if slot.isUnlocking then
+                startTimer(slotFrame.TimerLabel, slot.unlocksAt)
+            end
+        else
+            -- Hide empty slot
+            slotFrame.Visible = false
+        end
+    end
+    
+    -- Update pending lootbox
+    if lootboxVM.pending then
+        frame.PendingFrame.Visible = true
+        frame.PendingFrame.RarityLabel.Text = string.upper(lootboxVM.pending.rarity)
+        
+        -- Show resolution buttons
+        frame.DiscardButton.Visible = true
+        frame.ReplaceButton.Visible = true
+    else
+        frame.PendingFrame.Visible = false
+        frame.DiscardButton.Visible = false
+        frame.ReplaceButton.Visible = false
+    end
+end
+```
+
 ## Deck Uniqueness and Ordering
 
 - **Deck uniqueness**: All cards in a deck must be unique (no duplicates)

@@ -9,6 +9,7 @@ local Utilities = require(script.Parent.Parent.Utilities)
 local Types = Utilities.Types
 local CardCatalog = Utilities.CardCatalog
 local CardStats = Utilities.CardStats
+local BoxTypes = Utilities.BoxTypes
 
 local selectors = {}
 
@@ -44,6 +45,115 @@ function selectors.selectLootboxes(state)
 		return {}
 	end
 	return state.profile.lootboxes
+end
+
+-- Get pending lootbox from state
+function selectors.selectPendingLootbox(state)
+	if not state.profile then
+		return nil
+	end
+	return state.profile.pendingLootbox
+end
+
+-- Get unlocking count (max 1)
+function selectors.selectUnlockingCount(state)
+	local lootboxes = selectors.selectLootboxes(state)
+	local count = 0
+	for _, lootbox in ipairs(lootboxes) do
+		if lootbox.state == "unlocking" then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+-- Check if can start unlock (no other unlocking, slot is Idle)
+function selectors.selectCanStartUnlock(state, slotIndex, now)
+	local lootboxes = selectors.selectLootboxes(state)
+	local unlockingCount = selectors.selectUnlockingCount(state)
+	
+	-- Can't start if another is unlocking
+	if unlockingCount > 0 then
+		return false
+	end
+	
+	-- Check if slot exists and is idle
+	local lootbox = lootboxes[slotIndex]
+	if not lootbox or lootbox.state ~= "idle" then
+		return false
+	end
+	
+	return true
+end
+
+-- Get remaining seconds for a slot
+function selectors.selectRemainingSeconds(state, slotIndex, now)
+	local lootboxes = selectors.selectLootboxes(state)
+	local lootbox = lootboxes[slotIndex]
+	
+	if not lootbox or not lootbox.unlocksAt then
+		return 0
+	end
+	
+	local remaining = lootbox.unlocksAt - now
+	return math.max(0, remaining)
+end
+
+-- Get instant open cost for a slot
+function selectors.selectInstantOpenCost(state, slotIndex, now)
+	local lootboxes = selectors.selectLootboxes(state)
+	local lootbox = lootboxes[slotIndex]
+	
+	if not lootbox then
+		return 0
+	end
+	
+	local rarity = lootbox.rarity
+	local totalDuration = BoxTypes.GetDuration(rarity)
+	local remainingTime = 0
+	
+	if lootbox.state == "idle" then
+		remainingTime = totalDuration
+	elseif lootbox.state == "unlocking" and lootbox.unlocksAt then
+		remainingTime = math.max(0, lootbox.unlocksAt - now)
+	end
+	
+	return BoxTypes.ComputeInstantOpenCost(rarity, remainingTime, totalDuration)
+end
+
+-- Get lootbox summary (counts by rarity/state)
+function selectors.selectLootSummary(state)
+	local lootboxes = selectors.selectLootboxes(state)
+	local summary = {
+		total = #lootboxes,
+		byRarity = {},
+		byState = {},
+		unlockingCount = 0
+	}
+	
+	-- Initialize counters
+	local rarities = {"uncommon", "rare", "epic", "legendary"}
+	local states = {"idle", "unlocking", "ready", "consumed"}
+	
+	for _, rarity in ipairs(rarities) do
+		summary.byRarity[rarity] = 0
+	end
+	
+	for _, state in ipairs(states) do
+		summary.byState[state] = 0
+	end
+	
+	-- Count lootboxes
+	for _, lootbox in ipairs(lootboxes) do
+		summary.byRarity[lootbox.rarity] = (summary.byRarity[lootbox.rarity] or 0) + 1
+		summary.byState[lootbox.state] = (summary.byState[lootbox.state] or 0) + 1
+		
+		if lootbox.state == "unlocking" then
+			summary.unlockingCount = summary.unlockingCount + 1
+		end
+	end
+	
+	return summary
 end
 
 -- Get server time from state

@@ -9,6 +9,7 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 - [Runtime Architecture](#runtime-architecture)
 - [Data & Persistence](#data--persistence)
 - [Cards, Levels, Deck, Combat](#cards-levels-deck-combat)
+- [Packs & Lootboxes](#packs--lootboxes)
 - [Networking Surface](#networking-surface)
 - [Client Integration Layer](#client-integration-layer)
 - [Testing & Dev Harnesses](#testing--dev-harnesses)
@@ -223,6 +224,117 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 - **Round Cap**: Maximum 50 rounds to prevent infinite battles
 - **Draw Rules**: Survivor count determines winner
 
+## Packs & Lootboxes
+
+### Shop Hard-Currency Packs
+
+**Pack Catalog (Domain Only):**
+| Pack | Hard Amount | Price (Robux) |
+| ---: | ----------: | ------------: |
+|    S |         100 |            40 |
+|    M |         330 |           100 |
+|    L |         840 |           200 |
+|   XL |        1950 |           400 |
+|  XXL |        4900 |           800 |
+| XXXL |       12000 |          1500 |
+
+**API:**
+```lua
+local pack = ShopPacksCatalog.GetPack("M")  -- Returns {id="M", hardAmount=330, robuxPrice=100}
+local allPacks = ShopPacksCatalog.AllPacks()  -- Returns sorted array
+local bestValue = ShopPacksCatalog.GetBestValuePack()  -- Highest hard/Robux ratio
+```
+
+*Note: Purchase flow with MarketplaceService will be implemented in a later step.*
+
+### Lootboxes
+
+**Rarities & Durations:**
+- **Uncommon**: 7 minutes, Store: 7 hard, Instant: 4 base
+- **Rare**: 30 minutes, Store: 22 hard, Instant: 11 base  
+- **Epic**: 120 minutes, Store: 55 hard, Instant: 27 base
+- **Legendary**: 240 minutes, Store: 100 hard, Instant: 50 base
+
+**Capacity & States:**
+- **Slots**: Up to 4 lootboxes per profile
+- **States**: `Idle` → `Unlocking` → `Ready` → `Consumed`
+- **Constraint**: At most 1 box in `Unlocking` state
+- **Instant Open**: Pro-rata cost = `ceil(baseCost * (remaining / total))`
+
+**Overflow Decision Flow:**
+When capacity is full and a new box is awarded:
+1. **New box** → `pendingLootbox` (staged as Idle)
+2. **Player decision** (no UI yet):
+   - **Discard**: Drop the pending box
+   - **Replace**: Replace any slot with pending box (warning: replacing Unlocking box loses progress)
+
+**Deterministic Rewards:**
+- **Seed-based**: Each box stores a `seed` for consistent reward generation
+- **Character Rewards**: Exactly 1 character card per box with rarity distribution
+- **Currency Rewards**: Soft currency + optional hard currency (Epic/Legendary only)
+
+**Reward Tables:**
+- **Uncommon**: 80-120 soft, 0 hard, 80% Uncommon/15% Rare/4% Epic/1% Legendary
+- **Rare**: 140-200 soft, 0 hard, 85% Rare/12% Epic/3% Legendary  
+- **Epic**: 220-320 soft, 5% chance +8 hard, 90% Epic/10% Legendary
+- **Legendary**: 350-450 soft, 10% chance +15 hard, 100% Legendary
+
+**Server API (Atomic Operations):**
+```lua
+-- Add box (handles overflow automatically)
+local result = LootboxService.TryAddBox(userId, rarity, source?)
+
+-- Overflow resolution
+LootboxService.ResolvePendingDiscard(userId)
+LootboxService.ResolvePendingReplace(userId, slotIndex)
+
+-- Unlock flow
+LootboxService.StartUnlock(userId, slotIndex, serverNow)
+LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
+
+-- Instant open
+LootboxService.OpenNow(userId, slotIndex, serverNow)
+```
+
+### Networking Surface
+
+**RemoteEvents (Client → Server):**
+
+- **`RequestLootState`** `{}` → **`ProfileUpdated`** with `lootboxes` + `pendingLootbox`
+- **`RequestAddBox`** `{rarity, source?}` → **`ProfileUpdated`** (handles overflow automatically)
+- **`RequestResolvePendingDiscard`** `{}` → **`ProfileUpdated`** (clears pending)
+- **`RequestResolvePendingReplace`** `{slotIndex}` → **`ProfileUpdated`** (replaces slot)
+- **`RequestStartUnlock`** `{slotIndex}` → **`ProfileUpdated`** (starts timer)
+- **`RequestOpenNow`** `{slotIndex}` → **`ProfileUpdated`** (instant open with cost)
+- **`RequestCompleteUnlock`** `{slotIndex}` → **`ProfileUpdated`** (complete timer)
+
+**ProfileUpdated Payload (Server → Client):**
+```lua
+{
+  serverNow: number,            -- Always included for timers
+  lootboxes = {                 -- Packed array 1..N (no holes)
+    { id, rarity, state, startedAt?, unlocksAt?, seed?, source? },
+    -- ...
+  },
+  pendingLootbox = { id, rarity, seed, source? } | nil,
+  currencies = { soft, hard },  -- When changed
+  collectionSummary = {         -- When rewards granted
+    { cardId, count, level }
+  },
+  error = { code, message? } | nil
+}
+```
+
+**Rate Limits:**
+- `RequestLootState`: 1s cooldown, 10/min
+- `RequestAddBox`: 1s cooldown, 5/min  
+- `RequestResolvePending*`: 1s cooldown, 10/min
+- `RequestStartUnlock/CompleteUnlock/OpenNow`: 1s cooldown, 10/min
+
+**Array Compaction:** After `CompleteUnlock` or `OpenNow`, slots are removed and array is packed (no `Consumed` state kept).
+
+*Note: UI integration will be implemented in a later step.*
+
 ## Networking Surface
 
 ### RemoteEvents
@@ -394,6 +506,11 @@ Utilities.SelfCheck.RunAllTests()
 - **Run**: Automatically on server start
 - **Tests**: Happy path level-up, validation errors, rate limiting, squad power recomputation
 
+**LootboxDevHarness** (`src/server/Services/LootboxDevHarness.server.lua`):
+- **Purpose**: Test lootbox system functionality and overflow handling
+- **Run**: Automatically on server start
+- **Tests**: Capacity/pending flow, overflow resolution, unlock mechanics, reward validation, shop packs
+
 ### Client-Side Testing
 
 **NetworkTest** (`src/client/NetworkTest.client.lua`):
@@ -559,6 +676,13 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Simplified Mechanics**: Damage depletes defence first, residual reduces HP
 - ✅ **Comprehensive Testing**: 10 new self-check cases covering all armor scenarios
 - ✅ **Documentation**: Updated README combat mechanics and glossary sections
+
+**Shop & Lootbox System:**
+- ✅ **Shop Packs**: Hard currency packs (S-XXXL) with Robux pricing (domain-only)
+- ✅ **Lootbox System**: 4-slot capacity, deterministic rewards, overflow decision flow
+- ✅ **Atomic Operations**: Server-side helpers for add/start/complete/open with validation
+- ✅ **Comprehensive Testing**: LootboxDevHarness with 9 test suites covering all scenarios
+- ✅ **Documentation**: Complete Packs & Lootboxes section with API examples
 
 ---
 ---

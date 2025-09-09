@@ -13,6 +13,7 @@ local state = {
 	serverNow = 0,           -- number?
 	isSavingDeck = false,    -- boolean
 	isLeveling = false,      -- boolean
+	isLootOpInFlight = false, -- boolean
 	lastError = nil,         -- { code: string, message: string }?
 }
 
@@ -59,10 +60,11 @@ function ClientState.applyProfileUpdate(payload)
 		return
 	end
 	
-	-- Clear any previous errors and loading flags on success
-	ClientState.setLastError(nil)
-	state.isSavingDeck = false
-	state.isLeveling = false
+		-- Clear any previous errors and loading flags on success
+		ClientState.setLastError(nil)
+		state.isSavingDeck = false
+		state.isLeveling = false
+		state.isLootOpInFlight = false
 	
 	-- Update server time
 	if payload.serverNow then
@@ -70,7 +72,7 @@ function ClientState.applyProfileUpdate(payload)
 	end
 	
 	-- Update profile data (merge with existing if available)
-	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes then
+	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies then
 		-- Create or update profile
 		if not state.profile then
 			state.profile = {
@@ -120,7 +122,17 @@ function ClientState.applyProfileUpdate(payload)
 			state.profile.lootboxes = payload.lootboxes
 		end
 		
-		log("Profile updated: deck=%d cards, squadPower=%d", #state.profile.deck, state.profile.squadPower)
+		-- Update pending lootbox
+		if payload.pendingLootbox ~= nil then
+			state.profile.pendingLootbox = payload.pendingLootbox
+		end
+		
+		-- Update currencies
+		if payload.currencies then
+			state.profile.currencies = payload.currencies
+		end
+		
+		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d", #state.profile.deck, state.profile.squadPower, #state.profile.lootboxes)
 	end
 	
 	-- Update timestamp
@@ -185,6 +197,18 @@ end
 
 function ClientState.getLastError()
 	return state.lastError
+end
+
+-- Set lootbox operation in flight state
+function ClientState.setIsLootBusy(isBusy)
+	state.isLootOpInFlight = isBusy
+	log("Loot operation busy: %s", tostring(isBusy))
+	notifySubscribers()
+end
+
+-- Get lootbox operation state
+function ClientState.isLootBusy()
+	return state.isLootOpInFlight
 end
 
 return ClientState

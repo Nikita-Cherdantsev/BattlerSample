@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 -- Modules
 local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
+local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
 
 -- Network folder and RemoteEvents (created in Init)
 local NetworkFolder = nil
@@ -16,6 +17,13 @@ local ProfileUpdated = nil
 local RequestStartMatch = nil
 local RequestLevelUpCard = nil
 local OpenLootbox = nil
+local RequestLootState = nil
+local RequestAddBox = nil
+local RequestResolvePendingDiscard = nil
+local RequestResolvePendingReplace = nil
+local RequestStartUnlock = nil
+local RequestOpenNow = nil
+local RequestCompleteUnlock = nil
 
 -- Rate limiting configuration (explicit, module-scoped)
 local RATE_LIMITS = {
@@ -38,6 +46,34 @@ local RATE_LIMITS = {
 	OpenLootbox = {
 		cooldownSec = 2,
 		maxPerMinute = 5
+	},
+	RequestLootState = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestAddBox = {
+		cooldownSec = 1,
+		maxPerMinute = 5
+	},
+	RequestResolvePendingDiscard = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestResolvePendingReplace = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestStartUnlock = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestOpenNow = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestCompleteUnlock = {
+		cooldownSec = 1,
+		maxPerMinute = 10
 	}
 }
 
@@ -94,6 +130,41 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			OpenLootbox = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestLootState = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestAddBox = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestResolvePendingDiscard = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestResolvePendingReplace = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestStartUnlock = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestOpenNow = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestCompleteUnlock = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -400,6 +471,488 @@ local function HandleRequestLevelUpCard(player, requestData)
 	end
 end
 
+-- Lootbox handler functions
+local function HandleRequestLootState(player, requestData)
+	LogInfo(player, "Processing loot state request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestLootState")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Get profile data
+	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = errorCode or "PROFILE_LOAD_FAILED",
+				message = errorMessage or "Failed to load profile data"
+			}
+		})
+		return
+	end
+	
+	-- Send lootbox state
+	SendProfileUpdate(player, {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox
+	})
+	
+	LogInfo(player, "Loot state sent successfully")
+end
+
+local function HandleRequestAddBox(player, requestData)
+	LogInfo(player, "Processing add box request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestAddBox")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.rarity then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing rarity field"
+			}
+		})
+		return
+	end
+	
+	-- Validate rarity
+	local validRarities = {"uncommon", "rare", "epic", "legendary"}
+	local isValidRarity = false
+	for _, rarity in ipairs(validRarities) do
+		if requestData.rarity == rarity then
+			isValidRarity = true
+			break
+		end
+	end
+	
+	if not isValidRarity then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_RARITY",
+				message = "Invalid rarity: " .. tostring(requestData.rarity)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.TryAddBox(player.UserId, requestData.rarity, requestData.source)
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Box added successfully")
+	else
+		LogWarning(player, "Add box failed: %s", result.error)
+	end
+end
+
+local function HandleRequestResolvePendingDiscard(player, requestData)
+	LogInfo(player, "Processing resolve pending discard request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingDiscard")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.ResolvePendingDiscard(player.UserId)
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Pending box discarded successfully")
+	else
+		LogWarning(player, "Discard pending failed: %s", result.error)
+	end
+end
+
+local function HandleRequestResolvePendingReplace(player, requestData)
+	LogInfo(player, "Processing resolve pending replace request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingReplace")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.slotIndex then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing slotIndex field"
+			}
+		})
+		return
+	end
+	
+	-- Validate slot index
+	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_SLOT",
+				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex)
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Pending box replaced successfully")
+	else
+		LogWarning(player, "Replace pending failed: %s", result.error)
+	end
+end
+
+local function HandleRequestStartUnlock(player, requestData)
+	LogInfo(player, "Processing start unlock request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartUnlock")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.slotIndex then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing slotIndex field"
+			}
+		})
+		return
+	end
+	
+	-- Validate slot index
+	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_SLOT",
+				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time())
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Unlock started successfully")
+	else
+		LogWarning(player, "Start unlock failed: %s", result.error)
+	end
+end
+
+local function HandleRequestOpenNow(player, requestData)
+	LogInfo(player, "Processing open now request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestOpenNow")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.slotIndex then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing slotIndex field"
+			}
+		})
+		return
+	end
+	
+	-- Validate slot index
+	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_SLOT",
+				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time())
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
+	}
+	
+	if result.ok and result.rewards then
+		-- Include collection summary for rewards
+		local collection = PlayerDataService.GetCollection(player)
+		payload.collectionSummary = CreateCollectionSummary(collection)
+	end
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Box opened instantly successfully")
+	else
+		LogWarning(player, "Open now failed: %s", result.error)
+	end
+end
+
+local function HandleRequestCompleteUnlock(player, requestData)
+	LogInfo(player, "Processing complete unlock request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestCompleteUnlock")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.slotIndex then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing slotIndex field"
+			}
+		})
+		return
+	end
+	
+	-- Validate slot index
+	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_SLOT",
+				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send response
+	local payload = {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
+	}
+	
+	if result.ok and result.rewards then
+		-- Include collection summary for rewards
+		local collection = PlayerDataService.GetCollection(player)
+		payload.collectionSummary = CreateCollectionSummary(collection)
+	end
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Unlock completed successfully")
+	else
+		LogWarning(player, "Complete unlock failed: %s", result.error)
+	end
+end
+
 -- Connection code moved to Init() function
 
 -- Public API for other server modules
@@ -409,6 +962,13 @@ RemoteEvents.ProfileUpdated = ProfileUpdated
 RemoteEvents.RequestStartMatch = RequestStartMatch
 RemoteEvents.RequestLevelUpCard = RequestLevelUpCard
 RemoteEvents.OpenLootbox = OpenLootbox
+RemoteEvents.RequestLootState = RequestLootState
+RemoteEvents.RequestAddBox = RequestAddBox
+RemoteEvents.RequestResolvePendingDiscard = RequestResolvePendingDiscard
+RemoteEvents.RequestResolvePendingReplace = RequestResolvePendingReplace
+RemoteEvents.RequestStartUnlock = RequestStartUnlock
+RemoteEvents.RequestOpenNow = RequestOpenNow
+RemoteEvents.RequestCompleteUnlock = RequestCompleteUnlock
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -447,6 +1007,34 @@ function RemoteEvents.Init()
 	OpenLootbox.Name = "OpenLootbox"
 	OpenLootbox.Parent = NetworkFolder
 	
+	RequestLootState = Instance.new("RemoteEvent")
+	RequestLootState.Name = "RequestLootState"
+	RequestLootState.Parent = NetworkFolder
+	
+	RequestAddBox = Instance.new("RemoteEvent")
+	RequestAddBox.Name = "RequestAddBox"
+	RequestAddBox.Parent = NetworkFolder
+	
+	RequestResolvePendingDiscard = Instance.new("RemoteEvent")
+	RequestResolvePendingDiscard.Name = "RequestResolvePendingDiscard"
+	RequestResolvePendingDiscard.Parent = NetworkFolder
+	
+	RequestResolvePendingReplace = Instance.new("RemoteEvent")
+	RequestResolvePendingReplace.Name = "RequestResolvePendingReplace"
+	RequestResolvePendingReplace.Parent = NetworkFolder
+	
+	RequestStartUnlock = Instance.new("RemoteEvent")
+	RequestStartUnlock.Name = "RequestStartUnlock"
+	RequestStartUnlock.Parent = NetworkFolder
+	
+	RequestOpenNow = Instance.new("RemoteEvent")
+	RequestOpenNow.Name = "RequestOpenNow"
+	RequestOpenNow.Parent = NetworkFolder
+	
+	RequestCompleteUnlock = Instance.new("RemoteEvent")
+	RequestCompleteUnlock.Name = "RequestCompleteUnlock"
+	RequestCompleteUnlock.Parent = NetworkFolder
+	
 	-- Validate rate limit configuration
 	local function ValidateRateLimitConfig()
 		print("🔒 Rate Limiter Configuration:")
@@ -455,7 +1043,14 @@ function RemoteEvents.Init()
 			{name = "RequestProfile", instance = RequestProfile},
 			{name = "RequestStartMatch", instance = RequestStartMatch},
 			{name = "RequestLevelUpCard", instance = RequestLevelUpCard},
-			{name = "OpenLootbox", instance = OpenLootbox}
+			{name = "OpenLootbox", instance = OpenLootbox},
+			{name = "RequestLootState", instance = RequestLootState},
+			{name = "RequestAddBox", instance = RequestAddBox},
+			{name = "RequestResolvePendingDiscard", instance = RequestResolvePendingDiscard},
+			{name = "RequestResolvePendingReplace", instance = RequestResolvePendingReplace},
+			{name = "RequestStartUnlock", instance = RequestStartUnlock},
+			{name = "RequestOpenNow", instance = RequestOpenNow},
+			{name = "RequestCompleteUnlock", instance = RequestCompleteUnlock}
 		}
 		
 		for _, event in ipairs(remoteEvents) do
@@ -476,6 +1071,13 @@ function RemoteEvents.Init()
 	RequestProfile.OnServerEvent:Connect(HandleRequestProfile)
 	RequestStartMatch.OnServerEvent:Connect(HandleRequestStartMatch)
 	RequestLevelUpCard.OnServerEvent:Connect(HandleRequestLevelUpCard)
+	RequestLootState.OnServerEvent:Connect(HandleRequestLootState)
+	RequestAddBox.OnServerEvent:Connect(HandleRequestAddBox)
+	RequestResolvePendingDiscard.OnServerEvent:Connect(HandleRequestResolvePendingDiscard)
+	RequestResolvePendingReplace.OnServerEvent:Connect(HandleRequestResolvePendingReplace)
+	RequestStartUnlock.OnServerEvent:Connect(HandleRequestStartUnlock)
+	RequestOpenNow.OnServerEvent:Connect(HandleRequestOpenNow)
+	RequestCompleteUnlock.OnServerEvent:Connect(HandleRequestCompleteUnlock)
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)

@@ -54,10 +54,31 @@
             "$path": "src/shared/Modules/Constants/UIConstants.lua"
           }
         },
+        "Loot": {
+          "$className": "Folder",
+          "BoxDropTables": {
+            "$path": "src/shared/Modules/Loot/BoxDropTables.lua"
+          },
+          "BoxRoller": {
+            "$path": "src/shared/Modules/Loot/BoxRoller.lua"
+          },
+          "BoxTypes": {
+            "$path": "src/shared/Modules/Loot/BoxTypes.lua"
+          },
+          "BoxValidator": {
+            "$path": "src/shared/Modules/Loot/BoxValidator.lua"
+          }
+        },
         "RNG": {
           "$className": "Folder",
           "SeededRNG": {
             "$path": "src/shared/Modules/RNG/SeededRNG.lua"
+          }
+        },
+        "Shop": {
+          "$className": "Folder",
+          "ShopPacksCatalog": {
+            "$path": "src/shared/Modules/Shop/ShopPacksCatalog.lua"
           }
         },
         "Utilities": {
@@ -103,6 +124,9 @@
           },
           "DeckVM": {
             "$path": "src/shared/Modules/ViewModels/DeckVM.lua"
+          },
+          "LootboxesVM": {
+            "$path": "src/shared/Modules/ViewModels/LootboxesVM.lua"
           },
           "ProfileVM": {
             "$path": "src/shared/Modules/ViewModels/ProfileVM.lua"
@@ -174,6 +198,15 @@
           "$properties": {
             "Enabled": true
           }
+        },
+        "LootboxServiceDevHarness": {
+          "$path": "src/server/Services/LootboxServiceDevHarness.server.lua",
+          "$properties": {
+            "Enabled": true
+          }
+        },
+        "LootboxService": {
+          "$path": "src/server/Services/LootboxService.lua"
         },
         "MatchService": {
           "$path": "src/server/Services/MatchService.lua"

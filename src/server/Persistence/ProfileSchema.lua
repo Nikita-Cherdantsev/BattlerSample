@@ -37,17 +37,21 @@ ProfileSchema.Profile = {
 	squadPower = 0,          -- Computed power of current deck
 	
 	-- Lootboxes (array of LootboxEntry, max 4, max 1 "unlocking")
-	lootboxes = {}
+	lootboxes = {},
+	
+	-- Pending lootbox (when capacity is full)
+	pendingLootbox = nil
 }
 
 -- Lootbox entry structure
 ProfileSchema.LootboxEntry = {
 	id = "",                 -- Unique lootbox ID
-	rarity = "",            -- "Common", "Rare", "Epic", "Legendary"
-	state = "",             -- "idle", "unlocking", "ready"
-	acquiredAt = 0,         -- Unix timestamp when acquired
+	rarity = "",            -- "uncommon", "rare", "epic", "legendary"
+	state = "",             -- "idle", "unlocking", "ready", "consumed"
 	startedAt = nil,        -- Unix timestamp when unlocking started (optional)
-	endsAt = nil            -- Unix timestamp when unlocking ends (optional)
+	unlocksAt = nil,        -- Unix timestamp when unlocking ends (optional)
+	seed = 0,               -- Seed for deterministic reward generation
+	source = nil            -- Optional source identifier (optional)
 }
 
 -- Validation functions
@@ -153,44 +157,59 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Invalid lootboxes"
 	end
 	
-	if #profile.lootboxes > 4 then
+	-- Check lootbox count (up to 4 slots)
+	local lootboxCount = 0
+	for i = 1, 4 do
+		if profile.lootboxes[i] then
+			lootboxCount = lootboxCount + 1
+		end
+	end
+	
+	if lootboxCount > 4 then
 		return false, "Too many lootboxes (max 4)"
 	end
 	
 	-- Validate lootbox entries
 	local unlockingCount = 0
-	for i, lootbox in ipairs(profile.lootboxes) do
-		if type(lootbox) ~= "table" then
-			return false, "Invalid lootbox entry at index " .. i
-		end
-		
-		if type(lootbox.id) ~= "string" or lootbox.id == "" then
-			return false, "Invalid lootbox ID at index " .. i
-		end
-		
-		if not ProfileSchema.IsValidLootboxRarity(lootbox.rarity) then
-			return false, "Invalid lootbox rarity at index " .. i
-		end
-		
-		if not ProfileSchema.IsValidLootboxState(lootbox.state) then
-			return false, "Invalid lootbox state at index " .. i
-		end
-		
-		if type(lootbox.acquiredAt) ~= "number" then
-			return false, "Invalid lootbox acquiredAt at index " .. i
-		end
-		
-		if lootbox.startedAt ~= nil and type(lootbox.startedAt) ~= "number" then
-			return false, "Invalid lootbox startedAt at index " .. i
-		end
-		
-		if lootbox.endsAt ~= nil and type(lootbox.endsAt) ~= "number" then
-			return false, "Invalid lootbox endsAt at index " .. i
-		end
-		
-		-- Count unlocking lootboxes
-		if lootbox.state == "unlocking" then
-			unlockingCount = unlockingCount + 1
+	for i = 1, 4 do
+		local lootbox = profile.lootboxes[i]
+		if lootbox then
+			if type(lootbox) ~= "table" then
+				return false, "Invalid lootbox entry at slot " .. i
+			end
+			
+			if type(lootbox.id) ~= "string" or lootbox.id == "" then
+				return false, "Invalid lootbox ID at slot " .. i
+			end
+			
+			if not ProfileSchema.IsValidLootboxRarity(lootbox.rarity) then
+				return false, "Invalid lootbox rarity at slot " .. i
+			end
+			
+			if not ProfileSchema.IsValidLootboxState(lootbox.state) then
+				return false, "Invalid lootbox state at slot " .. i
+			end
+			
+			if type(lootbox.seed) ~= "number" then
+				return false, "Invalid lootbox seed at slot " .. i
+			end
+			
+			if lootbox.startedAt ~= nil and type(lootbox.startedAt) ~= "number" then
+				return false, "Invalid lootbox startedAt at slot " .. i
+			end
+			
+			if lootbox.unlocksAt ~= nil and type(lootbox.unlocksAt) ~= "number" then
+				return false, "Invalid lootbox unlocksAt at slot " .. i
+			end
+			
+			if lootbox.source ~= nil and type(lootbox.source) ~= "string" then
+				return false, "Invalid lootbox source at slot " .. i
+			end
+			
+			-- Count unlocking lootboxes
+			if lootbox.state == "unlocking" then
+				unlockingCount = unlockingCount + 1
+			end
 		end
 	end
 	
@@ -198,17 +217,45 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Too many unlocking lootboxes (max 1)"
 	end
 	
+	-- Check pending lootbox
+	if profile.pendingLootbox ~= nil then
+		if type(profile.pendingLootbox) ~= "table" then
+			return false, "Invalid pending lootbox type"
+		end
+		
+		if type(profile.pendingLootbox.id) ~= "string" or profile.pendingLootbox.id == "" then
+			return false, "Invalid pending lootbox ID"
+		end
+		
+		if not ProfileSchema.IsValidLootboxRarity(profile.pendingLootbox.rarity) then
+			return false, "Invalid pending lootbox rarity"
+		end
+		
+		if type(profile.pendingLootbox.seed) ~= "number" then
+			return false, "Invalid pending lootbox seed"
+		end
+		
+		if profile.pendingLootbox.source ~= nil and type(profile.pendingLootbox.source) ~= "string" then
+			return false, "Invalid pending lootbox source"
+		end
+		
+		-- Pending lootbox should not have state or timing fields
+		if profile.pendingLootbox.state or profile.pendingLootbox.startedAt or profile.pendingLootbox.unlocksAt then
+			return false, "Pending lootbox should not have state or timing fields"
+		end
+	end
+	
 	return true, nil
 end
 
 -- Validate lootbox rarity
 function ProfileSchema.IsValidLootboxRarity(rarity)
-	return rarity == "Common" or rarity == "Rare" or rarity == "Epic" or rarity == "Legendary"
+	return rarity == "uncommon" or rarity == "rare" or rarity == "epic" or rarity == "legendary"
 end
 
 -- Validate lootbox state
 function ProfileSchema.IsValidLootboxState(state)
-	return state == "idle" or state == "unlocking" or state == "ready"
+	return state == "idle" or state == "unlocking" or state == "ready" or state == "consumed"
 end
 
 -- Create a new profile with defaults (v2)
