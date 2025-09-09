@@ -78,7 +78,7 @@ CardCatalog.Cards = {
 		[10] = { atk = 0, hp = 1, defence = 1 }
 	}, 20, ""),
 	
-	["card_300"] = CreateCard("card_300", "Sasuke Uchiha", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
+	["card_300"] = CreateCard("card_300", "Rock Lee", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
 		atk = 2,
 		hp = 4,
 		defence = 2
@@ -94,7 +94,7 @@ CardCatalog.Cards = {
 		[10] = { atk = 1, hp = 1, defence = 1 }
 	}, 30, ""),
 	
-	["card_400"] = CreateCard("card_400", "Gaara", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
+	["card_400"] = CreateCard("card_400", "Tsunade", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
 		atk = 0,
 		hp = 8,
 		defence = 1
@@ -174,7 +174,7 @@ CardCatalog.Cards = {
 		[10] = { atk = 1, hp = 1, defence = 0 }
 		}, 80, ""),
 
-	["card_900"] = CreateCard("card_900", "Rock Lee", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
+	["card_900"] = CreateCard("card_900", "Shino Aburame", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
 		atk = 1,
 		hp = 4,
 		defence = 0
