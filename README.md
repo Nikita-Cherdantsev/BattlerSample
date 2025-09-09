@@ -22,7 +22,7 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 **MVP Features Implemented:**
 - ✅ Profile system with v2 schema (collection, deck, currencies, lootboxes)
 - ✅ Card catalog with 8 cards (4 rarities, 3 classes, slot-based ordering)
-- ✅ Card level-up system (1-7 levels, atomic persistence, squad power recomputation)
+- ✅ Card level-up system (1-10 levels, per-card growth tables, atomic persistence, squad power recomputation)
 - ✅ Deck validation (6 unique cards, slot mapping by slotNumber)
 - ✅ Deterministic combat engine (fixed turn order, same-index targeting, armour pool)
 - ✅ Network layer with rate limiting and concurrency guards
@@ -160,9 +160,9 @@ Card = {
 ### CardLevels
 
 **Progression System:**
-- **Level Range**: 1-7 (MAX_LEVEL)
+- **Level Range**: 1-10 (MAX_LEVEL)
 - **Cost Model**: `requiredCount` cards + `softAmount` currency per level
-- **Increments**: Per-level stat bonuses defined in `CardStats.DefaultIncrements`
+- **Growth System**: Per-card growth tables with base stats + level-specific deltas
 
 ### CardStats
 
@@ -170,14 +170,14 @@ Card = {
 ```lua
 -- Get stats for a card at specific level
 local stats = CardStats.ComputeStats(cardId, level)
--- Returns: { attack, health, defence } with level bonuses applied
+-- Returns: { atk, hp, defence } with per-card growth applied
 
 -- Compute power rating
 local power = CardStats.ComputePower(stats)
 -- Returns: weighted combination of stats for deck power calculation
 ```
 
-**Customization Hook**: Per-card, per-level increments can be adjusted in `CardStats.DefaultIncrements`
+**Growth System**: Each card has `base` stats and per-level `growth` deltas (levels 2-10). Designers can edit growth values in `CardCatalog` entries.
 
 ### DeckValidator
 
@@ -612,7 +612,7 @@ Client UI  ──(RemoteEvents)──► Server Services ──► Persistence (
 ## 5) Карты, уровни, деки, бой
 
 * **CardCatalog**: `id`, `name`, `rarity`, `class`, `description`, `slotNumber`, базовые статы (`atk/hp/defence`). Слоты виз. раскладки: `5 3 1 / 6 4 2` (UI). Позиции и порядок ходов определяются **только** сервером по `slotNumber`.&#x20;
-* **CardLevels**: ур. 1–7; для каждого уровня задаются `requiredCount`, `softAmount`.&#x20;
+* **CardLevels**: ур. 1–10; для каждого уровня задаются `requiredCount`, `softAmount`.&#x20;
 * **CardStats**: вычисляет эффективные статы карточки с учётом уровня; `power` = функция (`atk/hp/defence`), используется для `squadPower`.&#x20;
 * **DeckValidator**: принимает **ровно 6 уникальных** id; маппинг к слотам (1..6) по возрастанию `slotNumber`; клиент может визуализировать сетку через BoardLayout. &#x20;
 * **CombatEngine**: ходят слоты 1→6; таргет «тот же индекс», иначе ближайший живой (tie → меньший индекс); **armour pool** (defence depletes first, residual to HP); кап по раундам, ничьи — корректно обрабатываются.&#x20;

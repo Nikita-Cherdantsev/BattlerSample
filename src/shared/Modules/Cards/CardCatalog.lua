@@ -17,16 +17,27 @@ CardCatalog.Classes = {
 
 -- Base card template
 local function CreateCard(id, name, rarity, class, baseStats, slotNumber, description, passive)
+	-- Create per-card growth table with zeros as placeholders
+	local growth = {}
+	for level = 2, 10 do
+		growth[level] = {
+			atk = 0,
+			hp = 0,
+			defence = 0
+		}
+	end
+	
 	return {
 		id = id,
 		name = name,
 		rarity = rarity,
 		class = class,
-		baseStats = baseStats or {
-			attack = 0,
-			health = 0,
+		base = baseStats or {
+			atk = 0,
+			hp = 0,
 			defence = 0
 		},
+		growth = growth,
 		slotNumber = slotNumber or 999,  -- Default high value for sorting
 		description = description or "A mysterious card.",
 		passive = passive or nil
@@ -36,112 +47,292 @@ end
 -- Initial catalog with 8 example cards (updated for v2 schema)
 CardCatalog.Cards = {
 	["card_100"] = CreateCard("card_100", "Monkey D. Luffy", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
-		attack = 1,
-		health = 3,
+		atk = 1,
+		hp = 3,
 		defence = 4
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 1 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 1 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 1 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 1 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 1 }
 	}, 10, ""),
 	
 	["card_200"] = CreateCard("card_200", "Roronoa Zoro", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.TANK, {
-		attack = 1,
-		health = 10,
+		atk = 1,
+		hp = 10,
 		defence = 2
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 1 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 1 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 2, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 1 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 1 }
 	}, 20, ""),
 	
 	["card_300"] = CreateCard("card_300", "Sasuke Uchiha", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
-		attack = 2,
-		health = 4,
+		atk = 2,
+		hp = 4,
 		defence = 2
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 1 },
+		[3] = { atk = 0, hp = 0, defence = 0 },
+		[4] = { atk = 1, hp = 1, defence = 1 },
+		[5] = { atk = 0, hp = 0, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 1 },
+		[7] = { atk = 0, hp = 0, defence = 0 },
+		[8] = { atk = 1, hp = 1, defence = 1 },
+		[9] = { atk = 0, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 1 }
 	}, 30, ""),
 	
 	["card_400"] = CreateCard("card_400", "Gaara", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
-		attack = 0,
-		health = 8,
+		atk = 0,
+		hp = 8,
 		defence = 1
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 1 },
+		[3] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 1 },
+		[6] = { atk = 0, hp = 0, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 1 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 1 },
+		[10] = { atk = 0, hp = 1, defence = 1 }
 	}, 40, ""),
 	
 	["card_500"] = CreateCard("card_500", "Sanji", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
-		attack = 2,
-		health = 3,
+		atk = 2,
+		hp = 3,
 		defence = 1
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 1 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 0, defence = 1 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 0, defence = 1 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 1 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
 	}, 50, ""),
 	
 	["card_600"] = CreateCard("card_600", "Tenten", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 0,
-		health = 2,
+		atk = 0,
+		hp = 2,
 		defence = 1
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 0, defence = 1 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 0, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 0, defence = 1 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
 	}, 60, ""),
 	
 	["card_700"] = CreateCard("card_700", "Koby", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 1,
-		health = 1,
+		atk = 1,
+		hp = 1,
 		defence = 1
-	}, 70, ""),
+	}, {
+		[2] = { atk = 0, hp = 0, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 1 },
+		[4] = { atk = 0, hp = 0, defence = 0 },
+		[5] = { atk = 0, hp = 0, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 1 },
+		[7] = { atk = 0, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 0, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 1 },
+		[10] = { atk = 0, hp = 0, defence = 0 }
+		}, 70, ""),
 	
 	["card_800"] = CreateCard("card_800", "Vegeta", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
-		attack = 6,
-		health = 8,
+		atk = 6,
+		hp = 8,
 		defence = 0
-	}, 80, ""),
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 2, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+		}, 80, ""),
 
 	["card_900"] = CreateCard("card_900", "Rock Lee", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
-		attack = 1,
-		health = 4,
+		atk = 1,
+		hp = 4,
 		defence = 0
-	}, 90, ""),
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 0, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+		}, 90, ""),
 
 	["card_1000"] = CreateCard("card_1000", "Goku", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
-		attack = 9,
-		health = 4,
+		atk = 9,
+		hp = 4,
 		defence = 0
-	}, 100, ""),
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+		}, 100, ""),
 
 	["card_1100"] = CreateCard("card_1100", "Usopp", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 1,
-		health = 3,
+		atk = 1,
+		hp = 3,
 		defence = 0
-	}, 110, ""),
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+		}, 110, ""),
 
 	["card_1200"] = CreateCard("card_1200", "All Might", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
-		attack = 5,
-		health = 3,
+		atk = 5,
+		hp = 3,
 		defence = 0
-	}, 120, ""),
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 0, defence = 1 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+		}, 120, ""),
 
 	["card_1300"] = CreateCard("card_1300", "Chopper", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 1,
-		health = 2,
+		atk = 1,
+		hp = 2,
 		defence = 0
-	}, 130, ""),
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+		}, 130, ""),
 
 	["card_1400"] = CreateCard("card_1400", "Krillin", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 1,
-		health = 2,
+		atk = 1,
+		hp = 2,
 		defence = 0
-	}, 140, ""),
+	}, {
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+		}, 140, ""),
 
 	["card_1500"] = CreateCard("card_1500", "Bakugo", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
-		attack = 4,
-		health = 2,
+		atk = 4,
+		hp = 2,
 		defence = 0
-	}, 150, ""),
+	}, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+		}, 150, ""),
 
 	["card_1600"] = CreateCard("card_1600", "Yamcha", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.DPS, {
-		attack = 0,
-		health = 1,
+		atk = 0,
+		hp = 1,
 		defence = 0
-	}, 160, ""),
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+		}, 160, ""),
 
 	["card_1700"] = CreateCard("card_1700", "Midoriya", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.DPS, {
-		attack = 1,
-		health = 1,
+		atk = 1,
+		hp = 1,
 		defence = 0
-	}, 170, ""),
+	}, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+		}, 170, ""),
 
 	["card_1800"] = CreateCard("card_1800", "Piccolo", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 3,
-		health = 1,
+		atk = 3,
+		hp = 1,
 		defence = 0
-	}, 180, "")
+	}, {
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 1, hp = 0, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+		}, 180, "")
 }
 
 -- Public functions

@@ -89,4 +89,7 @@ Types.ProfileUpdatedPayload = {} -- Type only, no runtime validation
 -- }
 Types.MatchResponse = {} -- Type only, no runtime validation
 
+-- Game constants
+Types.MAX_LEVEL = 10
+
 return Types

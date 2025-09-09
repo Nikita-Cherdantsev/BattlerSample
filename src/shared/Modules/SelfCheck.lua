@@ -9,6 +9,7 @@ local SeededRNG = require(script.Parent.RNG.SeededRNG)
 local CombatTypes = require(script.Parent.Combat.CombatTypes)
 local CombatUtils = require(script.Parent.Combat.CombatUtils)
 local GameConstants = require(script.Parent.Constants.GameConstants)
+local Types = require(script.Parent.Types)
 
 -- Test results
 local testResults = {}
@@ -74,8 +75,8 @@ local function TestCardLevels()
 		testResults.cardLevels = false
 	end
 	
-	-- Test invalid level
-	local invalidCost = CardLevels.GetLevelCost(8)
+	-- Test invalid level (beyond max)
+	local invalidCost = CardLevels.GetLevelCost(11)
 	if not invalidCost then
 		print("✅ Invalid level correctly rejected")
 	else
@@ -129,13 +130,95 @@ local function TestCardStats()
 	print("✅ Max level power:", maxPower)
 	
 	-- Test level clamping
-	local clampedStats = CardStats.ComputeStats("dps_001", 10) -- Should clamp to max level
+	local clampedStats = CardStats.ComputeStats("dps_001", 15) -- Should clamp to max level
 	local maxLevelStats = CardStats.ComputeStats("dps_001", CardLevels.MAX_LEVEL)
 	if clampedStats.atk == maxLevelStats.atk then
 		print("✅ Level clamping works correctly")
 	else
 		print("❌ Level clamping failed")
 		testResults.cardStats = false
+	end
+end
+
+-- Test 3.5: Per-Card Growth System
+local function TestPerCardGrowth()
+	print("\n=== Testing Per-Card Growth System ===")
+	
+	-- Test level 1 returns base stats
+	local cardId = "card_100" -- Monkey D. Luffy
+	local level1Stats = CardStats.ComputeStats(cardId, 1)
+	local card = CardCatalog.GetCard(cardId)
+	
+	if level1Stats.atk == card.base.atk and level1Stats.hp == card.base.hp and level1Stats.defence == card.base.defence then
+		print("✅ Level 1 returns base stats")
+		testResults.perCardGrowth = true
+	else
+		print("❌ Level 1 stats don't match base:", level1Stats, "vs", card.base)
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test level 2 with zero growth equals base
+	local level2Stats = CardStats.ComputeStats(cardId, 2)
+	if level2Stats.atk == card.base.atk and level2Stats.hp == card.base.hp and level2Stats.defence == card.base.defence then
+		print("✅ Level 2 with zero growth equals base")
+	else
+		print("❌ Level 2 with zero growth doesn't equal base")
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test level 5 with zero growth equals base
+	local level5Stats = CardStats.ComputeStats(cardId, 5)
+	if level5Stats.atk == card.base.atk and level5Stats.hp == card.base.hp and level5Stats.defence == card.base.defence then
+		print("✅ Level 5 with zero growth equals base")
+	else
+		print("❌ Level 5 with zero growth doesn't equal base")
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test level 10 with zero growth equals base
+	local level10Stats = CardStats.ComputeStats(cardId, 10)
+	if level10Stats.atk == card.base.atk and level10Stats.hp == card.base.hp and level10Stats.defence == card.base.defence then
+		print("✅ Level 10 with zero growth equals base")
+	else
+		print("❌ Level 10 with zero growth doesn't equal base")
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test MAX_LEVEL constant
+	if Types.MAX_LEVEL == 10 then
+		print("✅ MAX_LEVEL is 10")
+	else
+		print("❌ MAX_LEVEL is not 10:", Types.MAX_LEVEL)
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test level-up rejection at max level
+	local canLevelUp, errorMessage = CardLevels.CanLevelUp(cardId, 10, 1000, 1000000)
+	if not canLevelUp and errorMessage == "Already at maximum level" then
+		print("✅ Level-up correctly rejected at max level")
+	else
+		print("❌ Level-up not rejected at max level:", canLevelUp, errorMessage)
+		testResults.perCardGrowth = false
+	end
+	
+	-- Test placeholder costs for levels 8-10
+	local cost8 = CardLevels.GetLevelCost(8)
+	local cost9 = CardLevels.GetLevelCost(9)
+	local cost10 = CardLevels.GetLevelCost(10)
+	
+	if cost8 and cost9 and cost10 then
+		print("✅ Placeholder costs exist for levels 8-10")
+		
+		-- Test monotonicity (counts non-decreasing)
+		if cost8.requiredCount <= cost9.requiredCount and cost9.requiredCount <= cost10.requiredCount then
+			print("✅ Cost monotonicity maintained")
+		else
+			print("❌ Cost monotonicity broken")
+			testResults.perCardGrowth = false
+		end
+	else
+		print("❌ Missing placeholder costs for levels 8-10")
+		testResults.perCardGrowth = false
 	end
 end
 
@@ -432,6 +515,7 @@ function SelfCheck.RunAllTests()
 	TestCardCatalog()
 	TestCardLevels()
 	TestCardStats()
+	TestPerCardGrowth()
 	TestDeckValidation()
 	TestCombatUtils()
 	TestSeededRNG()

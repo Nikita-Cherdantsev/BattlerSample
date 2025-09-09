@@ -75,7 +75,7 @@ Utilities.DeckValidator = {
 
 -- Client-side card levels (matching server CardLevels)
 Utilities.CardLevels = {
-	MAX_LEVEL = 7,
+	MAX_LEVEL = 10,
 	GetLevelCost = function(level)
 		local levelCosts = {
 			[1] = { requiredCount = 1, softAmount = 0 },
@@ -84,7 +84,11 @@ Utilities.CardLevels = {
 			[4] = { requiredCount = 40, softAmount = 200000 },
 			[5] = { requiredCount = 80, softAmount = 500000 },
 			[6] = { requiredCount = 160, softAmount = 800000 },
-			[7] = { requiredCount = 320, softAmount = 1200000 }
+			[7] = { requiredCount = 320, softAmount = 1200000 },
+			-- TODO(design): placeholder, replace with final numbers
+			[8] = { requiredCount = 640, softAmount = 2000000 },
+			[9] = { requiredCount = 1280, softAmount = 5000000 },
+			[10] = { requiredCount = 2560, softAmount = 10000000 }
 		}
 		return levelCosts[level]
 	end

@@ -198,7 +198,7 @@ function selectors.selectCanLevelUp(state, cardId)
 	end
 	
 	-- Check if already at max level
-	if entry.level >= 7 then
+	if entry.level >= 10 then
 		return { can = false, reason = "LEVEL_MAXED" }
 	end
 	

@@ -1,6 +1,8 @@
 local CardLevels = {}
 
--- Level progression table (levels 1-7)
+local Types = require(script.Parent.Parent.Types)
+
+-- Level progression table (levels 1-10)
 -- Each level requires: requiredCount copies + softAmount currency to unlock
 CardLevels.LevelTable = {
 	[1] = { requiredCount = 1, softAmount = 0 },
@@ -9,19 +11,15 @@ CardLevels.LevelTable = {
 	[4] = { requiredCount = 40, softAmount = 200000 },
 	[5] = { requiredCount = 80, softAmount = 500000 },
 	[6] = { requiredCount = 160, softAmount = 800000 },
-	[7] = { requiredCount = 320, softAmount = 1200000 }
+	[7] = { requiredCount = 320, softAmount = 1200000 },
+	-- TODO(design): placeholder, replace with final numbers
+	[8] = { requiredCount = 640, softAmount = 2000000 },
+	[9] = { requiredCount = 1280, softAmount = 5000000 },
+	[10] = { requiredCount = 2560, softAmount = 10000000 }
 }
 
--- Maximum level
-CardLevels.MAX_LEVEL = 7
-
--- Default per-level stat increments (applied from level 2 upwards)
--- TODO: Customize per-card by adding these values to CardCatalog entries
-CardLevels.DefaultIncrements = {
-	atk = 2,
-	defence = 2,
-	hp = 10
-}
+-- Maximum level (use shared constant)
+CardLevels.MAX_LEVEL = Types.MAX_LEVEL
 
 -- Get level cost information
 function CardLevels.GetLevelCost(level)

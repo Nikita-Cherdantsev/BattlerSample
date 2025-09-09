@@ -1,10 +1,10 @@
 local CardStats = {}
 
 local CardCatalog = require(script.Parent.CardCatalog)
-local CardLevels = require(script.Parent.CardLevels)
+local Types = require(script.Parent.Parent.Types)
 
 -- Compute stats for a card at a specific level
--- Uses baseStats + per-level increments, clamps level to [1,7]
+-- Uses per-card base + growth tables, clamps level to [1,MAX_LEVEL]
 function CardStats.ComputeStats(cardId, level)
 	local card = CardCatalog.GetCard(cardId)
 	if not card then
@@ -12,23 +12,25 @@ function CardStats.ComputeStats(cardId, level)
 	end
 	
 	-- Clamp level to valid range
-	level = math.max(1, math.min(level, CardLevels.MAX_LEVEL))
+	level = math.max(1, math.min(level, Types.MAX_LEVEL))
 	
 	-- Start with base stats (level 1)
 	local stats = {
-		atk = card.baseStats.attack,
-		hp = card.baseStats.health,
-		defence = card.baseStats.defence or 0  -- Default to 0 if not present
+		atk = card.base.atk,
+		hp = card.base.hp,
+		defence = card.base.defence
 	}
 	
-	-- Apply level increments (from level 2 upwards)
+	-- Apply per-level growth deltas (from level 2 upwards)
 	if level > 1 then
-		local increments = card.levelIncrements or CardLevels.DefaultIncrements
-		local levelsToApply = level - 1
-		
-		stats.atk = stats.atk + (increments.atk * levelsToApply)
-		stats.hp = stats.hp + (increments.hp * levelsToApply)
-		stats.defence = stats.defence + (increments.defence * levelsToApply)
+		for l = 2, level do
+			local growth = card.growth[l]
+			if growth then
+				stats.atk = stats.atk + (growth.atk or 0)
+				stats.hp = stats.hp + (growth.hp or 0)
+				stats.defence = stats.defence + (growth.defence or 0)
+			end
+		end
 	end
 	
 	return stats
@@ -51,12 +53,12 @@ end
 
 -- Get the maximum possible stats for a card (at max level)
 function CardStats.GetMaxStats(cardId)
-	return CardStats.ComputeStats(cardId, CardLevels.MAX_LEVEL)
+	return CardStats.ComputeStats(cardId, Types.MAX_LEVEL)
 end
 
 -- Get the maximum possible power for a card (at max level)
 function CardStats.GetMaxPower(cardId)
-	return CardStats.ComputeCardPower(cardId, CardLevels.MAX_LEVEL)
+	return CardStats.ComputeCardPower(cardId, Types.MAX_LEVEL)
 end
 
 return CardStats

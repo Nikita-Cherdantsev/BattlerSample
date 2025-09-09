@@ -47,7 +47,7 @@ function CardVM.build(cardId, collectionEntry, profileState)
 		levelIncrements = card.levelIncrements,
 		-- Ownership flag
 		owned = owned,
-		maxLevel = 7
+		maxLevel = 10
 	}
 	
 	-- Add ownership-specific data only if owned

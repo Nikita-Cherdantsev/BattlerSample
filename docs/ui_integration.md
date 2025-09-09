@@ -395,6 +395,7 @@ local CardVM = require(ReplicatedStorage.Modules.ViewModels.CardVM)
 -- Build card view model
 local cardVM = CardVM.build("dps_001", {count = 5, level = 3})
 -- Returns: {id, name, rarity, class, level, stats, power, slotNumber, description, ...}
+-- Note: stats are computed using per-card growth tables (base + level-specific deltas)
 
 -- Build multiple cards
 local cardVMs = CardVM.buildMultiple({"dps_001", "support_001"}, collection)
