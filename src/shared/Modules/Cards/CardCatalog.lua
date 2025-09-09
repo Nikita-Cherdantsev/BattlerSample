@@ -2,7 +2,7 @@ local CardCatalog = {}
 
 -- Rarity definitions (canon set)
 CardCatalog.Rarities = {
-	COMMON = "common",
+	UNCOMMON = "uncommon",
 	RARE = "rare",
 	EPIC = "epic",
 	LEGENDARY = "legendary"
@@ -35,57 +35,113 @@ end
 
 -- Initial catalog with 8 example cards (updated for v2 schema)
 CardCatalog.Cards = {
-	-- Common cards
-	["dps_001"] = CreateCard("dps_001", "Recruit Fighter", CardCatalog.Rarities.COMMON, CardCatalog.Classes.DPS, {
-		attack = 3,
-		health = 4,
-		defence = 1
-	}, 10, "A basic fighter with balanced stats."),
-	
-	["support_001"] = CreateCard("support_001", "Novice Healer", CardCatalog.Rarities.COMMON, CardCatalog.Classes.SUPPORT, {
-		attack = 2,
-		health = 5,
-		defence = 2
-	}, 20, "A beginner healer with defensive capabilities."),
-	
-	-- Rare cards
-	["tank_001"] = CreateCard("tank_001", "Iron Guard", CardCatalog.Rarities.RARE, CardCatalog.Classes.TANK, {
-		attack = 2,
-		health = 6,
-		defence = 3
-	}, 30, "A sturdy defender with high health and defence."),
-	
-	["dps_002"] = CreateCard("dps_002", "Veteran Warrior", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
-		attack = 5,
-		health = 5,
-		defence = 2
-	}, 40, "An experienced warrior with high attack power."),
-	
-	["support_002"] = CreateCard("support_002", "Battle Cleric", CardCatalog.Rarities.RARE, CardCatalog.Classes.SUPPORT, {
-		attack = 3,
-		health = 4,
-		defence = 3
-	}, 50, "A combat-ready cleric with balanced abilities."),
-	
-	-- Epic cards
-	["dps_003"] = CreateCard("dps_003", "Elite Berserker", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
-		attack = 7,
-		health = 4,
-		defence = 1
-	}, 60, "A powerful berserker with devastating attacks.", "placeholder_passive"),
-	
-	["tank_002"] = CreateCard("tank_002", "Steel Defender", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
-		attack = 3,
-		health = 8,
+	["card_100"] = CreateCard("card_100", "Monkey D. Luffy", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
+		attack = 1,
+		health = 3,
 		defence = 4
-	}, 70, "An elite defender with exceptional durability.", "placeholder_passive"),
+	}, 10, ""),
 	
-	-- Legendary cards
-	["dps_004"] = CreateCard("dps_004", "Champion Warlord", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
-		attack = 8,
-		health = 7,
-		defence = 3
-	}, 80, "A legendary warrior with unmatched combat prowess.", "placeholder_passive")
+	["card_200"] = CreateCard("card_200", "Roronoa Zoro", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.TANK, {
+		attack = 1,
+		health = 10,
+		defence = 2
+	}, 20, ""),
+	
+	["card_300"] = CreateCard("card_300", "Sasuke Uchiha", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
+		attack = 2,
+		health = 4,
+		defence = 2
+	}, 30, ""),
+	
+	["card_400"] = CreateCard("card_400", "Gaara", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, {
+		attack = 0,
+		health = 8,
+		defence = 1
+	}, 40, ""),
+	
+	["card_500"] = CreateCard("card_500", "Sanji", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
+		attack = 2,
+		health = 3,
+		defence = 1
+	}, 50, ""),
+	
+	["card_600"] = CreateCard("card_600", "Tenten", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 0,
+		health = 2,
+		defence = 1
+	}, 60, ""),
+	
+	["card_700"] = CreateCard("card_700", "Koby", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 1,
+		health = 1,
+		defence = 1
+	}, 70, ""),
+	
+	["card_800"] = CreateCard("card_800", "Vegeta", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
+		attack = 6,
+		health = 8,
+		defence = 0
+	}, 80, ""),
+
+	["card_900"] = CreateCard("card_900", "Rock Lee", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
+		attack = 1,
+		health = 4,
+		defence = 0
+	}, 90, ""),
+
+	["card_1000"] = CreateCard("card_1000", "Goku", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
+		attack = 9,
+		health = 4,
+		defence = 0
+	}, 100, ""),
+
+	["card_1100"] = CreateCard("card_1100", "Usopp", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 1,
+		health = 3,
+		defence = 0
+	}, 110, ""),
+
+	["card_1200"] = CreateCard("card_1200", "All Might", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
+		attack = 5,
+		health = 3,
+		defence = 0
+	}, 120, ""),
+
+	["card_1300"] = CreateCard("card_1300", "Chopper", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 1,
+		health = 2,
+		defence = 0
+	}, 130, ""),
+
+	["card_1400"] = CreateCard("card_1400", "Krillin", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 1,
+		health = 2,
+		defence = 0
+	}, 140, ""),
+
+	["card_1500"] = CreateCard("card_1500", "Bakugo", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
+		attack = 4,
+		health = 2,
+		defence = 0
+	}, 150, ""),
+
+	["card_1600"] = CreateCard("card_1600", "Yamcha", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.DPS, {
+		attack = 0,
+		health = 1,
+		defence = 0
+	}, 160, ""),
+
+	["card_1700"] = CreateCard("card_1700", "Midoriya", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.DPS, {
+		attack = 1,
+		health = 1,
+		defence = 0
+	}, 170, ""),
+
+	["card_1800"] = CreateCard("card_1800", "Piccolo", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
+		attack = 3,
+		health = 1,
+		defence = 0
+	}, 180, "")
 }
 
 -- Public functions
