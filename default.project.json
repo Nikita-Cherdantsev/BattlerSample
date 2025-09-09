@@ -199,8 +199,8 @@
             "Enabled": true
           }
         },
-        "LootboxServiceDevHarness": {
-          "$path": "src/server/Services/LootboxServiceDevHarness.server.lua",
+        "LootboxDevHarness": {
+          "$path": "src/server/Services/LootboxDevHarness.server.lua",
           "$properties": {
             "Enabled": true
           }
