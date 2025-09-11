@@ -18,20 +18,82 @@ ProfileManager.KEY_PATTERN = "player_{userId}_v2"  -- Updated to v2
 
 -- Safe default deck (using existing catalog IDs, no duplicates)
 ProfileManager.DEFAULT_DECK = {
-	"dps_001",      -- Recruit Fighter
-	"support_001",  -- Novice Healer
-	"tank_001",     -- Iron Guard
-	"dps_002",      -- Veteran Warrior
-	"support_002",  -- Battle Cleric
-	"tank_002"      -- Steel Defender
+	"card_100",     -- Monkey D. Luffy
+	"card_200",     -- Roronoa Zoro
+	"card_300",     -- Rock Lee
+	"card_500",     -- Sanji
+	"card_600",     -- Tenten
+	"card_700"      -- Koby
 }
 
 -- Cache for loaded profiles
 local profileCache = {}
 
+-- Card ID migration mapping (old -> new)
+local CARD_ID_MIGRATION = {
+	["dps_001"] = "card_100",
+	["dps_002"] = "card_500", 
+	["dps_003"] = "card_800",
+	["dps_004"] = "card_900",
+	["support_001"] = "card_600",
+	["support_002"] = "card_700",
+	["support_003"] = "card_1100",
+	["support_004"] = "card_1300",
+	["tank_001"] = "card_200",
+	["tank_002"] = "card_300",
+	["tank_003"] = "card_400",
+	["tank_004"] = "card_1200"
+}
+
 -- Utility functions
 local function GenerateProfileKey(userId)
 	return string.format(ProfileManager.KEY_PATTERN:gsub("{userId}", tostring(userId)))
+end
+
+-- Migrate old card IDs to new ones
+function ProfileManager.MigrateCardIds(profile)
+	if not profile or not profile.collection then
+		return profile
+	end
+	
+	local migratedCollection = {}
+	local migratedDeck = {}
+	local hasChanges = false
+	
+	-- Migrate collection
+	for cardId, entry in pairs(profile.collection) do
+		local newCardId = CARD_ID_MIGRATION[cardId]
+		if newCardId then
+			print("🔄 Migrating card: " .. cardId .. " -> " .. newCardId)
+			migratedCollection[newCardId] = entry
+			hasChanges = true
+		else
+			-- Keep existing card if no migration needed
+			migratedCollection[cardId] = entry
+		end
+	end
+	
+	-- Migrate deck
+	if profile.deck then
+		for i, cardId in ipairs(profile.deck) do
+			local newCardId = CARD_ID_MIGRATION[cardId]
+			if newCardId then
+				print("🔄 Migrating deck card: " .. cardId .. " -> " .. newCardId)
+				migratedDeck[i] = newCardId
+				hasChanges = true
+			else
+				migratedDeck[i] = cardId
+			end
+		end
+	end
+	
+	if hasChanges then
+		print("🔄 Card ID migration completed")
+		profile.collection = migratedCollection
+		profile.deck = migratedDeck
+	end
+	
+	return profile
 end
 
 local function IsProfileValid(profile)
@@ -88,6 +150,8 @@ local function MigrateProfileIfNeeded(profile)
 		if hasV2Format then
 			print("🔄 Profile missing version field but has v2 format, adding version")
 			profile.version = "v2"
+			-- Also migrate card IDs for v2 profiles with old card IDs
+			profile = ProfileManager.MigrateCardIds(profile)
 			return profile
 		end
 	end
@@ -114,6 +178,9 @@ local function MigrateProfileIfNeeded(profile)
 					print("  " .. cardId .. ": count=" .. tostring(entry.count) .. ", level=" .. tostring(entry.level))
 				end
 			end
+			
+			-- Migrate old card IDs to new ones
+			migratedProfile = ProfileManager.MigrateCardIds(migratedProfile)
 			
 			return migratedProfile
 		else

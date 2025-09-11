@@ -195,12 +195,12 @@ local function TestProfileAPI()
 	testBaseline.softCurrency = profile.currencies.soft
 	testBaseline.loginStreak = profile.loginStreak
 	-- Store baseline for all cards that will be granted
-			local dps002Entry = profile.collection["dps_002"]
-		testBaseline.dps002Count = dps002Entry and dps002Entry.count or 0
-	local support002Entry = profile.collection["support_002"]
-	testBaseline.support002Count = support002Entry and support002Entry.count or 0
-	local tank002Entry = profile.collection["tank_002"]
-	testBaseline.tank002Count = tank002Entry and tank002Entry.count or 0
+			local card500Entry = profile.collection["card_500"]
+		testBaseline.card500Count = card500Entry and card500Entry.count or 0
+	local card600Entry = profile.collection["card_600"]
+	testBaseline.card600Count = card600Entry and card600Entry.count or 0
+	local card700Entry = profile.collection["card_700"]
+	testBaseline.card700Count = card700Entry and card700Entry.count or 0
 	LogInfo("📊 Baseline values stored for delta checks")
 	
 	-- Test collection access
@@ -234,7 +234,7 @@ local function TestDeckValidation()
 	LogInfo("🧪 Testing Deck Validation...")
 	
 	-- Test valid deck (v2: no duplicates allowed)
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
+	local validDeck = {"card_100", "card_200", "card_300", "card_500", "card_600", "card_700"}
 	LogInfo("Testing valid deck...")
 	WaitForBudget()
 	
@@ -247,7 +247,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Test invalid deck (wrong size)
-	local invalidDeck1 = {"dps_001", "support_001"}
+	local invalidDeck1 = {"card_100", "card_200"}
 	LogInfo("Testing invalid deck (wrong size)...")
 	WaitForBudget()
 	
@@ -260,7 +260,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Test invalid deck (unknown card)
-	local invalidDeck2 = {"invalid_card", "dps_001", "support_001", "tank_001", "dps_002", "support_002"}
+	local invalidDeck2 = {"invalid_card", "card_100", "card_200", "card_300", "card_500", "card_600"}
 	LogInfo("Testing invalid deck (unknown card)...")
 	WaitForBudget()
 	
@@ -300,13 +300,13 @@ local function TestCardGranting()
 	end
 	
 	-- Get current baseline from the fresh profile (v2 format)
-	local baselineCounts = {
-		["dps_002"] = (profile.collection["dps_002"] and profile.collection["dps_002"].count) or 0,
-		["support_002"] = (profile.collection["support_002"] and profile.collection["support_002"].count) or 0,
-		["tank_002"] = (profile.collection["tank_002"] and profile.collection["tank_002"].count) or 0
+	local 	baselineCounts = {
+		["card_500"] = (profile.collection["card_500"] and profile.collection["card_500"].count) or 0,
+		["card_600"] = (profile.collection["card_600"] and profile.collection["card_600"].count) or 0,
+		["card_700"] = (profile.collection["card_700"] and profile.collection["card_700"].count) or 0
 	}
-	LogInfo("Baseline counts: dps_002=%d, support_002=%d, tank_002=%d", 
-		baselineCounts["dps_002"], baselineCounts["support_002"], baselineCounts["tank_002"])
+	LogInfo("Baseline counts: card_500=%d, card_600=%d, card_700=%d", 
+		baselineCounts["card_500"], baselineCounts["card_600"], baselineCounts["card_700"])
 	
 	-- Debug: Show what's in the collection before granting (v2 format)
 	LogInfo("Collection before granting:")
@@ -318,12 +318,12 @@ local function TestCardGranting()
 	
 	-- Grant some cards
 	local rewards = {
-		["dps_002"] = 2,
-		["support_002"] = 1,
-		["tank_002"] = 1
+		["card_500"] = 2,
+		["card_600"] = 1,
+		["card_700"] = 1
 	}
 	
-	LogInfo("Granting cards: %s", table.concat({rewards["dps_002"] .. "x dps_002", rewards["support_002"] .. "x support_002", rewards["tank_002"] .. "x tank_002"}, ", "))
+	LogInfo("Granting cards: %s", table.concat({rewards["card_500"] .. "x card_500", rewards["card_600"] .. "x card_600", rewards["card_700"] .. "x card_700"}, ", "))
 	WaitForBudget()
 	
 			local success, grantedCards = PlayerDataService.GrantCards(MockPlayer, rewards)
@@ -361,12 +361,12 @@ local function TestCardGranting()
 		-- Verify collection was updated using delta assertions (v2 format)
 		LogSuccess("Collection updated:")
 		local okAll = true
-		local tank002Count = (coll["tank_002"] and coll["tank_002"].count) or 0
-		local support002Count = (coll["support_002"] and coll["support_002"].count) or 0
-		local dps002Count = (coll["dps_002"] and coll["dps_002"].count) or 0
-		okAll = assertDelta("tank_002", 1, tank002Count, baselineCounts) and okAll
-		okAll = assertDelta("support_002", 1, support002Count, baselineCounts) and okAll
-		okAll = assertDelta("dps_002", 2, dps002Count, baselineCounts) and okAll
+		local card700Count = (coll["card_700"] and coll["card_700"].count) or 0
+		local card600Count = (coll["card_600"] and coll["card_600"].count) or 0
+		local card500Count = (coll["card_500"] and coll["card_500"].count) or 0
+		okAll = assertDelta("card_700", 1, card700Count, baselineCounts) and okAll
+		okAll = assertDelta("card_600", 1, card600Count, baselineCounts) and okAll
+		okAll = assertDelta("card_500", 2, card500Count, baselineCounts) and okAll
 		
 		if not okAll then
 			LogError("Some card count assertions failed")
@@ -380,7 +380,7 @@ local function TestCardGranting()
 	-- Test invalid rewards
 	local invalidRewards = {
 		["invalid_card"] = 1,
-		["dps_001"] = -1
+		["card_100"] = -1
 	}
 	
 	LogInfo("Testing invalid rewards...")

@@ -9,12 +9,15 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 - [Runtime Architecture](#runtime-architecture)
 - [Data & Persistence](#data--persistence)
 - [Cards, Levels, Deck, Combat](#cards-levels-deck-combat)
+- [Level-Up System](#level-up-system)
+- [Collection Surface](#collection-surface)
 - [Packs & Lootboxes](#packs--lootboxes)
 - [Networking Surface](#networking-surface)
 - [Client Integration Layer](#client-integration-layer)
 - [Testing & Dev Harnesses](#testing--dev-harnesses)
 - [Build & Dev Environment](#build--dev-environment)
 - [Performance & Security Notes](#performance--security-notes)
+- [What Changed in This Release](#what-changed-in-this-release)
 - [Roadmap](#roadmap)
 - [Glossary](#glossary)
 
@@ -24,10 +27,12 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 - ✅ Profile system with v2 schema (collection, deck, currencies, lootboxes)
 - ✅ Card catalog with 8 cards (4 rarities, 3 classes, slot-based ordering)
 - ✅ Card level-up system (1-10 levels, per-card growth tables, atomic persistence, squad power recomputation)
+- ✅ Collection surface (unified catalog+ownership selector, CardVM handles unowned safely)
 - ✅ Deck validation (6 unique cards, slot mapping by slotNumber)
-- ✅ Deterministic combat engine (fixed turn order, same-index targeting, armour pool)
-- ✅ Network layer with rate limiting and concurrency guards
-- ✅ Client-side integration (NetworkClient, ClientState, ViewModels)
+- ✅ Deterministic combat engine (fixed turn order, same-index targeting, armor pool)
+- ✅ Complete lootbox system (4-slot capacity, deterministic rewards, overflow handling, atomic operations)
+- ✅ Network layer with rate limiting and concurrency guards (7 lootbox endpoints + level-up)
+- ✅ Client-side integration (NetworkClient, ClientState, ViewModels, LootboxesVM)
 - ✅ Offline development (mocks, dev panel, comprehensive testing)
 - ✅ DataStore persistence with v1→v2 migration
 
@@ -219,10 +224,58 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 3. **Tiebreaker**: If multiple equidistant, choose lower slot number
 
 **Combat Mechanics:**
-- **Damage**: Defence acts as a depleting armor pool; residual damage reduces HP
-- **Armor Pool**: Defence depletes first, then HP takes remaining damage
+- **Armor Pool**: Defence acts as a depleting armor pool; residual damage reduces HP
+- **Damage Flow**: Defence depletes first, then HP takes remaining damage
+- **No Soak**: Defence does not reduce incoming damage by percentage
 - **Round Cap**: Maximum 50 rounds to prevent infinite battles
 - **Draw Rules**: Survivor count determines winner
+
+## Level-Up System
+
+### Card Progression
+- **Level Range**: 1-10 (MAX_LEVEL = 10)
+- **Cost Model**: `requiredCount` cards + `softAmount` currency per level
+- **Growth System**: Per-card growth tables with base stats + level-specific deltas (levels 2-10)
+- **Atomic Operations**: Level-up mutations use `UpdateAsync` for atomic resource deduction and level increment
+- **Squad Power**: Automatically recomputed when upgraded card is in active deck
+
+### Server Implementation
+- **Endpoint**: `RequestLevelUpCard` RemoteEvent with rate limiting (1s cooldown, 10/minute)
+- **Validation**: Card ownership, level limits, resource availability
+- **Error Codes**: `CARD_NOT_OWNED`, `LEVEL_MAXED`, `INSUFFICIENT_COPIES`, `INSUFFICIENT_SOFT`
+- **Persistence**: Atomic `UpdateAsync` operations prevent race conditions
+
+### Client Integration
+- **NetworkClient**: `requestLevelUpCard(cardId)` method with mock parity
+- **ClientState**: `isLeveling` flag for UI loading states
+- **Selectors**: `selectCanLevelUp()`, `selectUpgradeableCards()` for UI logic
+- **CardVM**: Upgradeability fields (`canLevelUp`, `requiredCount`, `softAmount`, `shortfallCount`, `shortfallSoft`)
+- **DevPanel**: "Level Up First Upgradeable" button for testing
+
+### Testing
+- **LevelUpDevHarness**: Server-side validation with comprehensive error case coverage
+- **VMHarness**: Console commands (`LevelUpFirstUpgradeable()`, `LevelUp(cardId)`, `PrintUpgradeableCards()`)
+- **Mock System**: Full validation and error code parity with real server
+
+## Collection Surface
+
+### Unified Collection System
+- **Catalog Integration**: Shows all cards in catalog with ownership overlay
+- **Ownership Data**: `owned` flag with level/count/stats for owned cards, placeholder data for unowned
+- **Safe Handling**: CardVM handles unowned cards gracefully without crashes
+- **DevPanel Integration**: "Print Collection Summary" button for diagnostic information
+
+### Collection Features
+- **Sorting Options**: By name, rarity, level, power, slotNumber
+- **Filtering**: Owned only, rarity/class filters, search terms
+- **Grouping**: By rarity or class for organized display
+- **Statistics**: Coverage percentage, rarity breakdown, top power cards
+
+### UI Integration
+- **Selectors**: `selectUnifiedCollection()` with filtering and sorting options
+- **ViewModels**: `CardVM.buildFromUnifiedCollection()` for UI-ready data structures
+- **Styling**: Different visual treatment for owned vs unowned cards
+- **Cross-Reference**: See [Collection View section](docs/ui_integration.md#collection-view) for detailed implementation
 
 ## Packs & Lootboxes
 
@@ -296,10 +349,23 @@ LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 LootboxService.OpenNow(userId, slotIndex, serverNow)
 ```
 
-### Networking Surface
+### Complete Implementation
+
+**Server Services:**
+- **LootboxService**: Complete domain logic with atomic operations (`TryAddBox`, `ResolvePendingDiscard/Replace`, `StartUnlock`, `CompleteUnlock`, `OpenNow`)
+- **Atomic Persistence**: All operations use `UpdateAsync` for consistency
+- **Overflow Handling**: Automatic pending lootbox management with player decision flow
+- **Reward System**: Deterministic seed-based rewards with character cards + currencies
+
+**Client Integration:**
+- **NetworkClient**: All 7 lootbox endpoints with mock parity
+- **ClientState**: Lootbox state management with `serverNow` time sync
+- **LootboxesVM**: UI-ready view model with slot data, timers, and capabilities
+- **DevPanel**: Complete testing interface for all lootbox operations
+
+**Networking Surface:**
 
 **RemoteEvents (Client → Server):**
-
 - **`RequestLootState`** `{}` → **`ProfileUpdated`** with `lootboxes` + `pendingLootbox`
 - **`RequestAddBox`** `{rarity, source?}` → **`ProfileUpdated`** (handles overflow automatically)
 - **`RequestResolvePendingDiscard`** `{}` → **`ProfileUpdated`** (clears pending)
@@ -333,7 +399,10 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 
 **Array Compaction:** After `CompleteUnlock` or `OpenNow`, slots are removed and array is packed (no `Consumed` state kept).
 
-*Note: UI integration will be implemented in a later step.*
+**Testing:**
+- **LootboxDevHarness**: 9 test suites covering capacity, overflow, unlock mechanics, reward validation, shop packs
+- **DevPanel**: Complete UI testing for all operations
+- **Mock System**: Full validation and error code parity with real server
 
 ## Networking Surface
 
@@ -346,6 +415,15 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 
 **Match System:**
 - **`RequestStartMatch`** (C→S) → **Response on same event** (S→C)
+
+**Lootbox System:**
+- **`RequestLootState`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestAddBox`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestResolvePendingDiscard`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestResolvePendingReplace`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestStartUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestOpenNow`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestCompleteUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
 
 ### Payload Schemas
 
@@ -398,6 +476,13 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 - **RequestProfile**: 1s cooldown, 10/minute  
 - **RequestStartMatch**: 1s cooldown, 5/minute
 - **RequestLevelUpCard**: 1s cooldown, 10/minute
+- **RequestLootState**: 1s cooldown, 10/minute
+- **RequestAddBox**: 1s cooldown, 5/minute
+- **RequestResolvePendingDiscard**: 1s cooldown, 10/minute
+- **RequestResolvePendingReplace**: 1s cooldown, 10/minute
+- **RequestStartUnlock**: 1s cooldown, 10/minute
+- **RequestOpenNow**: 1s cooldown, 10/minute
+- **RequestCompleteUnlock**: 1s cooldown, 10/minute
 
 **Concurrency Guards:**
 - **Per-Player State**: `isInMatch` flag prevents overlapping matches
@@ -418,6 +503,12 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 | `LEVEL_MAXED` | Card already at maximum level |
 | `INSUFFICIENT_COPIES` | Not enough card copies for level-up |
 | `INSUFFICIENT_SOFT` | Not enough soft currency for level-up |
+| `BOX_CAPACITY_FULL_PENDING` | Lootbox capacity full, pending lootbox exists |
+| `BOX_DECISION_REQUIRED` | Must choose discard or replace for pending lootbox |
+| `BOX_ALREADY_UNLOCKING` | Another lootbox is already unlocking |
+| `BOX_BAD_STATE` | Invalid operation for current lootbox state |
+| `BOX_TIME_NOT_REACHED` | Lootbox timer hasn't finished yet |
+| `INSUFFICIENT_HARD` | Not enough hard currency for instant open |
 | `INTERNAL` | Server-side error |
 
 ## Client Integration Layer
@@ -507,9 +598,9 @@ Utilities.SelfCheck.RunAllTests()
 - **Tests**: Happy path level-up, validation errors, rate limiting, squad power recomputation
 
 **LootboxDevHarness** (`src/server/Services/LootboxDevHarness.server.lua`):
-- **Purpose**: Test lootbox system functionality and overflow handling
+- **Purpose**: Test complete lootbox system functionality and overflow handling
 - **Run**: Automatically on server start
-- **Tests**: Capacity/pending flow, overflow resolution, unlock mechanics, reward validation, shop packs
+- **Tests**: 9 test suites covering capacity/pending flow, overflow resolution (discard/replace), unlock mechanics, reward validation, shop packs, instant open, timer completion
 
 ### Client-Side Testing
 
@@ -527,7 +618,7 @@ Utilities.SelfCheck.RunAllTests()
 **DevPanel** (`src/client/Dev/DevPanel.client.lua`):
 - **Purpose**: Runtime testing UI
 - **Enable**: `Config.SHOW_DEV_PANEL = true`
-- **Features**: Profile refresh, sample deck, PvE match, level-up testing, mock toggle
+- **Features**: Profile refresh, sample deck, PvE match, level-up testing, collection summary, complete lootbox operations (refresh, add, start unlock, complete, open now, resolve pending), mock toggle
 
 ### Coverage Status
 
@@ -536,12 +627,14 @@ Utilities.SelfCheck.RunAllTests()
 - Network layer (rate limiting, concurrency, error handling)
 - Client integration (state management, ViewModels, mocks)
 - Profile system (creation, migration, validation)
+- Card level-up system (server endpoints, client integration, testing)
+- Complete lootbox system (server services, client integration, overflow handling)
+- Collection surface (unified catalog+ownership, selectors, ViewModels)
 
 **❌ Not Covered:**
 - UI unit tests (no UI framework yet)
-- Lootbox business logic (unlocking, opening)
-- Card level-up mechanics
 - Tutorial flow implementation
+- PvP matchmaking system
 
 ## Build & Dev Environment
 
@@ -607,12 +700,51 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - **Fixed Turn Order**: Eliminates need for complex turn calculation
 - **Integer Math**: Combat calculations use integer arithmetic for consistency
 
+## What Changed in This Release
+
+**Combat Defence Update:**
+- ✅ **Armor Pool Model**: Defence now acts as depleting armor pool instead of 50% soak
+- ✅ **Simplified Mechanics**: Damage depletes defence first, residual reduces HP
+- ✅ **Comprehensive Testing**: 10 new self-check cases covering all armor scenarios
+- ✅ **Documentation**: Updated README combat mechanics and glossary sections
+
+**Level-Up System:**
+- ✅ **Server Implementation**: `RequestLevelUpCard` RemoteEvent with atomic persistence and squad power recomputation
+- ✅ **Client Integration**: `NetworkClient.requestLevelUpCard()`, `ClientState.isLeveling`, upgradeability selectors
+- ✅ **ViewModels**: CardVM with level-up fields (`canLevelUp`, `requiredCount`, `softAmount`, `shortfallCount`, `shortfallSoft`)
+- ✅ **Mock Parity**: MockNetwork mirrors server validation, error codes, and payload structure
+- ✅ **Dev Tools**: DevPanel "Level Up First Upgradeable" button, VMHarness console commands
+- ✅ **Documentation**: Complete Level-Up Flow section in [docs/ui_integration.md](docs/ui_integration.md)
+- ✅ **Testing**: LevelUpDevHarness server-side validation, comprehensive error case coverage
+
+**Collection Surface:**
+- ✅ **Unified Catalog**: Shows all cards in catalog with ownership overlay
+- ✅ **Safe Handling**: CardVM handles unowned cards gracefully without crashes
+- ✅ **DevPanel Integration**: "Print Collection Summary" button for diagnostic information
+- ✅ **Selectors**: `selectUnifiedCollection()` with filtering and sorting options
+- ✅ **ViewModels**: `CardVM.buildFromUnifiedCollection()` for UI-ready data structures
+- ✅ **Documentation**: Complete Collection View section in [docs/ui_integration.md](docs/ui_integration.md)
+
+**Complete Lootbox System:**
+- ✅ **Server Services**: LootboxService with atomic operations (`TryAddBox`, `ResolvePendingDiscard/Replace`, `StartUnlock`, `CompleteUnlock`, `OpenNow`)
+- ✅ **Atomic Persistence**: All operations use `UpdateAsync` for consistency
+- ✅ **Overflow Handling**: Automatic pending lootbox management with player decision flow
+- ✅ **Reward System**: Deterministic seed-based rewards with character cards + currencies
+- ✅ **Client Integration**: NetworkClient with all 7 endpoints, ClientState management, LootboxesVM
+- ✅ **DevPanel Integration**: Complete testing interface for all lootbox operations
+- ✅ **Testing**: LootboxDevHarness with 9 test suites covering all scenarios
+- ✅ **Documentation**: Complete Lootboxes UI section in [docs/ui_integration.md](docs/ui_integration.md)
+
+**Networking Surface:**
+- ✅ **7 New Endpoints**: `RequestLootState`, `RequestAddBox`, `RequestResolvePendingDiscard/Replace`, `RequestStartUnlock`, `RequestOpenNow`, `RequestCompleteUnlock`
+- ✅ **Rate Limiting**: Comprehensive rate limits for all new endpoints
+- ✅ **Error Codes**: Complete error code coverage for lootbox operations
+- ✅ **Payload Schemas**: Updated ProfileUpdated payload with lootbox data and `serverNow`
+
 ## Roadmap
 
 **Planned Features (Not Yet Implemented):**
 
-- [ ] **Card Level-Up Endpoint**: Server endpoint for upgrading card levels
-- [ ] **Lootbox Mechanics**: Open/start unlocking business logic
 - [ ] **Store System**: Currency spending and card purchases
 - [ ] **Tutorial Flow**: Step-by-step onboarding experience
 - [ ] **PvP Matchmaking**: Player vs player battle system
@@ -623,8 +755,11 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 **Current Focus:**
 - ✅ **Core Systems**: Profile, cards, combat, networking
 - ✅ **Client Layer**: Integration tools and development environment
+- ✅ **Level-Up System**: Complete server and client implementation
+- ✅ **Lootbox System**: Complete server and client implementation
+- ✅ **Collection Surface**: Unified catalog with ownership overlay
 - 🔄 **UI Foundation**: Ready for UI engineer to build interfaces
-- ⏳ **Game Features**: Level-up, lootboxes, progression systems
+- ⏳ **Game Features**: Store system, tutorial flow, PvP matchmaking
 
 ## Glossary
 
@@ -633,7 +768,7 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - **Deck**: Collection of exactly 6 unique cards for battle
 - **Slot Number**: Integer (10-80) determining deck→slot mapping order
 - **Squad Power**: Computed metric representing deck strength
-- **Armor Pool**: Defence acts as depleting armor; residual damage reduces HP
+- **Armor Pool**: Defence acts as depleting armor pool; residual damage reduces HP (no soak)
 - **Same-Index Targeting**: Combat targeting priority (same slot first)
 
 **System Terms:**

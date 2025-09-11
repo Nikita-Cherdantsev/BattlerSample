@@ -30,25 +30,62 @@ Utilities.TimeUtils = {
 Utilities.CardCatalog = {
 	GetAllCards = function() 
 		return {
-			-- Common cards
-			["dps_001"] = { slotNumber = 10, rarity = "common", class = "dps" },
-			["support_001"] = { slotNumber = 20, rarity = "common", class = "support" },
-			
-			-- Rare cards
-			["tank_001"] = { slotNumber = 30, rarity = "rare", class = "tank" },
-			["dps_002"] = { slotNumber = 40, rarity = "rare", class = "dps" },
-			["support_002"] = { slotNumber = 50, rarity = "rare", class = "support" },
+			-- Legendary cards
+			["card_100"] = { slotNumber = 100, rarity = "legendary", class = "dps" },    -- Monkey D. Luffy
+			["card_200"] = { slotNumber = 200, rarity = "legendary", class = "tank" },   -- Roronoa Zoro
+			["card_800"] = { slotNumber = 800, rarity = "legendary", class = "dps" },   -- Vegeta
+			["card_1000"] = { slotNumber = 1000, rarity = "legendary", class = "dps" },  -- Goku
 			
 			-- Epic cards
-			["dps_003"] = { slotNumber = 60, rarity = "epic", class = "dps" },
-			["tank_002"] = { slotNumber = 70, rarity = "epic", class = "tank" },
+			["card_300"] = { slotNumber = 300, rarity = "epic", class = "dps" },        -- Rock Lee
+			["card_400"] = { slotNumber = 400, rarity = "epic", class = "tank" },        -- Tsunade
+			["card_1200"] = { slotNumber = 1200, rarity = "epic", class = "dps" },       -- All Might
 			
-			-- Legendary cards
-			["dps_004"] = { slotNumber = 80, rarity = "legendary", class = "dps" },
+			-- Rare cards
+			["card_500"] = { slotNumber = 500, rarity = "rare", class = "dps" },        -- Sanji
+			["card_900"] = { slotNumber = 900, rarity = "rare", class = "dps" },         -- Shino Aburame
+			["card_1500"] = { slotNumber = 1500, rarity = "rare", class = "dps" },       -- Bakugo
+			
+			-- Uncommon cards
+			["card_600"] = { slotNumber = 600, rarity = "uncommon", class = "support" },  -- Tenten
+			["card_700"] = { slotNumber = 700, rarity = "uncommon", class = "support" }, -- Koby
+			["card_1100"] = { slotNumber = 1100, rarity = "uncommon", class = "support" }, -- Usopp
+			["card_1300"] = { slotNumber = 1300, rarity = "uncommon", class = "support" }, -- Chopper
+			["card_1400"] = { slotNumber = 1400, rarity = "uncommon", class = "support" }, -- Krillin
+			["card_1600"] = { slotNumber = 1600, rarity = "uncommon", class = "dps" },   -- Yamcha
+			["card_1700"] = { slotNumber = 1700, rarity = "uncommon", class = "dps" },   -- Midoriya
+			["card_1800"] = { slotNumber = 1800, rarity = "uncommon", class = "support" }, -- Piccolo
 		}
 	end,
 	GetCard = function(cardId)
-		local cards = Utilities.CardCatalog.GetAllCards()
+		-- Access the cards directly to avoid circular reference
+		local cards = {
+			-- Legendary cards
+			["card_100"] = { slotNumber = 100, rarity = "legendary", class = "dps" },    -- Monkey D. Luffy
+			["card_200"] = { slotNumber = 200, rarity = "legendary", class = "tank" },   -- Roronoa Zoro
+			["card_800"] = { slotNumber = 800, rarity = "legendary", class = "dps" },   -- Vegeta
+			["card_1000"] = { slotNumber = 1000, rarity = "legendary", class = "dps" },  -- Goku
+			
+			-- Epic cards
+			["card_300"] = { slotNumber = 300, rarity = "epic", class = "dps" },        -- Rock Lee
+			["card_400"] = { slotNumber = 400, rarity = "epic", class = "tank" },        -- Tsunade
+			["card_1200"] = { slotNumber = 1200, rarity = "epic", class = "dps" },       -- All Might
+			
+			-- Rare cards
+			["card_500"] = { slotNumber = 500, rarity = "rare", class = "dps" },        -- Sanji
+			["card_900"] = { slotNumber = 900, rarity = "rare", class = "dps" },         -- Shino Aburame
+			["card_1500"] = { slotNumber = 1500, rarity = "rare", class = "dps" },       -- Bakugo
+			
+			-- Uncommon cards
+			["card_600"] = { slotNumber = 600, rarity = "uncommon", class = "support" },  -- Tenten
+			["card_700"] = { slotNumber = 700, rarity = "uncommon", class = "support" }, -- Koby
+			["card_1100"] = { slotNumber = 1100, rarity = "uncommon", class = "support" }, -- Usopp
+			["card_1300"] = { slotNumber = 1300, rarity = "uncommon", class = "support" }, -- Chopper
+			["card_1400"] = { slotNumber = 1400, rarity = "uncommon", class = "support" }, -- Krillin
+			["card_1600"] = { slotNumber = 1600, rarity = "uncommon", class = "dps" },   -- Yamcha
+			["card_1700"] = { slotNumber = 1700, rarity = "uncommon", class = "dps" },   -- Midoriya
+			["card_1800"] = { slotNumber = 1800, rarity = "uncommon", class = "support" }, -- Piccolo
+		}
 		return cards[cardId]
 	end
 }

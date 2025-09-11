@@ -8,33 +8,34 @@ local CombatEngineDevHarness = {}
 local CombatEngine = require(script.Parent:WaitForChild("CombatEngine"))
 
 -- Test decks (v2: all cards must be unique, using only valid card IDs)
--- Available cards: dps_001, dps_002, dps_003, dps_004, support_001, support_002, tank_001, tank_002
+-- Available cards: card_100, card_200, card_300, card_400, card_500, card_600, card_700, card_800, card_900, card_1000, card_1100, card_1200, card_1300, card_1400, card_1500, card_1600, card_1700, card_1800
+-- Note: MIRROR_MATCH uses high-attack cards to ensure damage is dealt (armor pool system)
 local TEST_DECKS = {
-	-- Mirror match (same deck vs itself)
+	-- Mirror match (same deck vs itself) - using higher attack cards
 	MIRROR_MATCH = {
-		deckA = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
-		deckB = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
+		deckA = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"},
+		deckB = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"},
 		description = "Mirror match with balanced deck"
 	},
 	
 	-- High damage vs high health (using available cards)
 	AGGRESSIVE_VS_DEFENSIVE = {
-		deckA = {"dps_001", "dps_002", "dps_003", "dps_004", "support_001", "support_002"}, -- High damage + support
-		deckB = {"tank_001", "tank_002", "dps_001", "dps_002", "support_001", "support_002"}, -- High health + support
+		deckA = {"card_100", "card_300", "card_500", "card_800", "card_900", "card_1000"}, -- High damage + support
+		deckB = {"card_200", "card_400", "card_100", "card_300", "card_500", "card_600"}, -- High health + support
 		description = "High damage vs high health"
 	},
 	
 	-- Support vs tank (using available cards)
 	SUPPORT_VS_TANK = {
-		deckA = {"support_001", "support_002", "dps_001", "dps_002", "dps_003", "dps_004"}, -- High support + damage
-		deckB = {"tank_001", "tank_002", "dps_001", "dps_002", "dps_003", "dps_004"}, -- High health + damage
+		deckA = {"card_600", "card_700", "card_1100", "card_1300", "card_1400", "card_1800"}, -- High support + damage
+		deckB = {"card_200", "card_400", "card_100", "card_300", "card_500", "card_800"}, -- High health + damage
 		description = "High support vs high health"
 	},
 	
 	-- Mixed composition (using available cards)
 	MIXED_COMPOSITION = {
-		deckA = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"},
-		deckB = {"dps_003", "dps_004", "support_001", "support_002", "tank_001", "tank_002"},
+		deckA = {"card_100", "card_200", "card_300", "card_500", "card_600", "card_700"},
+		deckB = {"card_800", "card_900", "card_1000", "card_1100", "card_1200", "card_1300"},
 		description = "Mixed composition battle"
 	}
 }
@@ -68,18 +69,23 @@ local function PrintBattleResult(result, testName)
 	print("Survivors B:", #result.survivorsB)
 	print("Total Actions:", #result.battleLog)
 	
-	-- Show first few actions
+	-- Show first few actions with armor info
 	print("\nFirst 5 Actions:")
 	local actionCount = 0
 	for _, logEntry in ipairs(result.battleLog) do
 		if logEntry.type == "attack" and actionCount < 5 then
-			print(string.format("  Round %d: %s slot %d → %s slot %d, damage: %d%s", 
+			local armorInfo = ""
+			if logEntry.defenceReduced and logEntry.defenceReduced > 0 then
+				armorInfo = string.format(", armor -%d", logEntry.defenceReduced)
+			end
+			print(string.format("  Round %d: %s slot %d → %s slot %d, HP damage: %d%s%s", 
 				logEntry.round,
 				logEntry.attackerPlayer,
 				logEntry.attackerSlot,
 				logEntry.defenderPlayer,
 				logEntry.defenderSlot,
 				logEntry.damage,
+				armorInfo,
 				logEntry.defenderKO and " (KO)" or ""
 			))
 			actionCount = actionCount + 1

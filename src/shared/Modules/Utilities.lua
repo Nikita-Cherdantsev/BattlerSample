@@ -34,36 +34,46 @@ Utilities.TweenUI = safeRequire(script.TweenUI)
 Utilities.Typewrite = safeRequire(script.Typewrite)
 
 -- Card Battler MVP Modules (v2) - may not be available on client
-Utilities.CardCatalog = safeRequire(script.Cards.CardCatalog)
-Utilities.CardLevels = safeRequire(script.Cards.CardLevels)
-Utilities.CardStats = safeRequire(script.Cards.CardStats)
-Utilities.DeckValidator = safeRequire(script.Cards.DeckValidator)
-Utilities.SeededRNG = safeRequire(script.RNG.SeededRNG)
-Utilities.CombatTypes = safeRequire(script.Combat.CombatTypes)
-Utilities.CombatUtils = safeRequire(script.Combat.CombatUtils)
-Utilities.GameConstants = safeRequire(script.Constants.GameConstants)
-Utilities.UIConstants = safeRequire(script.Constants.UIConstants)
-Utilities.SelfCheck = safeRequire(script.SelfCheck)
+-- Use absolute path to avoid module loading issues
+local Cards = script.Parent:FindFirstChild("Cards")
+if Cards then
+	Utilities.CardCatalog = safeRequire(Cards.CardCatalog)
+	Utilities.CardLevels = safeRequire(Cards.CardLevels)
+	Utilities.CardStats = safeRequire(Cards.CardStats)
+	Utilities.DeckValidator = safeRequire(Cards.DeckValidator)
+else
+	-- Fallback if Cards folder not found
+	Utilities.CardCatalog = { GetAllCards = function() return {} end }
+	Utilities.CardLevels = { GetLevel = function() return 1 end }
+	Utilities.CardStats = { GetStats = function() return {} end }
+	Utilities.DeckValidator = { ValidateDeck = function() return true, "Stub validator" end }
+end
+Utilities.SeededRNG = safeRequire(script.Parent.RNG.SeededRNG)
+Utilities.CombatTypes = safeRequire(script.Parent.Combat.CombatTypes)
+Utilities.CombatUtils = safeRequire(script.Parent.Combat.CombatUtils)
+Utilities.GameConstants = safeRequire(script.Parent.Constants.GameConstants)
+Utilities.UIConstants = safeRequire(script.Parent.Constants.UIConstants)
+Utilities.SelfCheck = safeRequire(script.Parent.SelfCheck)
 
 -- UI Integration Modules (safe to require on both client and server)
-Utilities.Types = safeRequire(script.Types)
-Utilities.ErrorMap = safeRequire(script.ErrorMap)
-Utilities.BoardLayout = safeRequire(script.BoardLayout)
-Utilities.TimeUtils = safeRequire(script.TimeUtils)
+Utilities.Types = safeRequire(script.Parent.Types)
+Utilities.ErrorMap = safeRequire(script.Parent.ErrorMap)
+Utilities.BoardLayout = safeRequire(script.Parent.BoardLayout)
+Utilities.TimeUtils = safeRequire(script.Parent.TimeUtils)
 
 -- Assets (safe to require on both client and server)
 Utilities.Assets = {
-	Manifest = safeRequire(script.Assets.Manifest),
-	Resolver = safeRequire(script.Assets.Resolver)
+	Manifest = safeRequire(script.Parent.Assets.Manifest),
+	Resolver = safeRequire(script.Parent.Assets.Resolver)
 }
 
 -- Lootbox System Modules (safe to require on both client and server)
-Utilities.BoxTypes = safeRequire(script.Loot.BoxTypes)
-Utilities.BoxDropTables = safeRequire(script.Loot.BoxDropTables)
-Utilities.BoxRoller = safeRequire(script.Loot.BoxRoller)
-Utilities.BoxValidator = safeRequire(script.Loot.BoxValidator)
+Utilities.BoxTypes = safeRequire(script.Parent.Loot.BoxTypes)
+Utilities.BoxDropTables = safeRequire(script.Parent.Loot.BoxDropTables)
+Utilities.BoxRoller = safeRequire(script.Parent.Loot.BoxRoller)
+Utilities.BoxValidator = safeRequire(script.Parent.Loot.BoxValidator)
 
 -- Shop System Modules (safe to require on both client and server)
-Utilities.ShopPacksCatalog = safeRequire(script.Shop.ShopPacksCatalog)
+Utilities.ShopPacksCatalog = safeRequire(script.Parent.Shop.ShopPacksCatalog)
 
 return Utilities

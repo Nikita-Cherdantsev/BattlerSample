@@ -240,10 +240,10 @@ local function ExecuteAttack(attacker, defender, battleState)
 		ApplyPassiveEffects(attacker, "on_death", deathContext)
 	end
 	
-	LogInfo("Attack: %s slot %d → %s slot %d, damage: %d, defence reduced: %d, KO: %s", 
+	LogInfo("Attack: %s slot %d → %s slot %d, HP damage: %d, armor reduced: %d, defender HP: %d, defender armor: %d, KO: %s", 
 		attacker.playerId, attacker.slotIndex, 
 		defender.playerId, defender.slotIndex, 
-		damageResult.damageToHp, damageResult.defenceReduced, tostring(logEntry.defenderKO))
+		damageResult.damageToHp, damageResult.defenceReduced, defender.stats.health, defender.stats.defence, tostring(logEntry.defenderKO))
 	
 	return true
 end

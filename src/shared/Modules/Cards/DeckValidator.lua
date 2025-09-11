@@ -67,6 +67,15 @@ function DeckValidator.MapDeckToBoard(deck)
 	local cardData = {}
 	for i, cardId in ipairs(deck) do
 		local card = CardCatalog.GetCard(cardId)
+		if not card then
+			error("Card not found in catalog: " .. cardId)
+		end
+		if not card.slotNumber then
+			error("Card missing slotNumber: " .. cardId)
+		end
+		if type(card.slotNumber) ~= "number" then
+			error("Card slotNumber is not a number: " .. cardId .. " (type: " .. type(card.slotNumber) .. ", value: " .. tostring(card.slotNumber) .. ")")
+		end
 		table.insert(cardData, {
 			cardId = cardId,
 			card = card,
@@ -76,6 +85,13 @@ function DeckValidator.MapDeckToBoard(deck)
 	
 	-- Sort by slotNumber (ascending)
 	table.sort(cardData, function(a, b)
+		-- Additional safety check
+		if not a.slotNumber or not b.slotNumber then
+			error("Invalid slotNumber in deck validation: a=" .. tostring(a.slotNumber) .. ", b=" .. tostring(b.slotNumber))
+		end
+		if type(a.slotNumber) ~= "number" or type(b.slotNumber) ~= "number" then
+			error("slotNumber must be a number: a=" .. tostring(a.slotNumber) .. " (type: " .. type(a.slotNumber) .. "), b=" .. tostring(b.slotNumber) .. " (type: " .. type(b.slotNumber) .. ")")
+		end
 		return a.slotNumber < b.slotNumber
 	end)
 	

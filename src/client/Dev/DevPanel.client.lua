@@ -162,33 +162,15 @@ function DevPanel.create()
 	refreshButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
 	
-	-- Set Sample Deck button
+	-- Set Sample Deck button (high-attack cards for proper battles)
 	local sampleDeckButton = createButton(buttonContainer, "Set Sample Deck", function()
 		log("Set Sample Deck clicked")
 		
-		-- Get first 6 unique card IDs from client card data (by slotNumber)
-		local allCards = {}
-		for cardId, card in pairs(CLIENT_CARD_DATA) do
-			table.insert(allCards, {id = cardId, slotNumber = card.slotNumber})
-		end
+		-- Use high-attack cards to ensure proper battles (same as tests)
+		local deckIds = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
 		
-		-- Sort by slotNumber
-		table.sort(allCards, function(a, b)
-			return a.slotNumber < b.slotNumber
-		end)
-		
-		-- Take first 6
-		local deckIds = {}
-		for i = 1, math.min(6, #allCards) do
-			table.insert(deckIds, allCards[i].id)
-		end
-		
-		if #deckIds == 6 then
-			log("Setting sample deck: %s", table.concat(deckIds, ", "))
-			NetworkClient.requestSetDeck(deckIds)
-		else
-			log("Not enough cards for sample deck")
-		end
+		log("Setting high-attack sample deck: %s", table.concat(deckIds, ", "))
+		NetworkClient.requestSetDeck(deckIds)
 	end)
 	sampleDeckButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
@@ -272,8 +254,8 @@ function DevPanel.create()
 		
 		-- Get current state
 		local state = ClientState.getState()
-		if not state.profile then
-			log("No profile available for collection summary")
+		if not state.profile or not state.profile.collection then
+			log("No profile or collection available for collection summary")
 			return
 		end
 		

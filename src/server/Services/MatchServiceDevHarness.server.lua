@@ -17,6 +17,14 @@ local MockPlayer = {
 	Name = "MatchService_TestPlayer"
 }
 
+-- Test deck: high-attack cards to ensure damage is dealt (armor pool system)
+-- card_800 (Vegeta): atk=6, defence=0
+-- card_1000 (Goku): atk=9, defence=0  
+-- card_1200 (All Might): atk=5, defence=0
+-- card_1500 (Bakugo): atk=4, defence=0
+-- card_1800 (Piccolo): atk=3, defence=0
+-- card_300 (Rock Lee): atk=2, defence=2
+
 -- Utility functions
 local function LogInfo(message, ...)
 	local formattedMessage = string.format(message, ...)
@@ -75,11 +83,26 @@ local function TestHappyPath()
 	-- Enable test mode to bypass rate limits
 	MatchService.EnableTestMode(MockPlayer)
 	
-	-- Ensure player has a valid deck
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
+	-- Ensure player has a valid deck with high-attack cards (same as CombatEngine tests)
+	local validDeck = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
 	
-	-- Set up player deck (this would normally be done via PlayerDataService)
-	-- For testing, we'll assume the player has a valid deck
+	-- First, ensure the player profile is loaded
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Failed to load player profile for test")
+		testResults.happyPath = false
+		return false
+	end
+	LogInfo("Player profile loaded successfully")
+	
+	-- Set up player deck using PlayerDataService
+	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
+	if not success then
+		LogError("Failed to set test deck: %s", errorMessage)
+		testResults.happyPath = false
+		return false
+	end
+	LogInfo("Test deck set successfully")
 	
 	local requestData = {
 		mode = "PvE",
@@ -102,6 +125,25 @@ end
 
 local function TestDeterminism()
 	LogInfo("Testing determinism...")
+	
+	-- Ensure test mode is enabled and deck is set up
+	MatchService.EnableTestMode(MockPlayer)
+	
+	-- First, ensure the player profile is loaded
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Failed to load player profile for determinism test")
+		testResults.determinism = false
+		return false
+	end
+	
+	local validDeck = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
+	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
+	if not success then
+		LogError("Failed to set test deck for determinism test: %s", errorMessage)
+		testResults.determinism = false
+		return false
+	end
 	
 	local requestData = {
 		mode = "PvE",
@@ -211,8 +253,24 @@ end
 local function TestConcurrencyGuard()
 	LogInfo("Testing concurrency guard...")
 	
-	-- Ensure test mode is enabled for concurrency testing
+	-- Ensure test mode is enabled and deck is set up for concurrency testing
 	MatchService.EnableTestMode(MockPlayer)
+	
+	-- First, ensure the player profile is loaded
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Failed to load player profile for concurrency test")
+		testResults.concurrencyGuard = false
+		return false
+	end
+	
+	local validDeck = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
+	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
+	if not success then
+		LogError("Failed to set test deck for concurrency test: %s", errorMessage)
+		testResults.concurrencyGuard = false
+		return false
+	end
 	
 	-- Kick off the first match in another thread (it sets isInMatch = true immediately)
 	local ok1, code1
@@ -271,8 +329,24 @@ end
 local function TestPvPMode()
 	LogInfo("Testing PvP mode...")
 	
-	-- Ensure test mode is enabled for PvP testing
+	-- Ensure test mode is enabled and deck is set up for PvP testing
 	MatchService.EnableTestMode(MockPlayer)
+	
+	-- First, ensure the player profile is loaded
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Failed to load player profile for PvP test")
+		testResults.pvpMode = false
+		return false
+	end
+	
+	local validDeck = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
+	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
+	if not success then
+		LogError("Failed to set test deck for PvP test: %s", errorMessage)
+		testResults.pvpMode = false
+		return false
+	end
 	
 	local requestData = {
 		mode = "PvP"
@@ -295,8 +369,24 @@ end
 local function TestPlayerStatus()
 	LogInfo("Testing player status...")
 	
-	-- Ensure test mode is enabled for status testing
+	-- Ensure test mode is enabled and deck is set up for status testing
 	MatchService.EnableTestMode(MockPlayer)
+	
+	-- First, ensure the player profile is loaded
+	local profile = PlayerDataService.EnsureProfileLoaded(MockPlayer)
+	if not profile then
+		LogError("Failed to load player profile for status test")
+		testResults.playerStatus = false
+		return false
+	end
+	
+	local validDeck = {"card_800", "card_1000", "card_1200", "card_1500", "card_1800", "card_300"}
+	local success, errorMessage = PlayerDataService.SetDeck(MockPlayer, validDeck)
+	if not success then
+		LogError("Failed to set test deck for status test: %s", errorMessage)
+		testResults.playerStatus = false
+		return false
+	end
 	
 	local status = MatchService.GetPlayerStatus(MockPlayer)
 	

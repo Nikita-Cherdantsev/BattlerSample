@@ -28,7 +28,22 @@ local function notifySubscribers()
 end
 
 local function log(message, ...)
-	print(string.format("[ClientState] %s", string.format(message, ...)))
+	local args = {...}
+	for i, arg in ipairs(args) do
+		args[i] = tostring(arg)
+	end
+	
+	-- Use pcall to safely format the message
+	local success, formattedMessage = pcall(string.format, message, table.unpack(args))
+	if success then
+		print(string.format("[ClientState] %s", formattedMessage))
+	else
+		-- Fallback: just print the message and args separately
+		print(string.format("[ClientState] %s", message))
+		for i, arg in ipairs(args) do
+			print(string.format("  Arg %d: %s", i, arg))
+		end
+	end
 end
 
 -- Public API
@@ -161,7 +176,7 @@ end
 function ClientState.setLastError(error)
 	state.lastError = error
 	if error then
-		log("Error set: %s - %s", error.code, error.message)
+		log("Error set: %s - %s", tostring(error.code), tostring(error.message))
 	else
 		log("Error cleared")
 	end

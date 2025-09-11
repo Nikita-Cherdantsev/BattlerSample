@@ -69,7 +69,7 @@ UIConstants.ANIMATION = {
 	
 	-- Easing directions (string identifiers for now)
 	DIRECTION = {
-		in = "in",
+		["in"] = "in",
 		out = "out",
 		in_out = "in_out"
 	}

@@ -9,26 +9,31 @@ local Manifest = {}
 
 -- Card images (TODO: Replace with actual card art)
 Manifest.CardImages = {
-	-- DPS cards
-	["dps_001"] = "rbxassetid://0", -- TODO: Add dps_001 card art
-	["dps_002"] = "rbxassetid://0", -- TODO: Add dps_002 card art
-	["dps_003"] = "rbxassetid://0", -- TODO: Add dps_003 card art
-	["dps_004"] = "rbxassetid://0", -- TODO: Add dps_004 card art
-	["dps_005"] = "rbxassetid://0", -- TODO: Add dps_005 card art
+	-- Legendary cards
+	["card_100"] = "rbxassetid://0",  -- Monkey D. Luffy
+	["card_200"] = "rbxassetid://0",  -- Roronoa Zoro
+	["card_800"] = "rbxassetid://0",  -- Vegeta
+	["card_1000"] = "rbxassetid://0", -- Goku
 	
-	-- Support cards
-	["support_001"] = "rbxassetid://0", -- TODO: Add support_001 card art
-	["support_002"] = "rbxassetid://0", -- TODO: Add support_002 card art
-	["support_003"] = "rbxassetid://0", -- TODO: Add support_003 card art
-	["support_004"] = "rbxassetid://0", -- TODO: Add support_004 card art
-	["support_005"] = "rbxassetid://0", -- TODO: Add support_005 card art
+	-- Epic cards
+	["card_300"] = "rbxassetid://0",  -- Rock Lee
+	["card_400"] = "rbxassetid://0",  -- Tsunade
+	["card_1200"] = "rbxassetid://0", -- All Might
 	
-	-- Tank cards
-	["tank_001"] = "rbxassetid://0", -- TODO: Add tank_001 card art
-	["tank_002"] = "rbxassetid://0", -- TODO: Add tank_002 card art
-	["tank_003"] = "rbxassetid://0", -- TODO: Add tank_003 card art
-	["tank_004"] = "rbxassetid://0", -- TODO: Add tank_004 card art
-	["tank_005"] = "rbxassetid://0", -- TODO: Add tank_005 card art
+	-- Rare cards
+	["card_500"] = "rbxassetid://0",  -- Sanji
+	["card_900"] = "rbxassetid://0",  -- Shino Aburame
+	["card_1500"] = "rbxassetid://0", -- Bakugo
+	
+	-- Uncommon cards
+	["card_600"] = "rbxassetid://0",  -- Tenten
+	["card_700"] = "rbxassetid://0",  -- Koby
+	["card_1100"] = "rbxassetid://0", -- Usopp
+	["card_1300"] = "rbxassetid://0", -- Chopper
+	["card_1400"] = "rbxassetid://0", -- Krillin
+	["card_1600"] = "rbxassetid://0", -- Yamcha
+	["card_1700"] = "rbxassetid://0", -- Midoriya
+	["card_1800"] = "rbxassetid://0", -- Piccolo
 }
 
 -- Class icons (TODO: Replace with actual class icons)

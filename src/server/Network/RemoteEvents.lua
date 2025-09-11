@@ -7,7 +7,7 @@ local Players = game:GetService("Players")
 -- Modules
 local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
-local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
+-- local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService")) -- Temporarily disabled
 
 -- Network folder and RemoteEvents (created in Init)
 local NetworkFolder = nil
@@ -555,7 +555,8 @@ local function HandleRequestAddBox(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.TryAddBox(player.UserId, requestData.rarity, requestData.source)
+	-- local result = LootboxService.TryAddBox(player.UserId, requestData.rarity, requestData.source) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -587,7 +588,7 @@ local function HandleRequestAddBox(player, requestData)
 	if result.ok then
 		LogInfo(player, "Box added successfully")
 	else
-		LogWarning(player, "Add box failed: %s", result.error)
+		LogWarning(player, "Add box failed: %s", tostring(result.error))
 	end
 end
 
@@ -607,7 +608,8 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.ResolvePendingDiscard(player.UserId)
+	-- local result = LootboxService.ResolvePendingDiscard(player.UserId) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -639,7 +641,7 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	if result.ok then
 		LogInfo(player, "Pending box discarded successfully")
 	else
-		LogWarning(player, "Discard pending failed: %s", result.error)
+		LogWarning(player, "Discard pending failed: %s", tostring(result.error))
 	end
 end
 
@@ -681,7 +683,8 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex)
+	-- local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -713,7 +716,7 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	if result.ok then
 		LogInfo(player, "Pending box replaced successfully")
 	else
-		LogWarning(player, "Replace pending failed: %s", result.error)
+		LogWarning(player, "Replace pending failed: %s", tostring(result.error))
 	end
 end
 
@@ -755,7 +758,8 @@ local function HandleRequestStartUnlock(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time())
+	-- local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -787,7 +791,7 @@ local function HandleRequestStartUnlock(player, requestData)
 	if result.ok then
 		LogInfo(player, "Unlock started successfully")
 	else
-		LogWarning(player, "Start unlock failed: %s", result.error)
+		LogWarning(player, "Start unlock failed: %s", tostring(result.error))
 	end
 end
 
@@ -829,7 +833,8 @@ local function HandleRequestOpenNow(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time())
+	-- local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -868,7 +873,7 @@ local function HandleRequestOpenNow(player, requestData)
 	if result.ok then
 		LogInfo(player, "Box opened instantly successfully")
 	else
-		LogWarning(player, "Open now failed: %s", result.error)
+		LogWarning(player, "Open now failed: %s", tostring(result.error))
 	end
 end
 
@@ -910,7 +915,8 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	end
 	
 	-- Call LootboxService
-	local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
+	-- local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
+	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -949,7 +955,7 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	if result.ok then
 		LogInfo(player, "Unlock completed successfully")
 	else
-		LogWarning(player, "Complete unlock failed: %s", result.error)
+		LogWarning(player, "Complete unlock failed: %s", tostring(result.error))
 	end
 end
 

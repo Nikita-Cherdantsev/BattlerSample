@@ -264,8 +264,8 @@ function ProfileSchema.CreateProfile(playerId)
 	
 	-- Default starter cards (from CardCatalog) - 6 unique cards for deck
 	local starterCards = {
-		"dps_001", "support_001", "tank_001",  -- 3 unique starter cards
-		"dps_002", "support_002", "tank_002"   -- 3 more unique cards
+		"card_100", "card_200", "card_300",  -- 3 unique starter cards (Luffy, Zoro, Rock Lee)
+		"card_500", "card_600", "card_700"   -- 3 more unique cards (Sanji, Tenten, Koby)
 	}
 	
 	-- Create starter collection with default cards (v2 format)

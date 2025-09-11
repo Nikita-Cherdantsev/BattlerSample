@@ -16,7 +16,20 @@ DailyHandler.isAnimating = false
 function DailyHandler:Init(controller)
 	self.Controller = controller
 	self.ClientState = controller:GetClientState()
-	self.Utilities = controller:GetModule("Utilities")
+	
+	-- Safe require of Utilities to avoid loading errors
+	local success, utilities = pcall(function()
+		return controller:GetModule("Utilities")
+	end)
+	
+	if success then
+		self.Utilities = utilities
+	else
+		warn("DailyHandler: Could not load Utilities module: " .. tostring(utilities))
+		self.Utilities = {
+			CardCatalog = { GetAllCards = function() return {} end }
+		}
+	end
 
 	-- Setup daily bonus functionality
 	self:SetupDaily()
@@ -27,141 +40,208 @@ function DailyHandler:Init(controller)
 end
 
 function DailyHandler:SetupDaily()
-	local UI = self.ClientState:getUI()
-	--local Remotes = self.ClientState:GetRemotes()
-	--local PlayerData = self.ClientState:getProfile()
-
-	if not UI then
-		warn("DailyHandler: UI not available")
-		return
+	-- Try to access UI from player's PlayerGui (which should be copied from StarterGui)
+	local Players = game:GetService("Players")
+	local player = Players.LocalPlayer
+	local playerGui = player:WaitForChild("PlayerGui")
+	
+	print("DailyHandler: Looking for UI in PlayerGui...")
+	
+	-- Debug: Print all children in PlayerGui
+	print("Available children in PlayerGui:")
+	for _, child in pairs(playerGui:GetChildren()) do
+		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
-
-	-- Ensure Daily window exists
-	if not UI:FindFirstChild("Daily") then
-		warn("DailyHandler: Daily window not found in UI")
-		return
-	end
-
-	UI.Daily.Visible = false
-
-	-- Setup HUD button click
-	self:SetupOpenButton(UI--[[, Remotes, PlayerData]])
-
-	-- Setup claim click
-	self:SetupClaimButton(UI--[[, Remotes]])
-
-	-- Setup close button
-	self:SetupCloseButton(UI)
-
-	-- Setup remote event listener
-	--[[if Remotes and Remotes.DailyBonus then
-		local connection = Remotes.DailyBonus.OnClientEvent:Connect(function(action, ...)
-			local rewards, day, isClaimed = ...
-			if action == "Show" then
-				self:OpenWindow(UI, rewards, day, isClaimed)
-			elseif action == "Claimed" then
-				self:UpdateDaily(UI, rewards, day, isClaimed)
-				task.wait(0.3)
-				self:CloseWindow(UI)
-			end
-		end)
-		
-		table.insert(self.Connections, connection)
+	
+	-- Debug: Check if GameUI already exists
+	local existingGameUI = playerGui:FindFirstChild("GameUI")
+	if existingGameUI then
+		print("DailyHandler: Found existing GameUI: " .. tostring(existingGameUI))
+		print("DailyHandler: GameUI parent: " .. tostring(existingGameUI.Parent))
+		print("DailyHandler: GameUI children count: " .. #existingGameUI:GetChildren())
 	else
-		warn("DailyHandler: DailyBonus remote not found")
-	end]]
-end
-
-function DailyHandler:SetupOpenButton(UI, Remotes, PlayerData)
-	if not UI.LeftPanel or not UI.LeftPanel:FindFirstChild("Daily") then
-		warn("DailyHandler: Daily button not found in LeftPanel")
+		print("DailyHandler: No existing GameUI found")
+	end
+	
+	-- Wait for Roblox to automatically clone GameUI from StarterGui
+	-- This is the correct way to get the UI that the player can actually interact with
+	local gameGui = playerGui:WaitForChild("GameUI", 10) -- Wait up to 10 seconds
+	
+	if not gameGui then
+		warn("DailyHandler: GameUI not found in PlayerGui after waiting")
 		return
 	end
-
-	local button : TextButton = UI.LeftPanel.Daily.Button
-	local connection = button.MouseButton1Click:Connect(function()
-		if Remotes and Remotes.DailyBonus then
-			Remotes.DailyBonus:FireServer("ShowRequest")
-		else
-			-- Fallback: just open the window for testing
-			self:OpenWindow(UI, {}, 1, false)
+	
+	print("DailyHandler: Found GameUI: " .. tostring(gameGui))
+	
+	print("DailyHandler: Main UI container found: " .. gameGui.Name)
+	
+	-- Check if Daily frame exists
+	local dailyFrame = gameGui:FindFirstChild("Daily")
+	if not dailyFrame then
+		warn("DailyHandler: Daily frame not found in " .. gameGui.Name .. " - Daily UI not available")
+		print("DailyHandler: Available children in " .. gameGui.Name .. ":")
+		for _, child in pairs(gameGui:GetChildren()) do
+			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
-	end)
-
-	table.insert(self.Connections, connection)
+		return
+	end
+	
+	print("DailyHandler: Daily frame found, setting up handlers...")
+	
+	-- Store UI reference for later use
+	self.UI = gameGui
+	self.DailyFrame = dailyFrame
+	
+	-- Hide daily initially
+	dailyFrame.Visible = false
+	
+	-- Setup daily functionality
+	self:SetupOpenButton()
+	self:SetupClaimButton()
+	self:SetupCloseButton()
+	
+	print("✅ DailyHandler: Daily UI setup completed")
 end
 
-function DailyHandler:SetupClaimButton(UI, Remotes)	
-	if not UI.Daily or not UI.Daily:FindFirstChild("Claim") then
-		warn("DailyHandler: Claim button not found in Daily window")
+function DailyHandler:SetupOpenButton()
+	-- Look for daily button in the UI
+	-- Path: GameUI -> LeftPanel -> Daily -> Button
+	print("DailyHandler: Looking for daily button...")
+	
+	local leftPanel = self.UI:FindFirstChild("LeftPanel")
+	if not leftPanel then
+		warn("DailyHandler: LeftPanel not found in GameUI")
+		return
+	end
+	
+	print("DailyHandler: LeftPanel found, looking for Daily...")
+	local dailyFrame = leftPanel:FindFirstChild("Daily")
+	if not dailyFrame then
+		warn("DailyHandler: Daily frame not found in LeftPanel")
+		return
+	end
+	
+	print("DailyHandler: Daily found, looking for Button...")
+	local dailyButton = dailyFrame:FindFirstChild("Button")
+	if not dailyButton then
+		warn("DailyHandler: Button not found in Daily frame")
+		return
+	end
+	
+	print("DailyHandler: Daily button found: " .. dailyButton.Name .. " (" .. dailyButton.ClassName .. ")")
+	
+	-- Test if the button has the right events
+	if dailyButton:IsA("GuiButton") then
+		local connection = dailyButton.MouseButton1Click:Connect(function()
+			print("DailyHandler: Daily button clicked!")
+			print("DailyHandler: Button instance: " .. tostring(dailyButton))
+			print("DailyHandler: Button parent: " .. tostring(dailyButton.Parent))
+			print("DailyHandler: Button parent parent: " .. tostring(dailyButton.Parent.Parent))
+			-- For now, just open the window for testing
+			-- TODO: Add RemoteEvent integration when DailyBonus remote is available
+			self:OpenWindow({}, 1, false)
+		end)
+		table.insert(self.Connections, connection)
+		print("✅ DailyHandler: Open button connected")
+		print("DailyHandler: Button connection created for: " .. tostring(dailyButton))
+	else
+		warn("DailyHandler: Found element '" .. dailyButton.Name .. "' but it's not a GuiButton (it's a " .. dailyButton.ClassName .. ")")
+	end
+end
+
+function DailyHandler:SetupClaimButton()
+	-- Look for claim button in the daily frame
+	local claimButton = self.DailyFrame:FindFirstChild("Claim")
+	if claimButton then
+		claimButton = claimButton:FindFirstChild("Button")
+	end
+	
+	-- Alternative: look for claim button directly in daily frame
+	if not claimButton then
+		claimButton = self.DailyFrame:FindFirstChild("ClaimButton")
+	end
+	
+	if not claimButton then
+		warn("DailyHandler: Claim button not found - you may need to add a ClaimButton to Daily frame")
 		return
 	end
 
-	local button : TextButton = UI.Daily.Claim.Button
-	local connection = button.MouseButton1Click:Connect(function()
-		if Remotes and Remotes.DailyBonus then
-			Remotes.DailyBonus:FireServer("Claim")
-		else
-			-- Fallback: simulate claim for testing
-			print("DailyHandler: Claim button clicked (mock mode)")
-			self:CloseWindow(UI)
-		end
+	local connection = claimButton.MouseButton1Click:Connect(function()
+		-- For now, simulate claim for testing
+		-- TODO: Add RemoteEvent integration when DailyBonus remote is available
+		print("DailyHandler: Claim button clicked (mock mode)")
+		self:CloseWindow()
 	end)
 
 	table.insert(self.Connections, connection)
+	print("✅ DailyHandler: Claim button connected")
 end
 
-function DailyHandler:SetupCloseButton(UI)
-	if not UI.Daily or not UI.Daily:FindFirstChild("Close") then
-		warn("DailyHandler: Close button not found in Daily window")
+function DailyHandler:SetupCloseButton()
+	-- Look for close button in the daily frame
+	local closeButton = self.DailyFrame:FindFirstChild("Close")
+	if closeButton then
+		closeButton = closeButton:FindFirstChild("Button")
+	end
+	
+	-- Alternative: look for close button directly in daily frame
+	if not closeButton then
+		closeButton = self.DailyFrame:FindFirstChild("CloseButton")
+	end
+	
+	if not closeButton then
+		warn("DailyHandler: Close button not found - you may need to add a CloseButton to Daily frame")
 		return
 	end
 
-	local button : TextButton = UI.Daily.Close.Button
-	local connection = button.MouseButton1Click:Connect(function()
-		self:CloseWindow(UI)
+	local connection = closeButton.MouseButton1Click:Connect(function()
+		self:CloseWindow()
 	end)
 
 	table.insert(self.Connections, connection)
+	print("✅ DailyHandler: Close button connected")
 end
 
-function DailyHandler:OpenWindow(UI, rewards, day, isClaimed)
+function DailyHandler:OpenWindow(rewards, day, isClaimed)
 	if self.isAnimating then return end
 	self.isAnimating = true
 
-	-- Hide HUD
-	if UI.LeftPanel then
-		UI.LeftPanel.Visible = false
+	-- Hide HUD panels if they exist
+	if self.UI.LeftPanel then
+		self.UI.LeftPanel.Visible = false
 	end
-	if UI.BottomPanel then
-		UI.BottomPanel.Visible = false
+	if self.UI.BottomPanel then
+		self.UI.BottomPanel.Visible = false
 	end
 
 	-- Show daily gui
-	self:UpdateDaily(UI, rewards, day, isClaimed)
+	self:UpdateDaily(rewards, day, isClaimed)
 
-	UI.Daily.Visible = true
+	self.DailyFrame.Visible = true
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
-		self.Utilities.TweenUI.FadeIn(UI.Daily, .3, function ()
+		self.Utilities.TweenUI.FadeIn(self.DailyFrame, .3, function ()
 			self.isAnimating = false
 		end)
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
 	end
+	
+	print("✅ DailyHandler: Daily window opened")
 end
 
-function DailyHandler:UpdateDaily(UI, rewards, day, isClaimed)
+function DailyHandler:UpdateDaily(rewards, day, isClaimed)
 	-- Check if the expected UI structure exists
-	if not UI.Daily or not UI.Daily:FindFirstChild("Base") then
+	if not self.DailyFrame or not self.DailyFrame:FindFirstChild("Base") then
 		return
 	end
 
 	-- Update rewards display
 	for i, dailyRewards in ipairs(rewards) do
-		local rewardFrame : Frame = UI.Daily.Base.Inner.Content.Rewards["Reward" .. i]
+		local rewardFrame = self.DailyFrame.Base.Inner.Content.Rewards["Reward" .. i]
 		if rewardFrame then
 			for j, reward in ipairs(dailyRewards) do
 				local rewardElement = rewardFrame["Reward" .. j]
@@ -189,37 +269,39 @@ function DailyHandler:UpdateDaily(UI, rewards, day, isClaimed)
 	end
 
 	-- Update button visibility
-	if UI.Daily.Claim then
-		UI.Daily.Claim.Visible = not isClaimed
+	if self.DailyFrame.Claim then
+		self.DailyFrame.Claim.Visible = not isClaimed
 	end
-	if UI.Daily.Close then
-		UI.Daily.Close.Visible = isClaimed
+	if self.DailyFrame.Close then
+		self.DailyFrame.Close.Visible = isClaimed
 	end
 end
 
-function DailyHandler:CloseWindow(UI)
+function DailyHandler:CloseWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
 
 	-- Hide daily gui
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
-		self.Utilities.TweenUI.FadeOut(UI.Daily, .3, function () 
-			UI.Daily.Visible = false
+		self.Utilities.TweenUI.FadeOut(self.DailyFrame, .3, function () 
+			self.DailyFrame.Visible = false
 			self.isAnimating = false
 		end)
 	else
 		-- Fallback: no animation
-		UI.Daily.Visible = false
+		self.DailyFrame.Visible = false
 		self.isAnimating = false
 	end
 
-	-- Show HUD
-	if UI.LeftPanel then
-		UI.LeftPanel.Visible = true
+	-- Show HUD panels
+	if self.UI.LeftPanel then
+		self.UI.LeftPanel.Visible = true
 	end
-	if UI.BottomPanel then
-		UI.BottomPanel.Visible = true
+	if self.UI.BottomPanel then
+		self.UI.BottomPanel.Visible = true
 	end
+	
+	print("✅ DailyHandler: Daily window closed")
 end
 
 --// Public Methods

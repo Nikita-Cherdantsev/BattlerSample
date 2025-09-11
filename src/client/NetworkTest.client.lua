@@ -22,18 +22,54 @@ local isTestComplete = false
 
 -- Utility functions
 local function LogInfo(message, ...)
-	local formattedMessage = string.format(message, ...)
-	print(string.format("[NetworkTest] %s", formattedMessage))
+	local args = {...}
+	for i, arg in ipairs(args) do
+		args[i] = tostring(arg)
+	end
+	
+	local success, formattedMessage = pcall(string.format, message, table.unpack(args))
+	if success then
+		print(string.format("[NetworkTest] %s", formattedMessage))
+	else
+		print(string.format("[NetworkTest] %s", message))
+		for i, arg in ipairs(args) do
+			print(string.format("  Arg %d: %s", i, arg))
+		end
+	end
 end
 
 local function LogSuccess(message, ...)
-	local formattedMessage = string.format(message, ...)
-	print(string.format("✅ [NetworkTest] %s", formattedMessage))
+	local args = {...}
+	for i, arg in ipairs(args) do
+		args[i] = tostring(arg)
+	end
+	
+	local success, formattedMessage = pcall(string.format, message, table.unpack(args))
+	if success then
+		print(string.format("✅ [NetworkTest] %s", formattedMessage))
+	else
+		print(string.format("✅ [NetworkTest] %s", message))
+		for i, arg in ipairs(args) do
+			print(string.format("  Arg %d: %s", i, arg))
+		end
+	end
 end
 
 local function LogError(message, ...)
-	local formattedMessage = string.format(message, ...)
-	warn(string.format("❌ [NetworkTest] %s", formattedMessage))
+	local args = {...}
+	for i, arg in ipairs(args) do
+		args[i] = tostring(arg)
+	end
+	
+	local success, formattedMessage = pcall(string.format, message, table.unpack(args))
+	if success then
+		warn(string.format("❌ [NetworkTest] %s", formattedMessage))
+	else
+		warn(string.format("❌ [NetworkTest] %s", message))
+		for i, arg in ipairs(args) do
+			warn(string.format("  Arg %d: %s", i, arg))
+		end
+	end
 end
 
 local function WaitForResponse(timeout)
@@ -57,7 +93,7 @@ ProfileUpdated.OnClientEvent:Connect(function(payload)
 	LogInfo("Received ProfileUpdated event")
 	
 	if payload.error then
-		LogError("Error received: %s - %s", payload.error.code, payload.error.message)
+		LogError("Error received: %s - %s", tostring(payload.error.code), tostring(payload.error.message))
 		testResults.lastError = payload.error
 	else
 		LogSuccess("Profile update received successfully")
@@ -95,7 +131,7 @@ local function TestRequestProfile()
 	-- Wait for response
 	if WaitForResponse() then
 		if testResults.lastError then
-			LogError("RequestProfile failed: %s", testResults.lastError.message)
+			LogError("RequestProfile failed: %s", tostring(testResults.lastError.message))
 			return false
 		else
 			LogSuccess("RequestProfile successful")
@@ -116,7 +152,7 @@ local function TestRequestSetDeckValid()
 	isTestComplete = false
 	
 	-- Valid deck (using cards that should exist in default collection, no duplicates)
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
+	local validDeck = {"card_100", "card_200", "card_300", "card_500", "card_600", "card_700"}
 	
 	-- Send deck update request
 	RequestSetDeck:FireServer({deck = validDeck})
@@ -124,7 +160,7 @@ local function TestRequestSetDeckValid()
 	-- Wait for response
 	if WaitForResponse() then
 		if testResults.lastError then
-			LogError("RequestSetDeck valid failed: %s", testResults.lastError.message)
+			LogError("RequestSetDeck valid failed: %s", tostring(testResults.lastError.message))
 			return false
 		else
 			LogSuccess("RequestSetDeck valid successful")
@@ -145,7 +181,7 @@ local function TestRequestSetDeckInvalid()
 	isTestComplete = false
 	
 	-- Invalid deck (wrong size)
-	local invalidDeck = {"dps_001", "support_001"}
+	local invalidDeck = {"card_100", "card_200"}
 	
 	-- Send deck update request
 	RequestSetDeck:FireServer({deck = invalidDeck})
@@ -153,7 +189,7 @@ local function TestRequestSetDeckInvalid()
 	-- Wait for response
 	if WaitForResponse() then
 		if testResults.lastError then
-			LogSuccess("RequestSetDeck invalid correctly rejected: %s", testResults.lastError.message)
+			LogSuccess("RequestSetDeck invalid correctly rejected: %s", tostring(testResults.lastError.message))
 			return true
 		else
 			LogError("RequestSetDeck invalid was incorrectly accepted")
@@ -182,7 +218,7 @@ local function TestRequestSetDeckOverLimit()
 	-- Wait for response
 	if WaitForResponse() then
 		if testResults.lastError then
-			LogSuccess("RequestSetDeck over-limit correctly rejected: %s", testResults.lastError.message)
+			LogSuccess("RequestSetDeck over-limit correctly rejected: %s", tostring(testResults.lastError.message))
 			return true
 		else
 			LogError("RequestSetDeck over-limit was incorrectly accepted")

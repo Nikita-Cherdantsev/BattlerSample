@@ -2,6 +2,30 @@
 
 This document provides the essential information for integrating the UI with the Card Battler server.
 
+## Table of Contents
+
+- [RemoteEvents Overview](#remoteevents-overview)
+- [Payload Fields](#payload-fields)
+- [Assets Manifest](#assets-manifest)
+- [Config Flags](#config-flags)
+- [Mock Layer](#mock-layer)
+- [Shared Modules](#shared-modules)
+- [Deck Rendering](#deck-rendering)
+- [Error Handling](#error-handling)
+- [Time Synchronization](#time-synchronization)
+- [Client Integration Layer](#client-integration-layer)
+- [Level-Up Flow](#level-up-flow)
+- [Collection View](#collection-view)
+- [Dev Harness](#dev-harness)
+- [Assets](#assets)
+- [Configuration Flags](#configuration-flags)
+- [Mocks](#mocks)
+- [Dev Panel](#dev-panel)
+- [Client-Side Architecture](#client-side-architecture)
+- [Troubleshooting](#troubleshooting)
+- [Lootboxes UI](#lootboxes-ui)
+- [Deck Uniqueness and Ordering](#deck-uniqueness-and-ordering)
+
 ## RemoteEvents Overview
 
 The server communicates with clients through these key RemoteEvents:
@@ -9,9 +33,19 @@ The server communicates with clients through these key RemoteEvents:
 ### 1. Profile Management
 - **`RequestProfile`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestSetDeck`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestLevelUpCard`** (C→S) → **`ProfileUpdated`** (S→C)
 
 ### 2. Match System
 - **`RequestStartMatch`** (C→S) → **Response on same event** (S→C)
+
+### 3. Lootbox System
+- **`RequestLootState`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestAddBox`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestResolvePendingDiscard`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestResolvePendingReplace`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestStartUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestOpenNow`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestCompleteUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
 
 ## Payload Fields
 
@@ -29,11 +63,13 @@ The server communicates with clients through these key RemoteEvents:
   },
   squadPower = number,
   lootboxes = {
-    {id = string, rarity = string, state = string, acquiredAt = number, startedAt = number?, endsAt = number?},
+    {id = string, rarity = string, state = string, acquiredAt = number, startedAt = number?, unlocksAt = number?, seed = string?, source = string?},
     -- ... more lootboxes
   },
+  pendingLootbox = {id = string, rarity = string, seed = string?, source = string?} | nil,
+  currencies = {soft = number, hard = number}, -- When changed
   updatedAt = number,
-  serverNow = number, -- NEW: Server timestamp for time sync
+  serverNow = number, -- Server timestamp for time sync
   error = {code = string, message = string}? -- Only present on errors
 }
 ```
@@ -482,10 +518,10 @@ The Level-Up system allows players to upgrade their cards by spending copies and
 Use selectors to determine if a card can be leveled up:
 
 ```lua
-local selectors = require(game.ReplicatedStorage.Modules.ViewModels.selectors)
+local selectors = require(script.Parent.Parent.State.selectors)
 
 -- Check if a specific card can be leveled up
-local canLevelUp = selectors.selectCanLevelUp(state, "dps_001")
+local canLevelUp = selectors.selectCanLevelUp(state, "card_100")
 if canLevelUp.can then
     print(string.format("Can level up to level %d", canLevelUp.nextLevel))
     print(string.format("Cost: %d copies, %d soft currency", 
@@ -517,7 +553,7 @@ CardVM provides upgrade-related fields for easy UI integration:
 local CardVM = require(game.ReplicatedStorage.Modules.ViewModels.CardVM)
 
 -- Build card view model with upgrade info
-local cardVM = CardVM.build("dps_001", collectionEntry, profileState)
+local cardVM = CardVM.build("card_100", collectionEntry, profileState)
 
 -- UI can directly use these fields:
 if cardVM.canLevelUp then
@@ -545,7 +581,7 @@ Use NetworkClient to request a level-up:
 local NetworkClient = require(script.Parent.Parent.Controllers.NetworkClient)
 
 -- Request level-up for a specific card
-local success, errorMessage = NetworkClient.requestLevelUpCard("dps_001")
+local success, errorMessage = NetworkClient.requestLevelUpCard("card_100")
 if not success then
     print("Level-up request failed:", errorMessage)
 end
@@ -687,7 +723,7 @@ Each card in the unified collection has this structure:
 
 ```lua
 {
-    cardId = "dps_001",
+    cardId = "card_100",
     name = "Recruit Fighter",
     rarity = "common",
     class = "dps", 
@@ -708,7 +744,7 @@ Each card in the unified collection has this structure:
 Pass unified collection data through `CardVM.buildFromUnifiedCollection`:
 
 ```lua
-local CardVM = require(game:GetService("ReplicatedStorage").Modules.ViewModels.CardVM)
+local CardVM = require(game.ReplicatedStorage.Modules.ViewModels.CardVM)
 
 -- Build VMs from unified collection
 local vms = CardVM.buildFromUnifiedCollection(unifiedCollection, state)
@@ -824,8 +860,8 @@ VMHarness.PrintStats()
 
 -- Level-Up specific commands
 VMHarness.LevelUpFirstUpgradeable()  -- Level up first available card
-VMHarness.LevelUp("dps_001")         -- Level up specific card
-VMHarness.PrintUpgradeableCards()    -- Show all upgradeable cards
+VMHarness.LevelUp("card_100")        -- Level up specific card
+VMHarness.PrintUpgradeableCards()   -- Show all upgradeable cards
 ```
 
 ### How to Test Level-Up (Mocks)

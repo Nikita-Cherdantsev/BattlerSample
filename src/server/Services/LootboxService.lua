@@ -8,11 +8,11 @@
 local LootboxService = {}
 
 local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
-local BoxTypes = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxTypes)
-local BoxRoller = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxRoller)
-local BoxValidator = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxValidator)
-local SeededRNG = require(script.Parent.Parent.Parent.shared.Modules.RNG.SeededRNG)
-local CardCatalog = require(script.Parent.Parent.Parent.shared.Modules.Cards.CardCatalog)
+local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+local BoxRoller = require(game.ReplicatedStorage.Modules.Loot.BoxRoller)
+local BoxValidator = require(game.ReplicatedStorage.Modules.Loot.BoxValidator)
+local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
+local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 
 -- Error codes
 LootboxService.ErrorCodes = {

@@ -16,15 +16,17 @@ CardCatalog.Classes = {
 }
 
 -- Base card template
-local function CreateCard(id, name, rarity, class, baseStats, slotNumber, description, passive)
-	-- Create per-card growth table with zeros as placeholders
-	local growth = {}
-	for level = 2, 10 do
-		growth[level] = {
-			atk = 0,
-			hp = 0,
-			defence = 0
-		}
+local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth, description, passive)
+	-- Use provided growth table or create default if none provided
+	if not growth then
+		growth = {}
+		for level = 2, 10 do
+			growth[level] = {
+				atk = 0,
+				hp = 0,
+				defence = 0
+			}
+		end
 	end
 	
 	return {
@@ -50,7 +52,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 3,
 		defence = 4
-	}, {
+	}, 100, {
 		[2] = { atk = 1, hp = 1, defence = 1 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 1 },
@@ -66,7 +68,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 10,
 		defence = 2
-	}, {
+	}, 200, {
 		[2] = { atk = 0, hp = 1, defence = 1 },
 		[3] = { atk = 1, hp = 1, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 1 },
@@ -82,7 +84,7 @@ CardCatalog.Cards = {
 		atk = 2,
 		hp = 4,
 		defence = 2
-	}, {
+	}, 300, {
 		[2] = { atk = 1, hp = 1, defence = 1 },
 		[3] = { atk = 0, hp = 0, defence = 0 },
 		[4] = { atk = 1, hp = 1, defence = 1 },
@@ -98,7 +100,7 @@ CardCatalog.Cards = {
 		atk = 0,
 		hp = 8,
 		defence = 1
-	}, {
+	}, 400, {
 		[2] = { atk = 0, hp = 1, defence = 1 },
 		[3] = { atk = 0, hp = 1, defence = 1 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -114,7 +116,7 @@ CardCatalog.Cards = {
 		atk = 2,
 		hp = 3,
 		defence = 1
-	}, {
+	}, 500, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 1 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -130,7 +132,7 @@ CardCatalog.Cards = {
 		atk = 0,
 		hp = 2,
 		defence = 1
-	}, {
+	}, 600, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 0, hp = 0, defence = 1 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -146,7 +148,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 1,
 		defence = 1
-	}, {
+	}, 700, {
 		[2] = { atk = 0, hp = 0, defence = 0 },
 		[3] = { atk = 1, hp = 1, defence = 1 },
 		[4] = { atk = 0, hp = 0, defence = 0 },
@@ -162,7 +164,7 @@ CardCatalog.Cards = {
 		atk = 6,
 		hp = 8,
 		defence = 0
-	}, {
+	}, 800, {
 		[2] = { atk = 1, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 1, defence = 0 },
 		[4] = { atk = 1, hp = 1, defence = 0 },
@@ -178,7 +180,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 4,
 		defence = 0
-	}, {
+	}, 900, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 1, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -194,7 +196,7 @@ CardCatalog.Cards = {
 		atk = 9,
 		hp = 4,
 		defence = 0
-	}, {
+	}, 1000, {
 		[2] = { atk = 1, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 1, defence = 0 },
 		[4] = { atk = 1, hp = 1, defence = 0 },
@@ -210,7 +212,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 3,
 		defence = 0
-	}, {
+	}, 1100, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -226,7 +228,7 @@ CardCatalog.Cards = {
 		atk = 5,
 		hp = 3,
 		defence = 0
-	}, {
+	}, 1200, {
 		[2] = { atk = 1, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 1, hp = 1, defence = 0 },
@@ -242,7 +244,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 2,
 		defence = 0
-	}, {
+	}, 1300, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -258,7 +260,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 2,
 		defence = 0
-	}, {
+	}, 1400, {
 		[2] = { atk = 1, hp = 0, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -274,7 +276,7 @@ CardCatalog.Cards = {
 		atk = 4,
 		hp = 2,
 		defence = 0
-	}, {
+	}, 1500, {
 		[2] = { atk = 1, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -290,7 +292,7 @@ CardCatalog.Cards = {
 		atk = 0,
 		hp = 1,
 		defence = 0
-	}, {
+	}, 1600, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 0, hp = 1, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -306,7 +308,7 @@ CardCatalog.Cards = {
 		atk = 1,
 		hp = 1,
 		defence = 0
-	}, {
+	}, 1700, {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 0, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
@@ -322,7 +324,7 @@ CardCatalog.Cards = {
 		atk = 3,
 		hp = 1,
 		defence = 0
-	}, {
+	}, 1800, {
 		[2] = { atk = 1, hp = 0, defence = 0 },
 		[3] = { atk = 0, hp = 1, defence = 0 },
 		[4] = { atk = 1, hp = 0, defence = 0 },

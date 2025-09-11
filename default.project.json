@@ -8,6 +8,9 @@
         "$className": "Folder",
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
+        },
+        "ShopHandler": {
+          "$path": "src/shared/ClientModules/ShopHandler.lua"
         }
       },
       "Modules": {

@@ -19,12 +19,12 @@ local function TestCardCatalog()
 	print("=== Testing Card Catalog (v2) ===")
 	
 	-- Test card retrieval
-	local card = CardCatalog.GetCard("dps_001")
+	local card = CardCatalog.GetCard("card_100")
 	if card then
-		print("✅ Found dps_001:", card.name, "Rarity:", card.rarity, "SlotNumber:", card.slotNumber)
+		print("✅ Found card_100:", card.name, "Rarity:", card.rarity, "SlotNumber:", card.slotNumber)
 		testResults.cardCatalog = true
 	else
-		print("❌ Failed to find dps_001")
+		print("❌ Failed to find card_100")
 		testResults.cardCatalog = false
 	end
 	
@@ -58,9 +58,9 @@ local function TestCardLevels()
 	end
 	
 	-- Test level up validation
-	local canLevelUp, errorMessage = CardLevels.CanLevelUp("dps_001", 1, 10, 12000)
+	local canLevelUp, errorMessage = CardLevels.CanLevelUp("card_100", 1, 10, 12000)
 	if canLevelUp then
-		print("✅ Can level up dps_001 from 1 to 2")
+		print("✅ Can level up card_100 from 1 to 2")
 	else
 		print("❌ Cannot level up:", errorMessage)
 		testResults.cardLevels = false
@@ -90,7 +90,7 @@ local function TestCardStats()
 	print("\n=== Testing Card Stats ===")
 	
 	-- Test stat computation
-	local level1Stats = CardStats.ComputeStats("dps_001", 1)
+	local level1Stats = CardStats.ComputeStats("card_100", 1)
 	if level1Stats then
 		print("✅ Level 1 stats:", "ATK:", level1Stats.atk, "HP:", level1Stats.hp, "DEF:", level1Stats.defence)
 		testResults.cardStats = true
@@ -100,7 +100,7 @@ local function TestCardStats()
 	end
 	
 	-- Test level 2 stats (should have increments)
-	local level2Stats = CardStats.ComputeStats("dps_001", 2)
+	local level2Stats = CardStats.ComputeStats("card_100", 2)
 	if level2Stats then
 		print("✅ Level 2 stats:", "ATK:", level2Stats.atk, "HP:", level2Stats.hp, "DEF:", level2Stats.defence)
 		
@@ -125,13 +125,13 @@ local function TestCardStats()
 	print("✅ Level 1 power:", power)
 	
 	-- Test max level stats
-	local maxStats = CardStats.GetMaxStats("dps_001")
-	local maxPower = CardStats.GetMaxPower("dps_001")
+	local maxStats = CardStats.GetMaxStats("card_100")
+	local maxPower = CardStats.GetMaxPower("card_100")
 	print("✅ Max level power:", maxPower)
 	
 	-- Test level clamping
-	local clampedStats = CardStats.ComputeStats("dps_001", 15) -- Should clamp to max level
-	local maxLevelStats = CardStats.ComputeStats("dps_001", CardLevels.MAX_LEVEL)
+	local clampedStats = CardStats.ComputeStats("card_100", 15) -- Should clamp to max level
+	local maxLevelStats = CardStats.ComputeStats("card_100", CardLevels.MAX_LEVEL)
 	if clampedStats.atk == maxLevelStats.atk then
 		print("✅ Level clamping works correctly")
 	else
@@ -227,7 +227,7 @@ local function TestDeckValidation()
 	print("\n=== Testing Deck Validation (v2) ===")
 	
 	-- Valid deck (no duplicates)
-	local validDeck = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "dps_003"}
+	local validDeck = {"card_100", "card_200", "card_300", "card_500", "card_600", "card_700"}
 	local isValid, errorMessage = DeckValidator.ValidateDeck(validDeck)
 	
 	if isValid then
@@ -269,7 +269,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Invalid deck (wrong size)
-	local invalidDeck = {"dps_001", "support_001"}
+	local invalidDeck = {"card_100", "card_200"}
 	local isValid2, errorMessage2 = DeckValidator.ValidateDeck(invalidDeck)
 	if not isValid2 then
 		print("✅ Invalid deck correctly rejected:", errorMessage2)
@@ -279,7 +279,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Invalid deck (unknown card)
-	local invalidDeck2 = {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "unknown_card"}
+	local invalidDeck2 = {"card_100", "card_200", "card_300", "card_500", "card_600", "unknown_card"}
 	local isValid3, errorMessage3 = DeckValidator.ValidateDeck(invalidDeck2)
 	if not isValid3 then
 		print("✅ Unknown card correctly rejected:", errorMessage3)
@@ -289,7 +289,7 @@ local function TestDeckValidation()
 	end
 	
 	-- Invalid deck (duplicates)
-	local invalidDeck3 = {"dps_001", "support_001", "tank_001", "dps_001", "support_001", "tank_001"}
+	local invalidDeck3 = {"card_100", "card_200", "card_300", "card_100", "card_200", "card_300"}
 	local isValid4, errorMessage4 = DeckValidator.ValidateDeck(invalidDeck3)
 	if not isValid4 then
 		print("✅ Duplicate cards correctly rejected:", errorMessage4)

@@ -8,10 +8,10 @@
 local LootboxDevHarness = {}
 
 local LootboxService = require(script.Parent.LootboxService)
-local BoxTypes = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxTypes)
-local BoxDropTables = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxDropTables)
-local BoxValidator = require(script.Parent.Parent.Parent.shared.Modules.Loot.BoxValidator)
-local ShopPacksCatalog = require(script.Parent.Parent.Parent.shared.Modules.Shop.ShopPacksCatalog)
+local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+local BoxDropTables = require(game.ReplicatedStorage.Modules.Loot.BoxDropTables)
+local BoxValidator = require(game.ReplicatedStorage.Modules.Loot.BoxValidator)
+local ShopPacksCatalog = require(game.ReplicatedStorage.Modules.Shop.ShopPacksCatalog)
 local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 
 -- Test results tracking

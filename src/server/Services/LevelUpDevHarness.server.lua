@@ -36,9 +36,9 @@ end
 local function CreateTestProfile()
 	-- Grant enough cards and currency for testing
 	PlayerDataService.GrantCards(MockPlayer, {
-		dps_001 = 50,  -- Enough for multiple level-ups
-		tank_001 = 1,  -- Just one copy (insufficient for level-up)
-		support_001 = 15  -- Enough for one level-up
+		card_100 = 50,  -- Enough for multiple level-ups
+		card_200 = 1,   -- Just one copy (insufficient for level-up)
+		card_300 = 15   -- Enough for one level-up
 	})
 	
 	-- Add soft currency
@@ -56,13 +56,13 @@ local function TestHappyPath()
 	
 	-- Get baseline
 	local profile = PlayerDataService.GetProfile(MockPlayer)
-	local baselineCount = profile.collection["dps_001"].count
-	local baselineLevel = profile.collection["dps_001"].level
+	local baselineCount = profile.collection["card_100"].count
+	local baselineLevel = profile.collection["card_100"].level
 	local baselineSoft = profile.currencies.soft
 	local baselineSquadPower = profile.squadPower
 	
 	-- Perform level-up
-	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "dps_001")
+	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_100")
 	
 	if not success then
 		LogError("Happy path failed: %s", errorMessage)
@@ -71,8 +71,8 @@ local function TestHappyPath()
 	
 	-- Verify results
 	profile = PlayerDataService.GetProfile(MockPlayer)
-	local newCount = profile.collection["dps_001"].count
-	local newLevel = profile.collection["dps_001"].level
+	local newCount = profile.collection["card_100"].count
+	local newLevel = profile.collection["card_100"].level
 	local newSoft = profile.currencies.soft
 	local newSquadPower = profile.squadPower
 	
@@ -96,7 +96,7 @@ local function TestHappyPath()
 		return false
 	end
 	
-	-- Check squad power increased (dps_001 is in default deck)
+	-- Check squad power increased (card_100 is in default deck)
 	if newSquadPower <= baselineSquadPower then
 		LogError("Squad power not increased. Expected > %d, Got: %d", baselineSquadPower, newSquadPower)
 		return false
@@ -131,17 +131,17 @@ end
 local function TestLevelMaxed()
 	LogInfo("Testing level maxed...")
 	
-	-- First, level up support_001 to max level (requires multiple level-ups)
+	-- First, level up card_300 to max level (requires multiple level-ups)
 	local profile = PlayerDataService.GetProfile(MockPlayer)
-	local currentLevel = profile.collection["support_001"].level
+	local currentLevel = profile.collection["card_300"].level
 	
 	-- Level up to max (7) - this will require multiple calls
 	while currentLevel < CardLevels.MAX_LEVEL do
-		local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "support_001")
+		local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_300")
 		if not success then
 			-- If we can't level up due to insufficient resources, grant more
 			if errorMessage == "INSUFFICIENT_COPIES" or errorMessage == "INSUFFICIENT_SOFT" then
-				PlayerDataService.GrantCards(MockPlayer, { support_001 = 100 })
+				PlayerDataService.GrantCards(MockPlayer, { card_300 = 100 })
 				profile = PlayerDataService.GetProfile(MockPlayer)
 				profile.currencies.soft = 5000000  -- Massive amount
 				PlayerDataService.ForceSave(MockPlayer)
@@ -151,12 +151,12 @@ local function TestLevelMaxed()
 			end
 		else
 			profile = PlayerDataService.GetProfile(MockPlayer)
-			currentLevel = profile.collection["support_001"].level
+			currentLevel = profile.collection["card_300"].level
 		end
 	end
 	
 	-- Now try to level up again (should fail)
-	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "support_001")
+	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_300")
 	
 	if success then
 		LogError("Level maxed test failed: should have failed but succeeded")
@@ -176,7 +176,7 @@ end
 local function TestInsufficientCopies()
 	LogInfo("Testing insufficient copies...")
 	
-	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "tank_001")  -- Only 1 copy
+	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_200")  -- Only 1 copy
 	
 	if success then
 		LogError("Insufficient copies test failed: should have failed but succeeded")
@@ -201,7 +201,7 @@ local function TestInsufficientSoft()
 	profile.currencies.soft = 0
 	PlayerDataService.ForceSave(MockPlayer)
 	
-	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "dps_001")
+	local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_100")
 	
 	if success then
 		LogError("Insufficient soft test failed: should have failed but succeeded")
@@ -229,7 +229,7 @@ local function TestRateLimit()
 	-- Make multiple rapid requests (should hit rate limit)
 	local successCount = 0
 	for i = 1, 15 do  -- More than the 10/minute limit
-		local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "dps_001")
+		local success, errorMessage = PlayerDataService.LevelUpCard(MockPlayer, "card_100")
 		if success then
 			successCount = successCount + 1
 		elseif errorMessage == "RATE_LIMITED" then

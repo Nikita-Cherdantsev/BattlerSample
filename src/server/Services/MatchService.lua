@@ -79,7 +79,7 @@ local PVE_OPPONENTS = {
 		name = "Aggressive Opponent",
 		description = "High damage, low health",
 		generateDeck = function(playerDeck, rng)
-			return {"dps_002", "dps_003", "dps_004", "dps_002", "dps_003", "dps_004"}
+			return {"card_500", "card_800", "card_900", "card_500", "card_800", "card_900"}
 		end
 	},
 	
@@ -88,7 +88,7 @@ local PVE_OPPONENTS = {
 		name = "Defensive Opponent", 
 		description = "High health, low damage",
 		generateDeck = function(playerDeck, rng)
-			return {"tank_001", "tank_002", "support_001", "tank_001", "tank_002", "support_001"}
+			return {"card_200", "card_400", "card_600", "card_200", "card_400", "card_600"}
 		end
 	},
 	
@@ -97,7 +97,7 @@ local PVE_OPPONENTS = {
 		name = "Balanced Opponent",
 		description = "Mixed composition",
 		generateDeck = function(playerDeck, rng)
-			return {"dps_001", "support_001", "tank_001", "dps_002", "support_002", "tank_002"}
+			return {"card_100", "card_200", "card_300", "card_500", "card_600", "card_700"}
 		end
 	}
 }
@@ -151,9 +151,9 @@ local DEV_PVE_OPPONENTS = {
 		generateDeck = function(playerDeck, rng)
 			-- Create a balanced deck with 2 DPS, 2 Support, 2 Tank
 			local balancedCards = {
-				"dps_001", "dps_002",  -- 2 DPS
-				"support_001", "support_002",  -- 2 Support  
-				"tank_001", "tank_002"  -- 2 Tank
+				"card_100", "card_500",  -- 2 DPS
+				"card_600", "card_700",  -- 2 Support  
+				"card_200", "card_300"   -- 2 Tank
 			}
 			
 			-- Shuffle the balanced composition
