@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 -- Modules
 local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
+local ShopService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ShopService"))
 -- local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService")) -- Temporarily disabled
 
 -- Network folder and RemoteEvents (created in Init)
@@ -24,6 +25,9 @@ local RequestResolvePendingReplace = nil
 local RequestStartUnlock = nil
 local RequestOpenNow = nil
 local RequestCompleteUnlock = nil
+local RequestGetShopPacks = nil
+local RequestStartPackPurchase = nil
+local RequestBuyLootbox = nil
 
 -- Rate limiting configuration (explicit, module-scoped)
 local RATE_LIMITS = {
@@ -72,6 +76,18 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestCompleteUnlock = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestGetShopPacks = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestStartPackPurchase = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestBuyLootbox = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	}
@@ -165,6 +181,21 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestCompleteUnlock = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestGetShopPacks = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestStartPackPurchase = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestBuyLootbox = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -953,9 +984,140 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	SendProfileUpdate(player, payload)
 	
 	if result.ok then
-		LogInfo(player, "Unlock completed successfully")
+	LogInfo(player, "Unlock completed successfully")
+else
+	LogWarning(player, "Complete unlock failed: %s", tostring(result.error))
+end
+end
+
+-- Shop handlers
+local function HandleRequestGetShopPacks(player, requestData)
+	LogInfo(player, "Processing get shop packs request")
+	
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestGetShopPacks")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = { code = "RATE_LIMITED", message = errorMessage },
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	local result = ShopService.GetShopPacks()
+	
+	local payload = {
+		shopPacks = result.packs,
+		serverNow = os.time()
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	ProfileUpdated:FireClient(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Shop packs retrieved successfully")
 	else
-		LogWarning(player, "Complete unlock failed: %s", tostring(result.error))
+		LogWarning(player, "Get shop packs failed: %s", tostring(result.error))
+	end
+end
+
+local function HandleRequestStartPackPurchase(player, requestData)
+	LogInfo(player, "Processing start pack purchase request")
+	
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartPackPurchase")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = { code = "RATE_LIMITED", message = errorMessage },
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate request
+	if not requestData or not requestData.packId then
+		SendProfileUpdate(player, {
+			error = { code = "INVALID_REQUEST", message = "Missing packId" },
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	local result = ShopService.ValidatePackPurchase(player.UserId, requestData.packId)
+	
+	local payload = {
+		serverNow = os.time()
+	}
+	
+	if result.ok then
+		payload.ok = true
+		payload.packId = requestData.packId
+		payload.devProductId = result.pack.devProductId
+	else
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	ProfileUpdated:FireClient(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Pack purchase validation successful for pack %s", requestData.packId)
+	else
+		LogWarning(player, "Start pack purchase failed: %s", tostring(result.error))
+	end
+end
+
+local function HandleRequestBuyLootbox(player, requestData)
+	LogInfo(player, "Processing buy lootbox request")
+	
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestBuyLootbox")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = { code = "RATE_LIMITED", message = errorMessage },
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate request
+	if not requestData or not requestData.rarity then
+		SendProfileUpdate(player, {
+			error = { code = "INVALID_REQUEST", message = "Missing rarity" },
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	local result = ShopService.BuyLootbox(player.UserId, requestData.rarity)
+	
+	-- Get updated profile for response
+	local profile = PlayerDataService.GetProfile(player)
+	local payload = {
+		currencies = profile and profile.currencies or {},
+		lootboxes = profile and profile.lootboxes or {},
+		pendingLootbox = profile and profile.pendingLootbox or nil,
+		serverNow = os.time()
+	}
+	
+	if not result.ok then
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+	end
+	
+	SendProfileUpdate(player, payload)
+	
+	if result.ok then
+		LogInfo(player, "Lootbox purchase successful: %s for %d hard", requestData.rarity, result.cost)
+	else
+		LogWarning(player, "Buy lootbox failed: %s", tostring(result.error))
 	end
 end
 
@@ -975,6 +1137,9 @@ RemoteEvents.RequestResolvePendingReplace = RequestResolvePendingReplace
 RemoteEvents.RequestStartUnlock = RequestStartUnlock
 RemoteEvents.RequestOpenNow = RequestOpenNow
 RemoteEvents.RequestCompleteUnlock = RequestCompleteUnlock
+RemoteEvents.RequestGetShopPacks = RequestGetShopPacks
+RemoteEvents.RequestStartPackPurchase = RequestStartPackPurchase
+RemoteEvents.RequestBuyLootbox = RequestBuyLootbox
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -1041,6 +1206,18 @@ function RemoteEvents.Init()
 	RequestCompleteUnlock.Name = "RequestCompleteUnlock"
 	RequestCompleteUnlock.Parent = NetworkFolder
 	
+	RequestGetShopPacks = Instance.new("RemoteEvent")
+	RequestGetShopPacks.Name = "RequestGetShopPacks"
+	RequestGetShopPacks.Parent = NetworkFolder
+	
+	RequestStartPackPurchase = Instance.new("RemoteEvent")
+	RequestStartPackPurchase.Name = "RequestStartPackPurchase"
+	RequestStartPackPurchase.Parent = NetworkFolder
+	
+	RequestBuyLootbox = Instance.new("RemoteEvent")
+	RequestBuyLootbox.Name = "RequestBuyLootbox"
+	RequestBuyLootbox.Parent = NetworkFolder
+	
 	-- Validate rate limit configuration
 	local function ValidateRateLimitConfig()
 		print("🔒 Rate Limiter Configuration:")
@@ -1056,7 +1233,10 @@ function RemoteEvents.Init()
 			{name = "RequestResolvePendingReplace", instance = RequestResolvePendingReplace},
 			{name = "RequestStartUnlock", instance = RequestStartUnlock},
 			{name = "RequestOpenNow", instance = RequestOpenNow},
-			{name = "RequestCompleteUnlock", instance = RequestCompleteUnlock}
+			{name = "RequestCompleteUnlock", instance = RequestCompleteUnlock},
+			{name = "RequestGetShopPacks", instance = RequestGetShopPacks},
+			{name = "RequestStartPackPurchase", instance = RequestStartPackPurchase},
+			{name = "RequestBuyLootbox", instance = RequestBuyLootbox}
 		}
 		
 		for _, event in ipairs(remoteEvents) do
@@ -1084,11 +1264,17 @@ function RemoteEvents.Init()
 	RequestStartUnlock.OnServerEvent:Connect(HandleRequestStartUnlock)
 	RequestOpenNow.OnServerEvent:Connect(HandleRequestOpenNow)
 	RequestCompleteUnlock.OnServerEvent:Connect(HandleRequestCompleteUnlock)
+	RequestGetShopPacks.OnServerEvent:Connect(HandleRequestGetShopPacks)
+	RequestStartPackPurchase.OnServerEvent:Connect(HandleRequestStartPackPurchase)
+	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)
 		CleanupRateLimit(player)
 	end)
+	
+	-- Initialize ShopService
+	ShopService.Initialize()
 	
 	LogInfo(nil, "RemoteEvents initialized successfully")
 end

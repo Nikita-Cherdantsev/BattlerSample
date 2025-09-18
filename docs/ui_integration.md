@@ -24,6 +24,7 @@ This document provides the essential information for integrating the UI with the
 - [Client-Side Architecture](#client-side-architecture)
 - [Troubleshooting](#troubleshooting)
 - [Lootboxes UI](#lootboxes-ui)
+- [Shop UI](#shop-ui)
 - [Deck Uniqueness and Ordering](#deck-uniqueness-and-ordering)
 
 ## RemoteEvents Overview
@@ -1476,3 +1477,278 @@ end
 - **Slot ordering**: Cards are assigned to slots 1-6 based on their `slotNumber` in ascending order
 - **Grid layout**: Use `BoardLayout.gridForDeck()` to get visual positions (row, col) for UI rendering
 - **Turn order**: Fixed order 1,2,3,4,5,6 (slot 1 acts first)
+
+## Shop UI
+
+The shop system provides a complete client-side integration for Developer Product pack purchases and lootbox purchases with hard currency. This section covers how to build shop UI using the provided state management and purchase flows.
+
+### ShopHandler Integration
+
+The ShopHandler automatically binds to shop purchase buttons using naming conventions:
+
+```lua
+-- Pack buttons (expected names)
+local packButtons = {
+    ["S"] = "PackSButton",
+    ["M"] = "PackMButton", 
+    ["L"] = "PackLButton",
+    ["XL"] = "PackXLButton",
+    ["XXL"] = "PackXXLButton",
+    ["XXXL"] = "PackXXXLButton"
+}
+
+-- Lootbox buttons (expected names)
+local lootboxButtons = {
+    ["uncommon"] = "LootboxUncommonButton",
+    ["rare"] = "LootboxRareButton",
+    ["epic"] = "LootboxEpicButton",
+    ["legendary"] = "LootboxLegendaryButton"
+}
+```
+
+### Pack Purchase Flow
+
+**Mock Mode (Development):**
+```lua
+-- Pack purchase is immediate
+local success, errorMessage = NetworkClient.requestStartPackPurchase("M")
+if success then
+    -- Hard currency is credited immediately
+    -- ProfileUpdated fires with updated currencies
+end
+```
+
+**Live Mode (Production):**
+```lua
+-- 1. Validate pack with server
+local success, errorMessage = NetworkClient.requestStartPackPurchase("M")
+if success then
+    -- 2. Server returns devProductId
+    -- 3. Prompt MarketplaceService
+    MarketplaceService:PromptProductPurchase(player, devProductId)
+    -- 4. ProcessReceipt handles the actual credit
+    -- 5. ProfileUpdated fires with updated currencies
+end
+```
+
+### Lootbox Purchase Flow
+
+```lua
+-- Purchase lootbox with hard currency
+local success, errorMessage = NetworkClient.requestBuyLootbox("rare")
+if success then
+    -- Hard currency deducted, lootbox added
+    -- ProfileUpdated fires with updated currencies and lootboxes
+    -- If capacity full, pendingLootbox is set
+end
+```
+
+### Error Handling
+
+Use ErrorMap for consistent error handling:
+
+```lua
+local ErrorMap = require(game.ReplicatedStorage.Modules.Utilities.ErrorMap)
+
+-- Handle shop errors
+if payload.error then
+    local userMessage = ErrorMap.toUserMessage(payload.error.code, payload.error.message)
+    
+    -- Show error to user
+    showErrorDialog(userMessage.title, userMessage.message)
+    
+    -- Common shop error codes:
+    -- PACK_NOT_AVAILABLE - Pack has no devProductId
+    -- INSUFFICIENT_HARD - Not enough hard currency
+    -- LOOTBOX_CAPACITY_FULL - Slots full, need to resolve pending
+end
+```
+
+### Loading States
+
+Disable buttons during processing:
+
+```lua
+function ShopHandler:HandlePackPurchase(packId, button)
+    -- Disable button while processing
+    button.Active = false
+    local originalText = button.Text
+    button.Text = "Processing..."
+    
+    local success, errorMessage = NetworkClient.requestStartPackPurchase(packId)
+    
+    if not success then
+        -- Show error and re-enable
+        self:ShowError("Purchase Failed", errorMessage)
+        button.Active = true
+        button.Text = originalText
+    else
+        -- Show success state
+        button.Text = "Purchased!"
+        
+        -- Re-enable after delay
+        task.wait(2)
+        button.Active = true
+        button.Text = originalText
+    end
+end
+```
+
+### Currency Display
+
+Subscribe to currency changes:
+
+```lua
+ClientState.subscribe(function(state)
+    if state.profile and state.profile.currencies then
+        local currencies = state.profile.currencies
+        local hardCurrency = currencies.hard or 0
+        local softCurrency = currencies.soft or 0
+        
+        -- Update UI
+        hardCurrencyLabel.Text = tostring(hardCurrency)
+        softCurrencyLabel.Text = tostring(softCurrency)
+    end
+end)
+```
+
+### Pack Availability
+
+Check pack availability before showing purchase buttons:
+
+```lua
+-- Request shop packs
+NetworkClient.requestGetShopPacks()
+
+-- Handle response
+NetworkClient.onProfileUpdated(function(payload)
+    if payload.shopPacks then
+        for _, pack in ipairs(payload.shopPacks) do
+            local button = findPackButton(pack.id)
+            if button then
+                if pack.hasDevProductId then
+                    button.Visible = true
+                    button.Active = true
+                else
+                    button.Visible = false -- Pack not available
+                end
+            end
+        end
+    end
+end)
+```
+
+### Lootbox Capacity Handling
+
+Handle lootbox overflow:
+
+```lua
+ClientState.subscribe(function(state)
+    if state.profile then
+        local lootboxes = state.profile.lootboxes or {}
+        local pendingLootbox = state.profile.pendingLootbox
+        
+        -- Update lootbox slots
+        updateLootboxSlots(lootboxes)
+        
+        -- Show pending resolution UI
+        if pendingLootbox then
+            showPendingResolutionDialog(pendingLootbox)
+        end
+    end
+end)
+```
+
+### Complete Shop UI Example
+
+```lua
+local function createShopUI()
+    local shopFrame = createShopFrame()
+    
+    -- Subscribe to state changes
+    ClientState.subscribe(function(state)
+        if state.profile then
+            -- Update currency display
+            updateCurrencyDisplay(state.profile.currencies)
+            
+            -- Update lootbox slots
+            updateLootboxSlots(state.profile.lootboxes)
+            
+            -- Handle pending lootbox
+            if state.profile.pendingLootbox then
+                showPendingResolution(state.profile.pendingLootbox)
+            end
+        end
+    end)
+    
+    -- Request shop packs on open
+    shopFrame.Visible = true
+    NetworkClient.requestGetShopPacks()
+    
+    return shopFrame
+end
+
+local function updateCurrencyDisplay(currencies)
+    local hardCurrency = currencies.hard or 0
+    local softCurrency = currencies.soft or 0
+    
+    shopFrame.HardCurrencyLabel.Text = tostring(hardCurrency)
+    shopFrame.SoftCurrencyLabel.Text = tostring(softCurrency)
+end
+
+local function updateLootboxSlots(lootboxes)
+    for i = 1, 4 do
+        local slotFrame = shopFrame:FindFirstChild("LootboxSlot" .. i)
+        local lootbox = lootboxes[i]
+        
+        if lootbox then
+            slotFrame.Visible = true
+            slotFrame.RarityLabel.Text = string.upper(lootbox.rarity)
+            slotFrame.StateLabel.Text = string.upper(lootbox.state)
+        else
+            slotFrame.Visible = false
+        end
+    end
+end
+```
+
+### Testing with DevPanel
+
+The DevPanel provides comprehensive shop testing:
+
+**Available Actions:**
+- **"Shop: Fetch Packs"** - Get available packs with availability flags
+- **"Shop: Buy Lootbox [Rarity]"** - Purchase lootboxes with hard currency
+- **"Shop: Buy Pack [S/M/L] (Mock)"** - Mock pack purchases (mock mode only)
+
+**Status Display:**
+- **Hard Currency**: Current hard currency balance
+- **Soft Currency**: Current soft currency balance
+- **Lootbox Slots**: Current lootbox count and unlocking status
+- **Pending**: Whether there's a pending lootbox to resolve
+
+### Production Setup
+
+**Setting up Developer Products:**
+
+1. **Create Products** in Roblox Creator Dashboard
+2. **Get Product IDs** from the dashboard
+3. **Update ShopPacksCatalog**:
+   ```lua
+   ["M"] = {
+       id = "M", 
+       hardAmount = 330,
+       robuxPrice = 100,
+       devProductId = 123456789 -- Real ProductId from dashboard
+   }
+   ```
+4. **Test in Studio** with `Config.USE_MOCKS = false`
+5. **Deploy to production** with real ProductIds
+
+**Live Purchase Flow:**
+1. Client calls `requestStartPackPurchase(packId)`
+2. Server validates pack and returns `devProductId`
+3. Client calls `MarketplaceService:PromptProductPurchase(player, devProductId)`
+4. Roblox handles payment and calls `ProcessReceipt`
+5. Server credits hard currency and fires `ProfileUpdated`
+6. Client receives updated currencies and updates UI

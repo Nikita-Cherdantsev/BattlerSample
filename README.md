@@ -387,6 +387,9 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
   collectionSummary = {         -- When rewards granted
     { cardId, count, level }
   },
+  shopPacks = {                 -- When RequestGetShopPacks
+    { id, hardAmount, robuxPrice, hasDevProductId }
+  }?,
   error = { code, message? } | nil
 }
 ```
@@ -396,13 +399,97 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 - `RequestAddBox`: 1s cooldown, 5/min  
 - `RequestResolvePending*`: 1s cooldown, 10/min
 - `RequestStartUnlock/CompleteUnlock/OpenNow`: 1s cooldown, 10/min
+- `RequestGetShopPacks`: 1s cooldown, 10/min
+- `RequestStartPackPurchase`: 1s cooldown, 10/min
+- `RequestBuyLootbox`: 1s cooldown, 10/min
 
 **Array Compaction:** After `CompleteUnlock` or `OpenNow`, slots are removed and array is packed (no `Consumed` state kept).
 
 **Testing:**
 - **LootboxDevHarness**: 9 test suites covering capacity, overflow, unlock mechanics, reward validation, shop packs
-- **DevPanel**: Complete UI testing for all operations
+- **ShopDevHarness**: 6 test suites covering pack validation, lootbox purchases, ProcessReceipt idempotency, error codes
+- **DevPanel**: Complete UI testing for all operations including shop purchases
 - **Mock System**: Full validation and error code parity with real server
+
+## Shop Integration
+
+### Developer Product Packs
+
+**Pack Purchase Flow:**
+```
+Client → RequestStartPackPurchase → Server validates pack → 
+Client prompts MarketplaceService → ProcessReceipt → 
+ProfileUpdated with hard currency credit
+```
+
+**Pack Configuration:**
+- **Placeholder Setup**: All packs have `devProductId = nil` by default
+- **Production Setup**: Replace `nil` with real ProductId from Roblox Creator Dashboard
+- **Availability Check**: `ShopPacksCatalog.HasDevProductId(packId)` returns `false` for `nil` values
+
+**Server Implementation:**
+- **ShopService**: Handles `MarketplaceService.ProcessReceipt` integration
+- **Idempotency**: Receipt ledger prevents double-crediting same `PurchaseId`
+- **Atomic Operations**: `UpdateAsync` ensures currency credit consistency
+- **Error Handling**: `NotProcessedYet` for unknown products, `PurchaseGranted` for successful processing
+
+### Lootbox Purchase System
+
+**Hard Currency Costs:**
+- **Uncommon**: 7 hard currency
+- **Rare**: 22 hard currency  
+- **Epic**: 55 hard currency
+- **Legendary**: 100 hard currency
+
+**Purchase Flow:**
+- **Validation**: Rarity check, profile loaded, sufficient hard currency
+- **Capacity Handling**: Automatic overflow to `pendingLootbox` if slots full
+- **Atomic Operations**: Hard currency deduction + lootbox addition in single `UpdateAsync`
+- **ProfileUpdated**: Returns updated currencies, lootboxes, and pending state
+
+### Client Integration
+
+**NetworkClient Methods:**
+- **`requestGetShopPacks()`**: Retrieve available packs with `hasDevProductId` flags
+- **`requestStartPackPurchase(packId)`**: Validate pack and return `devProductId` for MarketplaceService
+- **`requestBuyLootbox(rarity)`**: Purchase lootbox with hard currency
+
+**Mock System:**
+- **Pack Purchases**: Immediate hard currency credit (simulates ProcessReceipt)
+- **Lootbox Purchases**: Full server logic simulation including overflow handling
+- **Error Simulation**: All shop error codes with realistic validation
+
+**ShopHandler Integration:**
+- **Button Binding**: Automatic detection of pack/lootbox buttons via naming convention
+- **Loading States**: Button disable during processing with visual feedback
+- **Error Display**: `ErrorMap` integration for user-friendly error messages
+- **Defensive Design**: Graceful handling of missing UI elements
+
+### Error Codes
+
+| Code | Meaning | User Message |
+|------|---------|--------------|
+| `PACK_NOT_AVAILABLE` | Pack has no devProductId or unknown packId | "This pack is not available for purchase" |
+| `INSUFFICIENT_HARD` | Not enough hard currency for lootbox | "You don't have enough hard currency for this purchase" |
+| `LOOTBOX_CAPACITY_FULL` | Direct buy when overflow and no pending resolution | "Your lootbox slots are full. Please resolve pending lootboxes first" |
+
+### Development Setup
+
+**Where to Set devProductId:**
+```lua
+-- In src/shared/Modules/Shop/ShopPacksCatalog.lua
+["M"] = {
+    id = "M", 
+    hardAmount = 330,
+    robuxPrice = 100,
+    devProductId = 123456789 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+}
+```
+
+**Testing with DevPanel:**
+- **Mock Mode**: "Shop: Buy Pack [S/M/L] (Mock)" buttons for instant testing
+- **Live Mode**: "Shop: Fetch Packs" to see availability, "Shop: Buy Lootbox [Rarity]" for hard currency purchases
+- **Status Display**: Shows current hard/soft currency and lootbox slot count
 
 ## Networking Surface
 
@@ -424,6 +511,11 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 - **`RequestStartUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestOpenNow`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestCompleteUnlock`** (C→S) → **`ProfileUpdated`** (S→C)
+
+**Shop System:**
+- **`RequestGetShopPacks`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestStartPackPurchase`** (C→S) → **`ProfileUpdated`** (S→C)
+- **`RequestBuyLootbox`** (C→S) → **`ProfileUpdated`** (S→C)
 
 ### Payload Schemas
 
@@ -602,6 +694,11 @@ Utilities.SelfCheck.RunAllTests()
 - **Run**: Automatically on server start
 - **Tests**: 9 test suites covering capacity/pending flow, overflow resolution (discard/replace), unlock mechanics, reward validation, shop packs, instant open, timer completion
 
+**ShopDevHarness** (`src/server/Services/ShopDevHarness.server.lua`):
+- **Purpose**: Test shop system functionality including Developer Product processing and lootbox purchases
+- **Run**: Automatically on server start
+- **Tests**: 6 test suites covering pack validation, lootbox purchases, ProcessReceipt idempotency, shop packs retrieval, pack availability, error codes
+
 ### Client-Side Testing
 
 **NetworkTest** (`src/client/NetworkTest.client.lua`):
@@ -618,7 +715,7 @@ Utilities.SelfCheck.RunAllTests()
 **DevPanel** (`src/client/Dev/DevPanel.client.lua`):
 - **Purpose**: Runtime testing UI
 - **Enable**: `Config.SHOW_DEV_PANEL = true`
-- **Features**: Profile refresh, sample deck, PvE match, level-up testing, collection summary, complete lootbox operations (refresh, add, start unlock, complete, open now, resolve pending), mock toggle
+- **Features**: Profile refresh, sample deck, PvE match, level-up testing, collection summary, complete lootbox operations (refresh, add, start unlock, complete, open now, resolve pending), shop operations (fetch packs, buy lootboxes, mock pack purchases), mock toggle
 
 ### Coverage Status
 
@@ -630,6 +727,7 @@ Utilities.SelfCheck.RunAllTests()
 - Card level-up system (server endpoints, client integration, testing)
 - Complete lootbox system (server services, client integration, overflow handling)
 - Collection surface (unified catalog+ownership, selectors, ViewModels)
+- Shop integration (Developer Product packs, lootbox purchases, ProcessReceipt integration)
 
 **❌ Not Covered:**
 - UI unit tests (no UI framework yet)
@@ -741,11 +839,21 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Error Codes**: Complete error code coverage for lootbox operations
 - ✅ **Payload Schemas**: Updated ProfileUpdated payload with lootbox data and `serverNow`
 
+**Shop Integration:**
+- ✅ **Developer Product Packs**: Complete integration with `MarketplaceService.ProcessReceipt`
+- ✅ **Pack Configuration**: `devProductId` fields with placeholder setup and production documentation
+- ✅ **Idempotency**: Receipt ledger prevents double-crediting same purchases
+- ✅ **Lootbox Purchases**: Hard currency purchases with automatic overflow handling
+- ✅ **Client Integration**: NetworkClient methods, MockNetwork simulation, ShopHandler button binding
+- ✅ **DevPanel Integration**: Complete shop testing interface with mock/live mode support
+- ✅ **Testing**: ShopDevHarness with 6 test suites covering all shop functionality
+- ✅ **Error Handling**: Shop-specific error codes with user-friendly messages
+
 ## Roadmap
 
 **Planned Features (Not Yet Implemented):**
 
-- [ ] **Store System**: Currency spending and card purchases
+- [ ] **Card Store**: Direct card purchases with hard currency
 - [ ] **Tutorial Flow**: Step-by-step onboarding experience
 - [ ] **PvP Matchmaking**: Player vs player battle system
 - [ ] **Daily Rewards**: Login streak bonuses and daily quests
@@ -758,6 +866,7 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Level-Up System**: Complete server and client implementation
 - ✅ **Lootbox System**: Complete server and client implementation
 - ✅ **Collection Surface**: Unified catalog with ownership overlay
+- ✅ **Shop Integration**: Developer Product packs and lootbox purchases
 - 🔄 **UI Foundation**: Ready for UI engineer to build interfaces
 - ⏳ **Game Features**: Store system, tutorial flow, PvP matchmaking
 

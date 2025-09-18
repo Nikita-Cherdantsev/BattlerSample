@@ -12,32 +12,38 @@ ShopPacksCatalog.Packs = {
 	["S"] = {
 		id = "S",
 		hardAmount = 100,
-		robuxPrice = 40
+		robuxPrice = 40,
+		devProductId = 3400863964 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	},
 	["M"] = {
 		id = "M", 
 		hardAmount = 330,
-		robuxPrice = 100
+		robuxPrice = 100,
+		devProductId = 3400864205 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	},
 	["L"] = {
 		id = "L",
 		hardAmount = 840,
-		robuxPrice = 200
+		robuxPrice = 200,
+		devProductId = 3400864901 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	},
 	["XL"] = {
 		id = "XL",
 		hardAmount = 1950,
-		robuxPrice = 400
+		robuxPrice = 400,
+		devProductId = 3400865038 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	},
 	["XXL"] = {
 		id = "XXL",
 		hardAmount = 4900,
-		robuxPrice = 800
+		robuxPrice = 800,
+		devProductId = 3400865167 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	},
 	["XXXL"] = {
 		id = "XXXL",
 		hardAmount = 12000,
-		robuxPrice = 1500
+		robuxPrice = 1500,
+		devProductId = 3400865325 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
 	}
 }
 
@@ -83,6 +89,29 @@ function ShopPacksCatalog.IsValidPackId(packId)
 	return ShopPacksCatalog.Packs[packId] ~= nil
 end
 
+-- Check if pack has a valid devProductId
+function ShopPacksCatalog.HasDevProductId(packId)
+	local pack = ShopPacksCatalog.GetPack(packId)
+	return pack and pack.devProductId ~= nil
+end
+
+-- Get packs that are available for purchase (have devProductId)
+function ShopPacksCatalog.GetAvailablePacks()
+	local availablePacks = {}
+	for _, pack in pairs(ShopPacksCatalog.Packs) do
+		if pack.devProductId then
+			table.insert(availablePacks, pack)
+		end
+	end
+	
+	-- Sort by hard amount (ascending)
+	table.sort(availablePacks, function(a, b)
+		return a.hardAmount < b.hardAmount
+	end)
+	
+	return availablePacks
+end
+
 -- Get pack with best value (highest hard currency per Robux)
 function ShopPacksCatalog.GetBestValuePack()
 	local packsByValue = ShopPacksCatalog.GetPacksByValue()
@@ -93,6 +122,26 @@ end
 function ShopPacksCatalog.GetWorstValuePack()
 	local packsByValue = ShopPacksCatalog.GetPacksByValue()
 	return packsByValue[#packsByValue] -- Last pack has worst value
+end
+
+-- Check if any packs have live product IDs (for production readiness)
+function ShopPacksCatalog.hasLiveProductIds()
+	for _, pack in pairs(ShopPacksCatalog.Packs) do
+		if pack.devProductId and pack.devProductId ~= nil then
+			return true
+		end
+	end
+	return false
+end
+
+-- Get pack by Developer Product ID (for receipt processing)
+function ShopPacksCatalog.getPackByProductId(productId)
+	for _, pack in pairs(ShopPacksCatalog.Packs) do
+		if pack.devProductId == productId then
+			return pack
+		end
+	end
+	return nil
 end
 
 -- Calculate total hard currency for multiple packs

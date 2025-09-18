@@ -648,6 +648,175 @@ function MockNetwork.simulateRateLimit()
 	MockNetwork.simulateError("RATE_LIMITED", "Request too frequent, please wait")
 end
 
+-- Shop methods
+function MockNetwork.requestGetShopPacks()
+	log("Requesting shop packs (mock)")
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	-- Return mock shop packs (all with devProductId = nil for testing)
+	local packs = {
+		{id = "S", hardAmount = 100, robuxPrice = 40, hasDevProductId = false},
+		{id = "M", hardAmount = 330, robuxPrice = 100, hasDevProductId = false},
+		{id = "L", hardAmount = 840, robuxPrice = 200, hasDevProductId = false},
+		{id = "XL", hardAmount = 1950, robuxPrice = 400, hasDevProductId = false},
+		{id = "XXL", hardAmount = 4900, robuxPrice = 800, hasDevProductId = false},
+		{id = "XXXL", hardAmount = 12000, robuxPrice = 1500, hasDevProductId = false}
+	}
+	
+	local payload = {
+		shopPacks = packs,
+		serverNow = os.time()
+	}
+	
+	-- Fire mock ProfileUpdated event
+	if MockNetwork.onProfileUpdated then
+		MockNetwork.onProfileUpdated(payload)
+	end
+	
+	return true
+end
+
+function MockNetwork.requestStartPackPurchase(packId)
+	if not packId or type(packId) ~= "string" then
+		log("Invalid pack ID")
+		return false, "Invalid pack ID"
+	end
+	
+	log("Requesting start pack purchase (mock): %s", packId)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	-- Simulate pack validation
+	local packData = {
+		["S"] = {hardAmount = 100, robuxPrice = 40},
+		["M"] = {hardAmount = 330, robuxPrice = 100},
+		["L"] = {hardAmount = 840, robuxPrice = 200},
+		["XL"] = {hardAmount = 1950, robuxPrice = 400},
+		["XXL"] = {hardAmount = 4900, robuxPrice = 800},
+		["XXXL"] = {hardAmount = 12000, robuxPrice = 1500}
+	}
+	
+	local pack = packData[packId]
+	if not pack then
+		log("Unknown pack ID: %s", packId)
+		return false, "Unknown pack ID"
+	end
+	
+	-- In mock mode, immediately credit hard currency (simulate ProcessReceipt)
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	currentProfile.currencies.hard = (currentProfile.currencies.hard or 0) + pack.hardAmount
+	currentProfile.updatedAt = os.time()
+	
+	local payload = {
+		ok = true,
+		packId = packId,
+		devProductId = nil, -- Mock doesn't have real devProductId
+		currencies = currentProfile.currencies,
+		updatedAt = currentProfile.updatedAt,
+		serverNow = os.time()
+	}
+	
+	-- Fire mock ProfileUpdated event
+	if MockNetwork.onProfileUpdated then
+		MockNetwork.onProfileUpdated(payload)
+	end
+	
+	log("Mock pack purchase successful: %s (+%d hard)", packId, pack.hardAmount)
+	return true
+end
+
+function MockNetwork.requestBuyLootbox(rarity)
+	if not rarity or type(rarity) ~= "string" then
+		log("Invalid rarity")
+		return false, "Invalid rarity"
+	end
+	
+	log("Requesting buy lootbox (mock): %s", rarity)
+	
+	delay(Config.MOCK_SETTINGS.PROFILE_UPDATE_DELAY_MS)
+	
+	-- Mock hard currency costs
+	local costs = {
+		uncommon = 7,
+		rare = 22,
+		epic = 55,
+		legendary = 100
+	}
+	
+	local cost = costs[rarity]
+	if not cost then
+		log("Unknown rarity: %s", rarity)
+		return false, "Unknown rarity"
+	end
+	
+	if not currentProfile then
+		currentProfile = MockData.makeProfileSnapshot()
+	end
+	
+	-- Check hard currency
+	if (currentProfile.currencies.hard or 0) < cost then
+		log("Insufficient hard currency: need %d, have %d", cost, currentProfile.currencies.hard or 0)
+		return false, "Insufficient hard currency"
+	end
+	
+	-- Deduct hard currency
+	currentProfile.currencies.hard = currentProfile.currencies.hard - cost
+	
+	-- Try to add lootbox (simulate server logic)
+	local lootboxes = currentProfile.lootboxes or {}
+	local lootboxCount = 0
+	for _ in pairs(lootboxes) do
+		lootboxCount = lootboxCount + 1
+	end
+	
+	if lootboxCount >= 4 then
+		-- Create pending lootbox
+		currentProfile.pendingLootbox = {
+			id = "mock_" .. rarity .. "_" .. os.time(),
+			rarity = rarity,
+			seed = tostring(math.random(1000000, 9999999)),
+			source = "shop_purchase"
+		}
+		log("Mock lootbox capacity full, created pending lootbox")
+	else
+		-- Add to lootboxes array
+		local newLootbox = {
+			id = "mock_" .. rarity .. "_" .. os.time(),
+			rarity = rarity,
+			state = "idle",
+			acquiredAt = os.time(),
+			seed = tostring(math.random(1000000, 9999999)),
+			source = "shop_purchase"
+		}
+		
+		table.insert(lootboxes, newLootbox)
+		currentProfile.lootboxes = lootboxes
+		log("Mock lootbox added to slot %d", #lootboxes)
+	end
+	
+	currentProfile.updatedAt = os.time()
+	
+	local payload = {
+		currencies = currentProfile.currencies,
+		lootboxes = currentProfile.lootboxes,
+		pendingLootbox = currentProfile.pendingLootbox,
+		updatedAt = currentProfile.updatedAt,
+		serverNow = os.time()
+	}
+	
+	-- Fire mock ProfileUpdated event
+	if MockNetwork.onProfileUpdated then
+		MockNetwork.onProfileUpdated(payload)
+	end
+	
+	log("Mock lootbox purchase successful: %s (-%d hard)", rarity, cost)
+	return true
+end
+
 -- Reset mock state
 function MockNetwork.reset()
 	currentProfile = nil

@@ -37,6 +37,9 @@ local RequestResolvePendingReplace = Network:WaitForChild("RequestResolvePending
 local RequestStartUnlock = Network:WaitForChild("RequestStartUnlock")
 local RequestOpenNow = Network:WaitForChild("RequestOpenNow")
 local RequestCompleteUnlock = Network:WaitForChild("RequestCompleteUnlock")
+local RequestGetShopPacks = Network:WaitForChild("RequestGetShopPacks")
+local RequestStartPackPurchase = Network:WaitForChild("RequestStartPackPurchase")
+local RequestBuyLootbox = Network:WaitForChild("RequestBuyLootbox")
 
 -- State
 local lastServerNow = 0
@@ -50,6 +53,9 @@ local lastResolvePendingReplaceRequest = 0
 local lastStartUnlockRequest = 0
 local lastOpenNowRequest = 0
 local lastCompleteUnlockRequest = 0
+local lastGetShopPacksRequest = 0
+local lastStartPackPurchaseRequest = 0
+local lastBuyLootboxRequest = 0
 local DEBOUNCE_MS = 300
 
 -- Utility functions
@@ -367,6 +373,66 @@ function NetworkClient.requestCompleteUnlock(slotIndex)
 	return true
 end
 
+-- Shop methods
+function NetworkClient.requestGetShopPacks()
+	if Config.USE_MOCKS then
+		return MockNetwork.requestGetShopPacks()
+	end
+	
+	if debounce(lastGetShopPacksRequest) then
+		log("Debouncing get shop packs request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastGetShopPacksRequest = tick() * 1000
+	log("Requesting shop packs")
+	RequestGetShopPacks:FireServer({})
+	
+	return true
+end
+
+function NetworkClient.requestStartPackPurchase(packId)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestStartPackPurchase(packId)
+	end
+	
+	if not packId or type(packId) ~= "string" then
+		return false, "Invalid pack ID"
+	end
+	
+	if debounce(lastStartPackPurchaseRequest) then
+		log("Debouncing start pack purchase request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastStartPackPurchaseRequest = tick() * 1000
+	log("Requesting start pack purchase: %s", packId)
+	RequestStartPackPurchase:FireServer({packId = packId})
+	
+	return true
+end
+
+function NetworkClient.requestBuyLootbox(rarity)
+	if Config.USE_MOCKS then
+		return MockNetwork.requestBuyLootbox(rarity)
+	end
+	
+	if not rarity or type(rarity) ~= "string" then
+		return false, "Invalid rarity"
+	end
+	
+	if debounce(lastBuyLootboxRequest) then
+		log("Debouncing buy lootbox request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastBuyLootboxRequest = tick() * 1000
+	log("Requesting buy lootbox: %s", rarity)
+	RequestBuyLootbox:FireServer({rarity = rarity})
+	
+	return true
+end
+
 -- Check if any request is currently in flight
 function NetworkClient.isBusy()
 	if Config.USE_MOCKS then
@@ -385,7 +451,10 @@ function NetworkClient.isBusy()
 		   (now - lastResolvePendingReplaceRequest < recentThreshold) or
 		   (now - lastStartUnlockRequest < recentThreshold) or
 		   (now - lastOpenNowRequest < recentThreshold) or
-		   (now - lastCompleteUnlockRequest < recentThreshold)
+		   (now - lastCompleteUnlockRequest < recentThreshold) or
+		   (now - lastGetShopPacksRequest < recentThreshold) or
+		   (now - lastStartPackPurchaseRequest < recentThreshold) or
+		   (now - lastBuyLootboxRequest < recentThreshold)
 end
 
 -- Reinitialize NetworkClient (for mock toggle)
@@ -404,6 +473,9 @@ function NetworkClient.reinitialize()
 	lastStartUnlockRequest = 0
 	lastOpenNowRequest = 0
 	lastCompleteUnlockRequest = 0
+	lastGetShopPacksRequest = 0
+	lastStartPackPurchaseRequest = 0
+	lastBuyLootboxRequest = 0
 	
 	-- Reset mock network if using mocks
 	if Config.USE_MOCKS then

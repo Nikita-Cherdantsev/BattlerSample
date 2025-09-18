@@ -45,6 +45,20 @@ local ERROR_MESSAGES = {
 		message = "You are already in a match. Please wait for it to finish."
 	},
 	
+	-- Shop errors
+	PACK_NOT_AVAILABLE = {
+		title = "Pack Not Available",
+		message = "This pack is not available for purchase."
+	},
+	INSUFFICIENT_HARD = {
+		title = "Insufficient Hard Currency",
+		message = "You don't have enough hard currency for this purchase."
+	},
+	LOOTBOX_CAPACITY_FULL = {
+		title = "Lootbox Capacity Full",
+		message = "Your lootbox slots are full. Please resolve pending lootboxes first."
+	},
+	
 	-- Generic errors
 	INTERNAL = {
 		title = "Server Error",

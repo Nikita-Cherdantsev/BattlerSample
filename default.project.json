@@ -193,13 +193,13 @@
         "CombatEngineDevHarness": {
           "$path": "src/server/Services/CombatEngineDevHarness.server.lua",
           "$properties": {
-            "Enabled": true
+            "Enabled": false
           }
         },
         "LevelUpDevHarness": {
           "$path": "src/server/Services/LevelUpDevHarness.server.lua",
           "$properties": {
-            "Enabled": true
+            "Enabled": false
           }
         },
         "LootboxDevHarness": {
@@ -217,7 +217,7 @@
         "MatchServiceDevHarness": {
           "$path": "src/server/Services/MatchServiceDevHarness.server.lua",
           "$properties": {
-            "Enabled": true
+            "Enabled": false
           }
         }, 
         "PlayerDataService": {
@@ -226,8 +226,17 @@
         "PlayerDataServiceDevHarness": {
           "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua",
           "$properties": {
+            "Enabled": false
+          }
+        },
+        "ShopDevHarness": {
+          "$path": "src/server/Services/ShopDevHarness.server.lua",
+          "$properties": {
             "Enabled": true
           }
+        },
+        "ShopService": {
+          "$path": "src/server/Services/ShopService.lua"
         }
       }
     },

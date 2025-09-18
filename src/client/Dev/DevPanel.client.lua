@@ -75,14 +75,33 @@ local function updateStatus()
 	
 	local pendingStatus = pendingLootbox and "Y" or "N"
 	
+	-- Get currency info
+	local currencies = state.profile and state.profile.currencies or {}
+	local hardCurrency = currencies.hard or 0
+	local softCurrency = currencies.soft or 0
+	
+	-- Get shop status
+	local shopPacks = state.profile and state.profile.shopPacks or {}
+	local hasLiveProducts = false
+	for _, pack in ipairs(shopPacks) do
+		if pack.hasDevProductId then
+			hasLiveProducts = true
+			break
+		end
+	end
+	local liveProductsStatus = hasLiveProducts and "yes" or "no"
+	
 	statusLabel.Text = string.format(
-		"Server: %d\nPower: %d\nMocks: %s\nLoot: %d slots\nUnlocking: %d\nPending: %s",
+		"Server: %d\nPower: %d\nMocks: %s\nHard: %d | Soft: %d\nLoot: %d slots\nUnlocking: %d\nPending: %s\nLive Products: %s",
 		serverNow,
 		squadPower,
 		mockStatus,
+		hardCurrency,
+		softCurrency,
 		#lootboxes,
 		unlockingCount,
-		pendingStatus
+		pendingStatus,
+		liveProductsStatus
 	)
 end
 
@@ -460,6 +479,66 @@ function DevPanel.create()
 	end)
 	resolveReplaceButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Shop section
+	local fetchPacksButton = createButton(buttonContainer, "Shop: Fetch Packs", function()
+		log("Fetch Packs clicked")
+		NetworkClient.requestGetShopPacks()
+	end)
+	fetchPacksButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local buyLootboxUncommonButton = createButton(buttonContainer, "Shop: Buy Lootbox [Uncommon]", function()
+		log("Buy Lootbox Uncommon clicked")
+		NetworkClient.requestBuyLootbox("uncommon")
+	end)
+	buyLootboxUncommonButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local buyLootboxRareButton = createButton(buttonContainer, "Shop: Buy Lootbox [Rare]", function()
+		log("Buy Lootbox Rare clicked")
+		NetworkClient.requestBuyLootbox("rare")
+	end)
+	buyLootboxRareButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local buyLootboxEpicButton = createButton(buttonContainer, "Shop: Buy Lootbox [Epic]", function()
+		log("Buy Lootbox Epic clicked")
+		NetworkClient.requestBuyLootbox("epic")
+	end)
+	buyLootboxEpicButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	local buyLootboxLegendaryButton = createButton(buttonContainer, "Shop: Buy Lootbox [Legendary]", function()
+		log("Buy Lootbox Legendary clicked")
+		NetworkClient.requestBuyLootbox("legendary")
+	end)
+	buyLootboxLegendaryButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
+	-- Mock-only pack purchase buttons
+	if Config.USE_MOCKS then
+		local buyPackSButton = createButton(buttonContainer, "Shop: Buy Pack [S] (Mock)", function()
+			log("Buy Pack S clicked")
+			NetworkClient.requestStartPackPurchase("S")
+		end)
+		buyPackSButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+		
+		local buyPackMButton = createButton(buttonContainer, "Shop: Buy Pack [M] (Mock)", function()
+			log("Buy Pack M clicked")
+			NetworkClient.requestStartPackPurchase("M")
+		end)
+		buyPackMButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+		
+		local buyPackLButton = createButton(buttonContainer, "Shop: Buy Pack [L] (Mock)", function()
+			log("Buy Pack L clicked")
+			NetworkClient.requestStartPackPurchase("L")
+		end)
+		buyPackLButton.Position = UDim2.new(0, 0, 0, buttonY)
+		buttonY = buttonY + buttonHeight + buttonSpacing
+	end
 	
 	-- Toggle Mocks button
 	local toggleMocksButton = createButton(buttonContainer, "Toggle Mocks", function()
