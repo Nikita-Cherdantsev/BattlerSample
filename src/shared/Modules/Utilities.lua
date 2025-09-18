@@ -22,6 +22,7 @@ end
 
 -- UI Utilities (safe to require on both client and server)
 Utilities.Audio = safeRequire(script.Audio)
+Utilities.Blur = safeRequire(script.Blur)
 Utilities.ButtonHandler = safeRequire(script.FrameOpening)
 Utilities.ButtonAnimations = safeRequire(script.ButtonAnimations)
 Utilities.Dropdown = safeRequire(script.Dropdown)

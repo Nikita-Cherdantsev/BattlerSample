@@ -536,10 +536,15 @@ function ShopHandler:OpenWindow()
 	self.ShopFrame.Visible = true
 
 	-- Use TweenUI if available, otherwise just show
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
-		self.Utilities.TweenUI.FadeIn(self.ShopFrame, .3, function ()
-			self.isAnimating = false
-		end)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
+			self.Utilities.TweenUI.FadeIn(self.ShopFrame, .3, function ()
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Show()
+		end
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
@@ -553,11 +558,16 @@ function ShopHandler:CloseWindow()
 	self.isAnimating = true
 
 	-- Hide Shop gui
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
-		self.Utilities.TweenUI.FadeOut(self.ShopFrame, .3, function () 
-			self.ShopFrame.Visible = false
-			self.isAnimating = false
-		end)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
+			self.Utilities.TweenUI.FadeOut(self.ShopFrame, .3, function () 
+				self.ShopFrame.Visible = false
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Hide()
+		end
 	else
 		-- Fallback: no animation
 		self.ShopFrame.Visible = false

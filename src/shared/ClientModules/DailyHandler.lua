@@ -180,15 +180,7 @@ end
 
 function DailyHandler:SetupCloseButton()
 	-- Look for close button in the daily frame
-	local closeButton = self.DailyFrame:FindFirstChild("Close")
-	if closeButton then
-		closeButton = closeButton:FindFirstChild("Button")
-	end
-	
-	-- Alternative: look for close button directly in daily frame
-	if not closeButton then
-		closeButton = self.DailyFrame:FindFirstChild("CloseButton")
-	end
+	local closeButton = self.DailyFrame.TopPanel.BtnClose.Button
 	
 	if not closeButton then
 		warn("DailyHandler: Close button not found - you may need to add a CloseButton to Daily frame")
@@ -221,10 +213,15 @@ function DailyHandler:OpenWindow(rewards, day, isClaimed)
 	self.DailyFrame.Visible = true
 
 	-- Use TweenUI if available, otherwise just show
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
-		self.Utilities.TweenUI.FadeIn(self.DailyFrame, .3, function ()
-			self.isAnimating = false
-		end)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
+			self.Utilities.TweenUI.FadeIn(self.DailyFrame, .3, function ()
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Show()
+		end
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
@@ -282,11 +279,16 @@ function DailyHandler:CloseWindow()
 	self.isAnimating = true
 
 	-- Hide daily gui
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
-		self.Utilities.TweenUI.FadeOut(self.DailyFrame, .3, function () 
-			self.DailyFrame.Visible = false
-			self.isAnimating = false
-		end)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
+			self.Utilities.TweenUI.FadeOut(self.DailyFrame, .3, function () 
+				self.DailyFrame.Visible = false
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Hide()
+		end
 	else
 		-- Fallback: no animation
 		self.DailyFrame.Visible = false

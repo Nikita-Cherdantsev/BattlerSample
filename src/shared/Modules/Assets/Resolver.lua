@@ -39,10 +39,10 @@ end
 -- Get rarity color with fallback
 function Resolver.getRarityColor(rarity)
 	if not rarity then
-		return Manifest.RarityColors["Common"]
+		return Manifest.RarityColors["Uncommon"]
 	end
 	
-	return Manifest.RarityColors[rarity] or Manifest.RarityColors["Common"]
+	return Manifest.RarityColors[rarity] or Manifest.RarityColors["Uncommon"]
 end
 
 -- Get UI color
@@ -94,6 +94,20 @@ end
 
 function Resolver.hasRarityFrame(rarity)
 	return Manifest.RarityFrames[rarity] ~= nil
+end
+
+-- Get reward asset by type and name
+function Resolver.getRewardAsset(rewardType, rewardName, size)
+	if not rewardType or not rewardName then
+		return Manifest.Placeholder.icon
+	end
+
+	local asset = Manifest[rewardType][rewardName]
+	if rewardType == "Currency" then
+		asset = asset[size] or asset.Default
+	end
+	
+	return asset
 end
 
 -- Get placeholder assets

@@ -9,6 +9,9 @@
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
         },
+        "PlaytimeHandler": {
+          "$path": "src/shared/ClientModules/PlaytimeHandler.lua"
+        },
         "ShopHandler": {
           "$path": "src/shared/ClientModules/ShopHandler.lua"
         }
@@ -88,6 +91,9 @@
           "$path": "src/shared/Modules/Utilities.lua",
           "Audio": {
             "$path": "src/shared/Modules/UtilitiesModuleScripts/Audio.lua"
+          },
+          "Blur": {
+            "$path": "src/shared/Modules/UtilitiesModuleScripts/Blur.lua"
           },
           "ButtonAnimations": {
             "$path": "src/shared/Modules/UtilitiesModuleScripts/ButtonAnimations.lua"
@@ -245,8 +251,14 @@
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
+        "ClientBootstrap": {
+          "$path": "src/client/ClientBootstrap.client.lua"
+        },
         "Controllers": {
           "$className": "Folder",
+          "MainController": {
+            "$path": "src/client/Controllers/MainController.lua"
+          },
           "NetworkClient": {
             "$path": "src/client/Controllers/NetworkClient.lua"
           }

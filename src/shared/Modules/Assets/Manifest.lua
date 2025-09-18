@@ -53,7 +53,7 @@ Manifest.RarityFrames = {
 
 -- Rarity colors (base UI colors)
 Manifest.RarityColors = {
-	["Common"] = Color3.fromRGB(150, 150, 150),     -- Gray
+	["Uncommon"] = Color3.fromRGB(150, 150, 150),     -- Gray
 	["Rare"] = Color3.fromRGB(0, 150, 255),         -- Blue
 	["Epic"] = Color3.fromRGB(150, 0, 255),         -- Purple
 	["Legendary"] = Color3.fromRGB(255, 150, 0),    -- Orange
@@ -95,6 +95,42 @@ Manifest.ButtonColors = {
 	hover = Color3.fromRGB(100, 100, 100),
 	pressed = Color3.fromRGB(60, 60, 60),
 	disabled = Color3.fromRGB(50, 50, 50),
+}
+
+-- Currency assets
+Manifest.Currency = {
+	Soft = {
+		Big = "rbxassetid://89868675992699",
+		Small = "rbxassetid://89868675992699",
+		Default = "rbxassetid://89868675992699",
+	},
+	Hard = {
+		Big = "rbxassetid://119227133814721",
+		Small = "rbxassetid://119227133814721",
+		Default = "rbxassetid://119227133814721",
+	}
+}
+
+-- Lootbox assets
+Manifest.Lootbox = {
+	Uncommon = "rbxassetid://120779810734215",
+	Rare = "rbxassetid://98806708559504",
+	Epic = "rbxassetid://105047250692120",
+	Legendary = "rbxassetid://84532524924272",
+}
+
+-- Pattern assets
+Manifest.Pattern = {
+	Black = "rbxassetid://93175509252476",
+	White = "rbxassetid://129772965319979",
+}
+
+-- HUD button assets
+Manifest.HUDIcon = {
+	Shop = "rbxassetid://0",
+	Deck = "rbxassetid://0",
+	Daily = "rbxassetid://0",
+	Playtime = "rbxassetid://0",
 }
 
 return Manifest
