@@ -400,6 +400,760 @@ local function TestShopPacksCatalog()
 	testResults.shopPacksCatalog = true
 end
 
+-- Test 9: RequestAddBox Network Integration
+local function TestRequestAddBoxNetwork()
+	print("\n=== Testing RequestAddBox Network Integration ===")
+	
+	local testUserId = "test_user_network_add"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Test valid rarity (case-insensitive)
+	local result1 = LootboxService.TryAddBox(testUserId, "epic", "network_test")
+	if result1.ok then
+		print("✅ Epic rarity (lowercase) accepted")
+	else
+		print("❌ Epic rarity (lowercase) failed:", result1.error)
+		testResults.requestAddBoxNetwork = false
+		return
+	end
+	
+	-- Test valid rarity (uppercase)
+	local result2 = LootboxService.TryAddBox(testUserId, "RARE", "network_test")
+	if result2.ok then
+		print("✅ Rare rarity (uppercase) accepted")
+	else
+		print("❌ Rare rarity (uppercase) failed:", result2.error)
+		testResults.requestAddBoxNetwork = false
+		return
+	end
+	
+	-- Test invalid rarity
+	local result3 = LootboxService.TryAddBox(testUserId, "common", "network_test")
+	if not result3.ok and result3.error == LootboxService.ErrorCodes.INVALID_RARITY then
+		print("✅ Invalid rarity correctly rejected")
+	else
+		print("❌ Invalid rarity should have been rejected:", result3.error)
+		testResults.requestAddBoxNetwork = false
+		return
+	end
+	
+	-- Test invalid rarity (case variations)
+	local result4 = LootboxService.TryAddBox(testUserId, "COMMON", "network_test")
+	if not result4.ok and result4.error == LootboxService.ErrorCodes.INVALID_RARITY then
+		print("✅ Invalid rarity (uppercase) correctly rejected")
+	else
+		print("❌ Invalid rarity (uppercase) should have been rejected:", result4.error)
+		testResults.requestAddBoxNetwork = false
+		return
+	end
+	
+	testResults.requestAddBoxNetwork = true
+	print("✅ RequestAddBox network integration test passed")
+end
+
+-- Test 10: Pending Discard Flow
+local function TestPendingDiscardFlow()
+	print("\n=== Testing Pending Discard Flow ===")
+	
+	local testUserId = "test_user_pending_discard"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Fill to capacity (4 boxes)
+	for i = 1, 4 do
+		local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.UNCOMMON, "test")
+		if not result.ok then
+			print("❌ Failed to add box " .. i .. ": " .. (result.error or "unknown"))
+			testResults.pendingDiscardFlow = false
+			return
+		end
+	end
+	
+	-- Add 5th box (should go to pending)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	if not result.ok and result.error == LootboxService.ErrorCodes.BOX_CAPACITY_FULL_PENDING and result.pending then
+		print("✅ 5th box correctly set as pending")
+	else
+		print("❌ 5th box handling failed:", result.error)
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	-- Verify profile state before discard
+	local profile = ProfileManager.GetProfile(testUserId)
+	if not profile then
+		print("❌ Failed to get profile")
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	local lootCount = #(profile.lootboxes or {})
+	local hasPending = profile.pendingLootbox ~= nil
+	
+	if lootCount ~= 4 then
+		print("❌ Expected 4 lootboxes, got " .. lootCount)
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	if not hasPending then
+		print("❌ Expected pending lootbox")
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	-- Test discard pending
+	local discardResult = LootboxService.ResolvePendingDiscard(testUserId)
+	if not discardResult.ok then
+		print("❌ Discard pending failed:", discardResult.error)
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	-- Verify profile state after discard
+	local afterProfile = ProfileManager.GetProfile(testUserId)
+	if not afterProfile then
+		print("❌ Failed to get profile after discard")
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	local afterLootCount = #(afterProfile.lootboxes or {})
+	local afterHasPending = afterProfile.pendingLootbox ~= nil
+	
+	if afterLootCount ~= 4 then
+		print("❌ Expected 4 lootboxes after discard, got " .. afterLootCount)
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	if afterHasPending then
+		print("❌ Expected no pending lootbox after discard")
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	-- Verify profile invariants are preserved
+	if not afterProfile.playerId or not afterProfile.createdAt then
+		print("❌ Profile invariants corrupted (playerId or createdAt missing)")
+		testResults.pendingDiscardFlow = false
+		return
+	end
+	
+	testResults.pendingDiscardFlow = true
+	print("✅ Pending discard flow test passed")
+end
+
+-- Test 11: Pending Replace Flow
+local function TestPendingReplaceFlow()
+	print("\n=== Testing Pending Replace Flow ===")
+	
+	local testUserId = "test_user_pending_replace"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Fill to capacity (4 boxes)
+	for i = 1, 4 do
+		local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.UNCOMMON, "test")
+		if not result.ok then
+			print("❌ Failed to add box " .. i .. ": " .. (result.error or "unknown"))
+			testResults.pendingReplaceFlow = false
+			return
+		end
+	end
+	
+	-- Add 5th box (should go to pending)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	if not result.ok and result.error == LootboxService.ErrorCodes.BOX_CAPACITY_FULL_PENDING and result.pending then
+		print("✅ 5th box correctly set as pending")
+	else
+		print("❌ 5th box handling failed:", result.error)
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	-- Test replace pending (replace slot 1)
+	local replaceResult = LootboxService.ResolvePendingReplace(testUserId, 1)
+	if not replaceResult.ok then
+		print("❌ Replace pending failed:", replaceResult.error)
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	-- Verify profile state after replace
+	local afterProfile = ProfileManager.GetProfile(testUserId)
+	if not afterProfile then
+		print("❌ Failed to get profile after replace")
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	local afterLootCount = #(afterProfile.lootboxes or {})
+	local afterHasPending = afterProfile.pendingLootbox ~= nil
+	
+	if afterLootCount ~= 4 then
+		print("❌ Expected 4 lootboxes after replace, got " .. afterLootCount)
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	if afterHasPending then
+		print("❌ Expected no pending lootbox after replace")
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	-- Verify slot 1 was replaced with the pending box
+	local slot1Box = afterProfile.lootboxes[1]
+	if not slot1Box or slot1Box.rarity ~= BoxTypes.BoxRarity.RARE or slot1Box.state ~= BoxTypes.BoxState.IDLE then
+		print("❌ Slot 1 not properly replaced with pending box")
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	-- Verify profile invariants are preserved
+	if not afterProfile.playerId or not afterProfile.createdAt then
+		print("❌ Profile invariants corrupted (playerId or createdAt missing)")
+		testResults.pendingReplaceFlow = false
+		return
+	end
+	
+	testResults.pendingReplaceFlow = true
+	print("✅ Pending replace flow test passed")
+end
+
+-- Test 12: Open Now Flow
+local function TestOpenNowFlow()
+	print("\n=== Testing Open Now Flow ===")
+	
+	local testUserId = "test_user_open_now"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Add a box
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.EPIC, "test")
+	if not result.ok then
+		print("❌ Failed to add box:", result.error)
+		testResults.openNowFlow = false
+		return
+	end
+	
+	-- Verify box is in Idle state
+	local profile = ProfileManager.GetProfile(testUserId)
+	if not profile then
+		print("❌ Failed to get profile")
+		testResults.openNowFlow = false
+		return
+	end
+	
+	local lootbox = profile.lootboxes[1]
+	if not lootbox or lootbox.state ~= BoxTypes.BoxState.IDLE then
+		print("❌ Box not in Idle state")
+		testResults.openNowFlow = false
+		return
+	end
+	
+	-- Test open now
+	local openResult = LootboxService.OpenNow(testUserId, 1, os.time())
+	if not openResult.ok then
+		print("❌ Open now failed:", openResult.error)
+		testResults.openNowFlow = false
+		return
+	end
+	
+	-- Verify profile state after open
+	local afterProfile = ProfileManager.GetProfile(testUserId)
+	if not afterProfile then
+		print("❌ Failed to get profile after open")
+		testResults.openNowFlow = false
+		return
+	end
+	
+	local afterLootCount = #(afterProfile.lootboxes or {})
+	
+	if afterLootCount ~= 0 then
+		print("❌ Expected 0 lootboxes after open, got " .. afterLootCount)
+		testResults.openNowFlow = false
+		return
+	end
+	
+	-- Verify currencies were updated
+	if not afterProfile.currencies or afterProfile.currencies.soft <= 0 then
+		print("❌ Soft currency not properly updated")
+		testResults.openNowFlow = false
+		return
+	end
+	
+	-- Verify profile invariants are preserved
+	if not afterProfile.playerId or not afterProfile.createdAt then
+		print("❌ Profile invariants corrupted (playerId or createdAt missing)")
+		testResults.openNowFlow = false
+		return
+	end
+	
+	testResults.openNowFlow = true
+	print("✅ Open now flow test passed")
+end
+
+-- Test 13: Pending Discard Network Integration
+local function TestPendingDiscardNetwork()
+	print("\n=== Testing Pending Discard Network Integration ===")
+	
+	local testUserId = "test_user_pending_discard_network"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Fill to capacity (4 boxes)
+	for i = 1, 4 do
+		local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.UNCOMMON, "test")
+		if not result.ok then
+			print("❌ Failed to add box " .. i .. ": " .. (result.error or "unknown"))
+			testResults.pendingDiscardNetwork = false
+			return
+		end
+	end
+	
+	-- Add 5th box (should go to pending)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	if not result.ok and result.error == LootboxService.ErrorCodes.BOX_CAPACITY_FULL_PENDING and result.pending then
+		print("✅ 5th box correctly set as pending")
+	else
+		print("❌ 5th box handling failed:", result.error)
+		testResults.pendingDiscardNetwork = false
+		return
+	end
+	
+	-- Verify pending state
+	local profile = ProfileManager.GetCachedProfile(testUserId)
+	if not profile or not profile.pendingLootbox then
+		print("❌ Expected pending lootbox")
+		testResults.pendingDiscardNetwork = false
+		return
+	end
+	
+	-- Test discard pending
+	local discardResult = LootboxService.ResolvePendingDiscard(testUserId)
+	if not discardResult.ok then
+		print("❌ Discard pending failed:", discardResult.error)
+		testResults.pendingDiscardNetwork = false
+		return
+	end
+	
+	-- Verify pending cleared
+	local afterProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterProfile or afterProfile.pendingLootbox then
+		print("❌ Expected no pending lootbox after discard")
+		testResults.pendingDiscardNetwork = false
+		return
+	end
+	
+	-- Verify loot count unchanged
+	local lootCount = #(afterProfile.lootboxes or {})
+	if lootCount ~= 4 then
+		print("❌ Expected 4 lootboxes after discard, got " .. lootCount)
+		testResults.pendingDiscardNetwork = false
+		return
+	end
+	
+	testResults.pendingDiscardNetwork = true
+	print("✅ Pending discard network integration test passed")
+end
+
+-- Test 14: Start/Open Now Network Integration
+local function TestStartOpenNowNetwork()
+	print("\n=== Testing Start/Open Now Network Integration ===")
+	
+	local testUserId = "test_user_start_open_network"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Add a box
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.EPIC, "test")
+	if not result.ok then
+		print("❌ Failed to add box:", result.error)
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Verify box is in Idle state
+	local profile = ProfileManager.GetCachedProfile(testUserId)
+	if not profile then
+		print("❌ Failed to get profile")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	local lootbox = profile.lootboxes[1]
+	if not lootbox or lootbox.state ~= BoxTypes.BoxState.IDLE then
+		print("❌ Box not in Idle state")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Test start unlock
+	local startResult = LootboxService.StartUnlock(testUserId, 1, os.time())
+	if not startResult.ok then
+		print("❌ Start unlock failed:", startResult.error)
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Verify box is now Unlocking
+	local afterStartProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterStartProfile then
+		print("❌ Failed to get profile after start")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	local afterStartLootbox = afterStartProfile.lootboxes[1]
+	if not afterStartLootbox or afterStartLootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+		print("❌ Box not in Unlocking state after start")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Test open now (should work on Unlocking box)
+	local openResult = LootboxService.OpenNow(testUserId, 1, os.time())
+	if not openResult.ok then
+		print("❌ Open now failed:", openResult.error)
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Verify box was opened and removed
+	local afterOpenProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterOpenProfile then
+		print("❌ Failed to get profile after open")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	local afterOpenLootCount = #(afterOpenProfile.lootboxes or {})
+	if afterOpenLootCount ~= 0 then
+		print("❌ Expected 0 lootboxes after open, got " .. afterOpenLootCount)
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	-- Verify currencies were updated
+	if not afterOpenProfile.currencies or afterOpenProfile.currencies.soft <= 0 then
+		print("❌ Soft currency not properly updated")
+		testResults.startOpenNowNetwork = false
+		return
+	end
+	
+	testResults.startOpenNowNetwork = true
+	print("✅ Start/Open now network integration test passed")
+end
+
+-- Test 15: Overflow to Pending to Discard Flow
+local function TestOverflowToPendingToDiscard()
+	print("\n=== Testing Overflow to Pending to Discard Flow ===")
+	
+	local testUserId = "test_user_overflow_discard"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Fill to capacity (4 boxes)
+	for i = 1, 4 do
+		local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.UNCOMMON, "test")
+		if not result.ok then
+			print("❌ Failed to add box " .. i .. ": " .. (result.error or "unknown"))
+			testResults.overflowToPendingToDiscard = false
+			return
+		end
+	end
+	
+	-- Add 5th box (should go to pending with BOX_DECISION_REQUIRED)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	if not result.ok and result.error == LootboxService.ErrorCodes.BOX_DECISION_REQUIRED and result.pending then
+		print("✅ 5th box correctly set as pending with BOX_DECISION_REQUIRED")
+	else
+		print("❌ 5th box handling failed:", result.error)
+		testResults.overflowToPendingToDiscard = false
+		return
+	end
+	
+	-- Verify pending state
+	local profile = ProfileManager.GetCachedProfile(testUserId)
+	if not profile or not profile.pendingLootbox then
+		print("❌ Expected pending lootbox")
+		testResults.overflowToPendingToDiscard = false
+		return
+	end
+	
+	-- Test discard pending
+	local discardResult = LootboxService.ResolvePendingDiscard(testUserId)
+	if not discardResult.ok then
+		print("❌ Discard pending failed:", discardResult.error)
+		testResults.overflowToPendingToDiscard = false
+		return
+	end
+	
+	-- Verify pending cleared and loot count unchanged
+	local afterProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterProfile or afterProfile.pendingLootbox then
+		print("❌ Expected no pending lootbox after discard")
+		testResults.overflowToPendingToDiscard = false
+		return
+	end
+	
+	local lootCount = #(afterProfile.lootboxes or {})
+	if lootCount ~= 4 then
+		print("❌ Expected 4 lootboxes after discard, got " .. lootCount)
+		testResults.overflowToPendingToDiscard = false
+		return
+	end
+	
+	testResults.overflowToPendingToDiscard = true
+	print("✅ Overflow to pending to discard flow test passed")
+end
+
+-- Test 16: Overflow to Pending to Replace Flow
+local function TestOverflowToPendingToReplace()
+	print("\n=== Testing Overflow to Pending to Replace Flow ===")
+	
+	local testUserId = "test_user_overflow_replace"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Fill to capacity (4 boxes)
+	for i = 1, 4 do
+		local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.UNCOMMON, "test")
+		if not result.ok then
+			print("❌ Failed to add box " .. i .. ": " .. (result.error or "unknown"))
+			testResults.overflowToPendingToReplace = false
+			return
+		end
+	end
+	
+	-- Add 5th box (should go to pending)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	if not result.ok and result.error == LootboxService.ErrorCodes.BOX_DECISION_REQUIRED and result.pending then
+		print("✅ 5th box correctly set as pending")
+	else
+		print("❌ 5th box handling failed:", result.error)
+		testResults.overflowToPendingToReplace = false
+		return
+	end
+	
+	-- Test replace pending (replace slot 1)
+	local replaceResult = LootboxService.ResolvePendingReplace(testUserId, 1)
+	if not replaceResult.ok then
+		print("❌ Replace pending failed:", replaceResult.error)
+		testResults.overflowToPendingToReplace = false
+		return
+	end
+	
+	-- Verify slot 1 was replaced and pending cleared
+	local afterProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterProfile or afterProfile.pendingLootbox then
+		print("❌ Expected no pending lootbox after replace")
+		testResults.overflowToPendingToReplace = false
+		return
+	end
+	
+	local slot1Box = afterProfile.lootboxes[1]
+	if not slot1Box or slot1Box.rarity ~= BoxTypes.BoxRarity.RARE or slot1Box.state ~= BoxTypes.BoxState.IDLE then
+		print("❌ Slot 1 not properly replaced with pending box")
+		testResults.overflowToPendingToReplace = false
+		return
+	end
+	
+	testResults.overflowToPendingToReplace = true
+	print("✅ Overflow to pending to replace flow test passed")
+end
+
+-- Test 17: Start to OpenNow Happy Path
+local function TestStartToOpenNowHappyPath()
+	print("\n=== Testing Start to OpenNow Happy Path ===")
+	
+	local testUserId = "test_user_start_open_happy"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Add a box
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.EPIC, "test")
+	if not result.ok then
+		print("❌ Failed to add box:", result.error)
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Verify box is in Idle state
+	local profile = ProfileManager.GetCachedProfile(testUserId)
+	if not profile then
+		print("❌ Failed to get profile")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	local lootbox = profile.lootboxes[1]
+	if not lootbox or lootbox.state ~= BoxTypes.BoxState.IDLE then
+		print("❌ Box not in Idle state")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Test start unlock
+	local startResult = LootboxService.StartUnlock(testUserId, 1, os.time())
+	if not startResult.ok then
+		print("❌ Start unlock failed:", startResult.error)
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Verify box is now Unlocking
+	local afterStartProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterStartProfile then
+		print("❌ Failed to get profile after start")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	local afterStartLootbox = afterStartProfile.lootboxes[1]
+	if not afterStartLootbox or afterStartLootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+		print("❌ Box not in Unlocking state after start")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Test open now (should work on Unlocking box)
+	local openResult = LootboxService.OpenNow(testUserId, 1, os.time())
+	if not openResult.ok then
+		print("❌ Open now failed:", openResult.error)
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Verify box was opened and removed
+	local afterOpenProfile = ProfileManager.GetCachedProfile(testUserId)
+	if not afterOpenProfile then
+		print("❌ Failed to get profile after open")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	local afterOpenLootCount = #(afterOpenProfile.lootboxes or {})
+	if afterOpenLootCount ~= 0 then
+		print("❌ Expected 0 lootboxes after open, got " .. afterOpenLootCount)
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	-- Verify currencies were updated
+	if not afterOpenProfile.currencies or afterOpenProfile.currencies.soft <= 0 then
+		print("❌ Soft currency not properly updated")
+		testResults.startToOpenNowHappyPath = false
+		return
+	end
+	
+	testResults.startToOpenNowHappyPath = true
+	print("✅ Start to OpenNow happy path test passed")
+end
+
+-- Test 18: OpenNow Wrong State
+local function TestOpenNowWrongState()
+	print("\n=== Testing OpenNow Wrong State ===")
+	
+	local testUserId = "test_user_opennow_wrong_state"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Add a box (will be Idle)
+	local result = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.EPIC, "test")
+	if not result.ok then
+		print("❌ Failed to add box:", result.error)
+		testResults.openNowWrongState = false
+		return
+	end
+	
+	-- Test open now on Idle box (should fail)
+	local openResult = LootboxService.OpenNow(testUserId, 1, os.time())
+	if openResult.ok or openResult.error ~= LootboxService.ErrorCodes.BOX_NOT_UNLOCKING then
+		print("❌ OpenNow on Idle should fail with BOX_NOT_UNLOCKING, got:", openResult.error)
+		testResults.openNowWrongState = false
+		return
+	end
+	
+	print("✅ OpenNow on Idle correctly rejected")
+	
+	-- Start unlock to make it Unlocking
+	local startResult = LootboxService.StartUnlock(testUserId, 1, os.time())
+	if not startResult.ok then
+		print("❌ Start unlock failed:", startResult.error)
+		testResults.openNowWrongState = false
+		return
+	end
+	
+	-- Complete unlock to make it Ready (if that state exists)
+	-- For now, let's test that OpenNow works on Unlocking
+	local openResult2 = LootboxService.OpenNow(testUserId, 1, os.time())
+	if not openResult2.ok then
+		print("❌ OpenNow on Unlocking should work, got:", openResult2.error)
+		testResults.openNowWrongState = false
+		return
+	end
+	
+	print("✅ OpenNow on Unlocking correctly worked")
+	
+	testResults.openNowWrongState = true
+	print("✅ OpenNow wrong state test passed")
+end
+
+-- Test 19: StartUnlock Single Unlock Rule
+local function TestStartUnlockSingleUnlockRule()
+	print("\n=== Testing StartUnlock Single Unlock Rule ===")
+	
+	local testUserId = "test_user_single_unlock"
+	
+	-- Clean up any existing profile
+	ProfileManager.DeleteProfile(testUserId)
+	
+	-- Add two boxes
+	local result1 = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.EPIC, "test")
+	local result2 = LootboxService.TryAddBox(testUserId, BoxTypes.BoxRarity.RARE, "test")
+	
+	if not result1.ok or not result2.ok then
+		print("❌ Failed to add boxes:", result1.error, result2.error)
+		testResults.startUnlockSingleUnlockRule = false
+		return
+	end
+	
+	-- Start unlock on first box
+	local startResult1 = LootboxService.StartUnlock(testUserId, 1, os.time())
+	if not startResult1.ok then
+		print("❌ Start unlock 1 failed:", startResult1.error)
+		testResults.startUnlockSingleUnlockRule = false
+		return
+	end
+	
+	-- Try to start unlock on second box (should fail)
+	local startResult2 = LootboxService.StartUnlock(testUserId, 2, os.time())
+	if startResult2.ok or startResult2.error ~= LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING then
+		print("❌ Start unlock 2 should fail with BOX_ALREADY_UNLOCKING, got:", startResult2.error)
+		testResults.startUnlockSingleUnlockRule = false
+		return
+	end
+	
+	print("✅ Second start unlock correctly rejected")
+	
+	testResults.startUnlockSingleUnlockRule = true
+	print("✅ StartUnlock single unlock rule test passed")
+end
+
 -- Main test runner
 function LootboxDevHarness.RunAllTests()
 	print("🎁 Starting Lootbox System Tests...")
@@ -417,6 +1171,17 @@ function LootboxDevHarness.RunAllTests()
 	TestRewardsValidity()
 	TestValidatorInvariants()
 	TestShopPacksCatalog()
+	TestRequestAddBoxNetwork()
+	TestPendingDiscardFlow()
+	TestPendingReplaceFlow()
+	TestOpenNowFlow()
+	TestPendingDiscardNetwork()
+	TestStartOpenNowNetwork()
+	TestOverflowToPendingToDiscard()
+	TestOverflowToPendingToReplace()
+	TestStartToOpenNowHappyPath()
+	TestOpenNowWrongState()
+	TestStartUnlockSingleUnlockRule()
 	
 	-- Summary
 	print("\n==================================")
@@ -450,7 +1215,18 @@ function LootboxDevHarness.RunAllTests()
 		"test_user_replace",
 		"test_user_unlock",
 		"test_user_complete",
-		"test_user_opennow"
+		"test_user_opennow",
+		"test_user_network_add",
+		"test_user_pending_discard",
+		"test_user_pending_replace",
+		"test_user_open_now",
+		"test_user_pending_discard_network",
+		"test_user_start_open_network",
+		"test_user_overflow_discard",
+		"test_user_overflow_replace",
+		"test_user_start_open_happy",
+		"test_user_opennow_wrong_state",
+		"test_user_single_unlock"
 	}
 	
 	for _, userId in ipairs(testUsers) do

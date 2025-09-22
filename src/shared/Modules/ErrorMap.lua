@@ -83,6 +83,26 @@ local ERROR_MESSAGES = {
 	LOOTBOX_ALREADY_OPENING = {
 		title = "Already Opening",
 		message = "This lootbox is already being opened."
+	},
+	BOX_DECISION_REQUIRED = {
+		title = "Decision Required",
+		message = "Your lootbox slots are full. Please discard or replace a lootbox to make room."
+	},
+	BOX_NOT_UNLOCKING = {
+		title = "Not Unlocking",
+		message = "This lootbox must be unlocking to open instantly."
+	},
+	BOX_ALREADY_UNLOCKING = {
+		title = "Already Unlocking",
+		message = "Only one lootbox can be unlocking at a time."
+	},
+	INVALID_SLOT = {
+		title = "Invalid Slot",
+		message = "The specified slot is not valid."
+	},
+	INVALID_STATE = {
+		title = "Invalid State",
+		message = "The lootbox is not in the correct state for this action."
 	}
 }
 

@@ -68,7 +68,7 @@ local function updateStatus()
 	local pendingLootbox = state.profile and state.profile.pendingLootbox
 	local unlockingCount = 0
 	for _, lootbox in ipairs(lootboxes) do
-		if lootbox.state == "unlocking" then
+		if lootbox.state == "Unlocking" then
 			unlockingCount = unlockingCount + 1
 		end
 	end
@@ -480,6 +480,14 @@ function DevPanel.create()
 	resolveReplaceButton.Position = UDim2.new(0, 0, 0, buttonY)
 	buttonY = buttonY + buttonHeight + buttonSpacing
 	
+	-- Loot state summary button
+	local lootStateButton = createButton(buttonContainer, "Loot: State Summary", function()
+		log("Loot State Summary clicked")
+		DevPanel.printLootState()
+	end)
+	lootStateButton.Position = UDim2.new(0, 0, 0, buttonY)
+	buttonY = buttonY + buttonHeight + buttonSpacing
+	
 	-- Shop section
 	local fetchPacksButton = createButton(buttonContainer, "Shop: Fetch Packs", function()
 		log("Fetch Packs clicked")
@@ -598,6 +606,68 @@ function DevPanel.init()
 	
 	isInitialized = true
 	log("Dev panel initialized")
+end
+
+-- Print loot state summary
+function DevPanel.printLootState()
+	local state = ClientState.getState()
+	local profile = state.profile
+	
+	if not profile then
+		log("No profile available for loot state summary")
+		return
+	end
+	
+	local lootboxes = profile.lootboxes or {}
+	local pendingLootbox = profile.pendingLootbox
+	
+	-- Count lootbox states
+	local idleCount = 0
+	local unlockingCount = 0
+	local unlockingSlot = nil
+	local remainSec = 0
+	
+	for i, lootbox in ipairs(lootboxes) do
+		if lootbox.state == "Idle" then
+			idleCount = idleCount + 1
+		elseif lootbox.state == "Unlocking" then
+			unlockingCount = unlockingCount + 1
+			unlockingSlot = i
+			-- Calculate remaining time
+			local unlockTime = lootbox.unlockTime or 0
+			local currentTime = os.time()
+			remainSec = math.max(0, unlockTime - currentTime)
+		end
+	end
+	
+	local hasPending = pendingLootbox ~= nil
+	
+	log("=== LOOT STATE SUMMARY ===")
+	log("Total slots: %d", #lootboxes)
+	log("Idle: %d", idleCount)
+	log("Unlocking: %d", unlockingCount)
+	if unlockingSlot then
+		log("Unlocking slot: %d (remain: %d sec)", unlockingSlot, remainSec)
+	else
+		log("Unlocking slot: none")
+	end
+	log("Pending: %s", hasPending and "yes" or "no")
+	
+	-- Show individual lootbox details
+	for i, lootbox in ipairs(lootboxes) do
+		local timeStr = ""
+		if lootbox.state == "Unlocking" and lootbox.unlockTime then
+			local remain = math.max(0, lootbox.unlockTime - os.time())
+			timeStr = string.format(" (remain: %ds)", remain)
+		end
+		log("  Slot %d: %s %s%s", i, lootbox.rarity, lootbox.state, timeStr)
+	end
+	
+	if pendingLootbox then
+		log("  Pending: %s", pendingLootbox.rarity)
+	end
+	
+	log("========================")
 end
 
 -- Destroy the dev panel

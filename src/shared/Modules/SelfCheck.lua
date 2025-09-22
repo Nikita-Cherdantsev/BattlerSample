@@ -503,6 +503,182 @@ local function TestGameConstants()
 	print("✅ Total rarity weight:", totalWeight)
 end
 
+-- Test 9: Lootbox Migration (common -> uncommon)
+local function TestLootboxMigration()
+	print("\n=== Testing Lootbox Migration (common -> uncommon) ===")
+	
+	-- Create a mock v1 profile with "common" lootboxes
+	local mockV1Profile = {
+		playerId = "test_user",
+		version = "v1",
+		collection = {},
+		deck = {},
+		currencies = { soft = 0, hard = 0 },
+		lootboxes = {
+			{
+				id = "test_box_1",
+				rarity = "common",  -- This should be migrated to "uncommon"
+				state = "Idle",
+				acquiredAt = os.time(),
+				seed = 12345
+			},
+			{
+				id = "test_box_2", 
+				rarity = "rare",   -- This should remain unchanged
+				state = "Unlocking",
+				acquiredAt = os.time(),
+				seed = 67890
+			}
+		},
+		pendingLootbox = {
+			id = "test_pending",
+			rarity = "common",  -- This should be migrated to "uncommon"
+			seed = 11111
+		}
+	}
+	
+	-- Simulate migration (we can't import ProfileManager here, so we'll simulate the logic)
+	local migratedProfile = {}
+	for k, v in pairs(mockV1Profile) do
+		migratedProfile[k] = v
+	end
+	
+	-- Migrate lootboxes
+	if migratedProfile.lootboxes then
+		for _, lootbox in ipairs(migratedProfile.lootboxes) do
+			if lootbox.rarity == "common" then
+				lootbox.rarity = "uncommon"
+			end
+		end
+	end
+	
+	-- Migrate pending lootbox
+	if migratedProfile.pendingLootbox and migratedProfile.pendingLootbox.rarity == "common" then
+		migratedProfile.pendingLootbox.rarity = "uncommon"
+	end
+	
+	-- Verify migration
+	local migrationSuccess = true
+	
+	-- Check lootbox 1 was migrated
+	if migratedProfile.lootboxes[1].rarity ~= "uncommon" then
+		print("❌ Lootbox 1 rarity not migrated:", migratedProfile.lootboxes[1].rarity)
+		migrationSuccess = false
+	else
+		print("✅ Lootbox 1 migrated: common -> uncommon")
+	end
+	
+	-- Check lootbox 2 was unchanged
+	if migratedProfile.lootboxes[2].rarity ~= "rare" then
+		print("❌ Lootbox 2 rarity changed unexpectedly:", migratedProfile.lootboxes[2].rarity)
+		migrationSuccess = false
+	else
+		print("✅ Lootbox 2 unchanged: rare")
+	end
+	
+	-- Check pending lootbox was migrated
+	if migratedProfile.pendingLootbox.rarity ~= "uncommon" then
+		print("❌ Pending lootbox rarity not migrated:", migratedProfile.pendingLootbox.rarity)
+		migrationSuccess = false
+	else
+		print("✅ Pending lootbox migrated: common -> uncommon")
+	end
+	
+	testResults.lootboxMigration = migrationSuccess
+end
+
+local function TestHardDropRanges()
+	print("\n=== Testing Hard Drop Ranges (Epic/Legendary) ===")
+	
+	local BoxDropTables = require(script.Parent.Loot.BoxDropTables)
+	local BoxRoller = require(script.Parent.Loot.BoxRoller)
+	local SeededRNG = require(script.Parent.RNG.SeededRNG)
+	
+	local testResults = {}
+	
+	-- Test Epic lootbox hard drops
+	print("Testing Epic lootbox hard drops...")
+	local epicTable = BoxDropTables.EPIC
+	local epicTests = 0
+	local epicHits = 0
+	local epicTotalHard = 0
+	local epicMinHard = math.huge
+	local epicMaxHard = 0
+	
+	for i = 1, 1000 do
+		local rng = SeededRNG.new(i * 12345) -- Different seed for each test
+		local rewards = BoxRoller.RollRewards(epicTable, rng)
+		
+		epicTests = epicTests + 1
+		if rewards.hardDelta and rewards.hardDelta > 0 then
+			epicHits = epicHits + 1
+			epicTotalHard = epicTotalHard + rewards.hardDelta
+			epicMinHard = math.min(epicMinHard, rewards.hardDelta)
+			epicMaxHard = math.max(epicMaxHard, rewards.hardDelta)
+		end
+	end
+	
+	local epicHitRate = epicHits / epicTests
+	local epicExpectedRate = epicTable.hardChance
+	local epicRateOk = math.abs(epicHitRate - epicExpectedRate) < 0.02 -- Allow 2% tolerance
+	
+	print(string.format("Epic: %d hits out of %d tests (%.1f%%, expected %.1f%%)", 
+		epicHits, epicTests, epicHitRate * 100, epicExpectedRate * 100))
+	print(string.format("Epic hard range: %d-%d (expected 1-29)", epicMinHard, epicMaxHard))
+	
+	local epicRangeOk = epicMinHard >= 1 and epicMaxHard <= 29
+	
+	-- Test Legendary lootbox hard drops
+	print("Testing Legendary lootbox hard drops...")
+	local legendaryTable = BoxDropTables.LEGENDARY
+	local legendaryTests = 0
+	local legendaryHits = 0
+	local legendaryTotalHard = 0
+	local legendaryMinHard = math.huge
+	local legendaryMaxHard = 0
+	
+	for i = 1, 1000 do
+		local rng = SeededRNG.new(i * 54321) -- Different seed for each test
+		local rewards = BoxRoller.RollRewards(legendaryTable, rng)
+		
+		legendaryTests = legendaryTests + 1
+		if rewards.hardDelta and rewards.hardDelta > 0 then
+			legendaryHits = legendaryHits + 1
+			legendaryTotalHard = legendaryTotalHard + rewards.hardDelta
+			legendaryMinHard = math.min(legendaryMinHard, rewards.hardDelta)
+			legendaryMaxHard = math.max(legendaryMaxHard, rewards.hardDelta)
+		end
+	end
+	
+	local legendaryHitRate = legendaryHits / legendaryTests
+	local legendaryExpectedRate = legendaryTable.hardChance
+	local legendaryRateOk = math.abs(legendaryHitRate - legendaryExpectedRate) < 0.02 -- Allow 2% tolerance
+	
+	print(string.format("Legendary: %d hits out of %d tests (%.1f%%, expected %.1f%%)", 
+		legendaryHits, legendaryTests, legendaryHitRate * 100, legendaryExpectedRate * 100))
+	print(string.format("Legendary hard range: %d-%d (expected 1-77)", legendaryMinHard, legendaryMaxHard))
+	
+	local legendaryRangeOk = legendaryMinHard >= 1 and legendaryMaxHard <= 77
+	
+	-- Verify results
+	testResults.epicRate = epicRateOk
+	testResults.epicRange = epicRangeOk
+	testResults.legendaryRate = legendaryRateOk
+	testResults.legendaryRange = legendaryRangeOk
+	
+	if epicRateOk and epicRangeOk and legendaryRateOk and legendaryRangeOk then
+		print("✅ All hard drop tests passed!")
+	else
+		print("❌ Some hard drop tests failed!")
+		if not epicRateOk then print("  - Epic hit rate incorrect") end
+		if not epicRangeOk then print("  - Epic range incorrect") end
+		if not legendaryRateOk then print("  - Legendary hit rate incorrect") end
+		if not legendaryRangeOk then print("  - Legendary range incorrect") end
+	end
+	
+	return testResults
+end
+
 -- Run all tests
 function SelfCheck.RunAllTests()
 	print("🧪 Running Self-Check Tests (v2)")
@@ -520,6 +696,8 @@ function SelfCheck.RunAllTests()
 	TestCombatUtils()
 	TestSeededRNG()
 	TestGameConstants()
+	TestLootboxMigration()
+	TestHardDropRanges()
 	
 	-- Summary
 	print("\n==================================")

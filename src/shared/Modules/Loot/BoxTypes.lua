@@ -16,10 +16,10 @@ BoxTypes.BoxRarity = {
 
 -- Box state enum
 BoxTypes.BoxState = {
-	IDLE = "idle",
-	UNLOCKING = "unlocking",
-	READY = "ready",
-	CONSUMED = "consumed"
+	IDLE = "Idle",
+	UNLOCKING = "Unlocking",
+	READY = "Ready",
+	CONSUMED = "Consumed"
 }
 
 -- Duration in seconds for each rarity

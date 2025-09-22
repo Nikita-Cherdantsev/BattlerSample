@@ -14,7 +14,7 @@ local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
 
 -- Test user ID (mock player)
-local testUserId = 12345
+local testUserId = "12345"
 
 -- Test pack purchase flow
 function ShopDevHarness.TestPackPurchase()
@@ -44,16 +44,25 @@ end
 function ShopDevHarness.TestLootboxPurchase()
 	print("🧪 Testing lootbox purchase flow...")
 	
-	-- Ensure test profile exists
-	local profile = ProfileManager.GetProfile(testUserId)
+	-- Ensure test profile exists and has proper structure
+	local profile = ProfileManager.LoadProfile(testUserId)
 	if not profile then
 		print("❌ Test profile not found")
 		return false
 	end
 	
+	-- Ensure profile has proper playerId
+	if not profile.playerId or type(profile.playerId) ~= "string" then
+		print("❌ Test profile has invalid playerId:", profile.playerId)
+		return false
+	end
+	
 	-- Give test user some hard currency
 	profile.currencies.hard = 1000
+	profile.updatedAt = os.time()
 	ProfileManager.SaveProfile(testUserId, profile)
+	
+	print("✅ Test profile prepared with 1000 hard currency")
 	
 	-- Test uncommon lootbox purchase
 	local result = ShopService.BuyLootbox(testUserId, "uncommon")
@@ -64,9 +73,26 @@ function ShopDevHarness.TestLootboxPurchase()
 	
 	print("✅ Uncommon lootbox purchase successful, cost:", result.cost)
 	
+	-- Verify the purchase actually worked by checking the profile
+	local updatedProfile = ProfileManager.LoadProfile(testUserId)
+	if not updatedProfile then
+		print("❌ Could not load updated profile")
+		return false
+	end
+	
+	-- Check that hard currency was deducted
+	local expectedHard = 1000 - result.cost
+	if updatedProfile.currencies.hard ~= expectedHard then
+		print("❌ Hard currency not deducted correctly. Expected:", expectedHard, "Got:", updatedProfile.currencies.hard)
+		return false
+	end
+	
+	print("✅ Hard currency correctly deducted")
+	
 	-- Test insufficient currency
-	local profile2 = ProfileManager.GetProfile(testUserId)
+	local profile2 = ProfileManager.LoadProfile(testUserId)
 	profile2.currencies.hard = 0
+	profile2.updatedAt = os.time()
 	ProfileManager.SaveProfile(testUserId, profile2)
 	
 	local insufficientResult = ShopService.BuyLootbox(testUserId, "rare")
@@ -76,6 +102,15 @@ function ShopDevHarness.TestLootboxPurchase()
 	end
 	
 	print("✅ Insufficient currency correctly rejected")
+	
+	-- Test invalid rarity
+	local invalidResult = ShopService.BuyLootbox(testUserId, "invalid_rarity")
+	if invalidResult.ok then
+		print("❌ Invalid rarity purchase should have failed")
+		return false
+	end
+	
+	print("✅ Invalid rarity correctly rejected")
 	return true
 end
 
@@ -146,20 +181,30 @@ function ShopDevHarness.TestPackAvailability()
 	-- Test HasDevProductId function
 	local hasDevProduct = ShopPacksCatalog.HasDevProductId("M")
 	if hasDevProduct then
-		print("❌ Pack M should not have devProductId (it's nil)")
+		print("✅ Pack M correctly identified as available (has devProductId)")
+	else
+		print("❌ Pack M should have devProductId")
 		return false
 	end
-	
-	print("✅ Pack M correctly identified as unavailable")
 	
 	-- Test GetAvailablePacks function
 	local availablePacks = ShopPacksCatalog.GetAvailablePacks()
 	if #availablePacks > 0 then
-		print("❌ No packs should be available (all devProductIds are nil)")
+		print("✅ Found", #availablePacks, "available packs")
+	else
+		print("❌ No packs available (should have some)")
 		return false
 	end
 	
-	print("✅ No packs available (as expected)")
+	-- Test that all packs have valid devProductIds
+	for _, pack in ipairs(availablePacks) do
+		if not pack.devProductId or type(pack.devProductId) ~= "number" then
+			print("❌ Pack", pack.id, "has invalid devProductId:", pack.devProductId)
+			return false
+		end
+	end
+	
+	print("✅ All available packs have valid devProductIds")
 	return true
 end
 
@@ -231,3 +276,4 @@ if game:GetService("RunService"):IsStudio() then
 end
 
 return ShopDevHarness
+

@@ -345,7 +345,7 @@ function MockNetwork.requestAddBox(rarity, source)
 			lootboxes[i] = {
 				id = "mock_box_" .. os.time() .. "_" .. i,
 				rarity = rarity,
-				state = "idle",
+				state = "Idle",
 				seed = math.random(1, 2147483647),
 				source = source
 			}
@@ -474,14 +474,14 @@ function MockNetwork.requestStartUnlock(slotIndex)
 		return false, "No lootbox at slot " .. slotIndex
 	end
 	
-	if lootbox.state ~= "idle" then
+	if lootbox.state ~= "Idle" then
 		log("Lootbox at slot %d is not idle", slotIndex)
 		return false, "Lootbox at slot " .. slotIndex .. " is not idle"
 	end
 	
 	-- Check if any other box is unlocking
 	for i = 1, 4 do
-		if lootboxes[i] and lootboxes[i].state == "unlocking" then
+		if lootboxes[i] and lootboxes[i].state == "Unlocking" then
 			log("Another lootbox is already unlocking")
 			return false, "Another lootbox is already unlocking"
 		end
@@ -490,7 +490,7 @@ function MockNetwork.requestStartUnlock(slotIndex)
 	-- Start unlocking
 	local now = os.time()
 	local duration = 60 -- 1 minute for mock (much shorter than real durations)
-	lootbox.state = "unlocking"
+	lootbox.state = "Unlocking"
 	lootbox.startedAt = now
 	lootbox.unlocksAt = now + duration
 	
@@ -528,7 +528,7 @@ function MockNetwork.requestOpenNow(slotIndex)
 		return false, "No lootbox at slot " .. slotIndex
 	end
 	
-	if lootbox.state ~= "idle" and lootbox.state ~= "unlocking" then
+	if lootbox.state ~= "Idle" and lootbox.state ~= "Unlocking" then
 		log("Lootbox at slot %d cannot be opened", slotIndex)
 		return false, "Lootbox at slot " .. slotIndex .. " cannot be opened"
 	end
@@ -593,7 +593,7 @@ function MockNetwork.requestCompleteUnlock(slotIndex)
 		return false, "No lootbox at slot " .. slotIndex
 	end
 	
-	if lootbox.state ~= "unlocking" and lootbox.state ~= "ready" then
+	if lootbox.state ~= "Unlocking" and lootbox.state ~= "Ready" then
 		log("Lootbox at slot %d is not ready to complete", slotIndex)
 		return false, "Lootbox at slot " .. slotIndex .. " is not ready to complete"
 	end
@@ -656,12 +656,12 @@ function MockNetwork.requestGetShopPacks()
 	
 	-- Return mock shop packs (all with devProductId = nil for testing)
 	local packs = {
-		{id = "S", hardAmount = 100, robuxPrice = 40, hasDevProductId = false},
-		{id = "M", hardAmount = 330, robuxPrice = 100, hasDevProductId = false},
-		{id = "L", hardAmount = 840, robuxPrice = 200, hasDevProductId = false},
-		{id = "XL", hardAmount = 1950, robuxPrice = 400, hasDevProductId = false},
-		{id = "XXL", hardAmount = 4900, robuxPrice = 800, hasDevProductId = false},
-		{id = "XXXL", hardAmount = 12000, robuxPrice = 1500, hasDevProductId = false}
+		{id = "S", hardAmount = 100, additionalHard = 0, robuxPrice = 40, hasDevProductId = false},
+		{id = "M", hardAmount = 330, additionalHard = 0, robuxPrice = 100, hasDevProductId = false},
+		{id = "L", hardAmount = 840, additionalHard = 0, robuxPrice = 200, hasDevProductId = false},
+		{id = "XL", hardAmount = 1950, additionalHard = 0, robuxPrice = 400, hasDevProductId = false},
+		{id = "XXL", hardAmount = 4900, additionalHard = 0, robuxPrice = 800, hasDevProductId = false},
+		{id = "XXXL", hardAmount = 12000, additionalHard = 0, robuxPrice = 1500, hasDevProductId = false}
 	}
 	
 	local payload = {
@@ -689,12 +689,12 @@ function MockNetwork.requestStartPackPurchase(packId)
 	
 	-- Simulate pack validation
 	local packData = {
-		["S"] = {hardAmount = 100, robuxPrice = 40},
-		["M"] = {hardAmount = 330, robuxPrice = 100},
-		["L"] = {hardAmount = 840, robuxPrice = 200},
-		["XL"] = {hardAmount = 1950, robuxPrice = 400},
-		["XXL"] = {hardAmount = 4900, robuxPrice = 800},
-		["XXXL"] = {hardAmount = 12000, robuxPrice = 1500}
+		["S"] = {hardAmount = 100, additionalHard = 0, robuxPrice = 40},
+		["M"] = {hardAmount = 330, additionalHard = 0, robuxPrice = 100},
+		["L"] = {hardAmount = 840, additionalHard = 0, robuxPrice = 200},
+		["XL"] = {hardAmount = 1950, additionalHard = 0, robuxPrice = 400},
+		["XXL"] = {hardAmount = 4900, additionalHard = 0, robuxPrice = 800},
+		["XXXL"] = {hardAmount = 12000, additionalHard = 0, robuxPrice = 1500}
 	}
 	
 	local pack = packData[packId]
@@ -708,7 +708,9 @@ function MockNetwork.requestStartPackPurchase(packId)
 		currentProfile = MockData.makeProfileSnapshot()
 	end
 	
-	currentProfile.currencies.hard = (currentProfile.currencies.hard or 0) + pack.hardAmount
+	-- Credit base + bonus
+	local totalHard = pack.hardAmount + (pack.additionalHard or 0)
+	currentProfile.currencies.hard = (currentProfile.currencies.hard or 0) + totalHard
 	currentProfile.updatedAt = os.time()
 	
 	local payload = {
@@ -725,7 +727,7 @@ function MockNetwork.requestStartPackPurchase(packId)
 		MockNetwork.onProfileUpdated(payload)
 	end
 	
-	log("Mock pack purchase successful: %s (+%d hard)", packId, pack.hardAmount)
+	log("Mock pack purchase successful: %s (+%d hard, base: %d + bonus: %d)", packId, totalHard, pack.hardAmount, pack.additionalHard or 0)
 	return true
 end
 

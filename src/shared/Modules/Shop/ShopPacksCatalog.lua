@@ -13,37 +13,43 @@ ShopPacksCatalog.Packs = {
 		id = "S",
 		hardAmount = 100,
 		robuxPrice = 40,
-		devProductId = 3400863964 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400863964, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	},
 	["M"] = {
 		id = "M", 
 		hardAmount = 330,
 		robuxPrice = 100,
-		devProductId = 3400864205 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400864205, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	},
 	["L"] = {
 		id = "L",
 		hardAmount = 840,
 		robuxPrice = 200,
-		devProductId = 3400864901 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400864901, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	},
 	["XL"] = {
 		id = "XL",
 		hardAmount = 1950,
 		robuxPrice = 400,
-		devProductId = 3400865038 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400865038, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	},
 	["XXL"] = {
 		id = "XXL",
 		hardAmount = 4900,
 		robuxPrice = 800,
-		devProductId = 3400865167 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400865167, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	},
 	["XXXL"] = {
 		id = "XXXL",
 		hardAmount = 12000,
 		robuxPrice = 1500,
-		devProductId = 3400865325 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3400865325, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		additionalHard = 0 -- UI bonus display only
 	}
 }
 

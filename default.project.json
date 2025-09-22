@@ -150,6 +150,9 @@
         "SelfCheck" : {
           "$path": "src/shared/Modules/SelfCheck.lua"
         },
+        "Logger": {
+          "$path": "src/shared/Modules/Logger.lua"
+        },
         "TimeUtils": {
           "$path": "src/shared/Modules/TimeUtils.lua"
         },

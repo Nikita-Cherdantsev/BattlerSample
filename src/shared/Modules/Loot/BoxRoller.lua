@@ -34,7 +34,13 @@ function BoxRoller.RollRewards(rng, rarity)
 	if dropTable.hardChance > 0 then
 		local hardRoll = rng:NextFloat()
 		if hardRoll < dropTable.hardChance then
-			rewards.hardDelta = dropTable.hardAmount
+			-- Use ranged amount if available, otherwise fall back to fixed amount
+			if dropTable.hardRange then
+				local hardRange = dropTable.hardRange.max - dropTable.hardRange.min
+				rewards.hardDelta = dropTable.hardRange.min + math.floor(rng:NextFloat() * (hardRange + 1))
+			else
+				rewards.hardDelta = dropTable.hardAmount or 0
+			end
 		end
 	end
 	

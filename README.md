@@ -24,17 +24,18 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 ## At a Glance
 
 **MVP Features Implemented:**
-- ✅ Profile system with v2 schema (collection, deck, currencies, lootboxes)
+- ✅ Profile system with v2 schema (collection, deck, currencies, lootboxes, squadPower)
 - ✅ Card catalog with 8 cards (4 rarities, 3 classes, slot-based ordering)
 - ✅ Card level-up system (1-10 levels, per-card growth tables, atomic persistence, squad power recomputation)
 - ✅ Collection surface (unified catalog+ownership selector, CardVM handles unowned safely)
 - ✅ Deck validation (6 unique cards, slot mapping by slotNumber)
-- ✅ Deterministic combat engine (fixed turn order, same-index targeting, armor pool)
+- ✅ Deterministic combat engine (fixed turn order, same-index targeting, armor pool defence)
 - ✅ Complete lootbox system (4-slot capacity, deterministic rewards, overflow handling, atomic operations)
-- ✅ Network layer with rate limiting and concurrency guards (7 lootbox endpoints + level-up)
-- ✅ Client-side integration (NetworkClient, ClientState, ViewModels, LootboxesVM)
+- ✅ Shop integration (Developer Product packs + hard currency lootbox purchases)
+- ✅ Network layer with rate limiting and concurrency guards (16 endpoints total)
+- ✅ Client-side integration (NetworkClient, ClientState, ViewModels, LootboxesVM, ShopHandler)
 - ✅ Offline development (mocks, dev panel, comprehensive testing)
-- ✅ DataStore persistence with v1→v2 migration
+- ✅ DataStore persistence with v1→v2 migration and atomic UpdateAsync operations
 
 ## Repository Structure
 
@@ -42,17 +43,53 @@ A server-authoritative, deterministic card battler game built on Roblox with a 3
 BattlerSample/
 ├── src/
 │   ├── server/                    # Server-side logic and services
-│   │   ├── Services/              # Core game services (MatchService, PlayerDataService)
+│   │   ├── Services/              # Core game services
+│   │   │   ├── CombatEngine.lua
+│   │   │   ├── MatchService.lua
+│   │   │   ├── PlayerDataService.lua
+│   │   │   ├── LootboxService.lua
+│   │   │   ├── ShopService.lua
+│   │   │   └── *DevHarness.server.lua  # Testing harnesses
 │   │   ├── Persistence/           # DataStore layer and profile management
+│   │   │   ├── DataStoreWrapper.lua
+│   │   │   ├── ProfileSchema.lua
+│   │   │   └── ProfileManager.lua
 │   │   └── Network/               # RemoteEvent definitions and rate limiting
+│   │       └── RemoteEvents.lua
 │   ├── shared/                    # Shared modules used by both client and server
-│   │   └── Modules/               # Core game logic (Cards, Combat, Utilities)
+│   │   └── Modules/               # Core game logic and utilities
+│   │       ├── Cards/             # CardCatalog, CardLevels, CardStats, DeckValidator
+│   │       ├── Combat/            # CombatTypes, CombatUtils
+│   │       ├── Loot/              # BoxTypes, BoxDropTables, BoxRoller, BoxValidator
+│   │       ├── Shop/              # ShopPacksCatalog
+│   │       ├── ViewModels/        # CardVM, DeckVM, ProfileVM, LootboxesVM
+│   │       ├── Assets/            # Manifest, Resolver
+│   │       ├── Constants/         # GameConstants, UIConstants
+│   │       ├── RNG/               # SeededRNG
+│   │       ├── UtilitiesModuleScripts/  # UI utilities (TweenUI, Blur, etc.)
+│   │       ├── BoardLayout.lua
+│   │       ├── ErrorMap.lua
+│   │       ├── SelfCheck.lua
+│   │       ├── TimeUtils.lua
+│   │       ├── Types.lua
+│   │       └── Utilities.lua
 │   └── client/                    # Client-side integration and UI foundations
 │       ├── Controllers/           # NetworkClient wrapper over RemoteEvents
+│       │   └── NetworkClient.lua
 │       ├── State/                 # ClientState store and selectors
-│       ├── Dev/                   # Development tools (DevPanel, mocks, harnesses)
-│       └── Config.lua             # Client-side feature flags
+│       │   ├── ClientState.lua
+│       │   └── selectors.lua
+│       ├── Dev/                   # Development tools
+│       │   ├── DevPanel.client.lua
+│       │   ├── MockData.lua
+│       │   ├── MockNetwork.lua
+│       │   └── VMHarness.client.lua
+│       ├── Config.lua             # Client-side feature flags
+│       ├── NetworkTest.client.lua
+│       ├── MatchTestHarness.client.lua
+│       └── Utilities.lua
 ├── docs/                          # Detailed documentation and guides
+│   └── ui_integration.md          # Complete UI integration guide
 └── default.project.json           # Rojo project configuration
 ```
 
@@ -126,8 +163,10 @@ Profile = {
 - **Autosave**: On profile changes with `BindToClose` safety
 - **Key Pattern**: `"profile_" .. playerId` for isolation
 - **Validation**: Structural constraints only (no business logic validation on write)
-- **Atomic Operations**: Level-up mutations use `UpdateAsync` for atomic resource deduction and level increment
+- **Atomic Operations**: All mutations use `UpdateAsync` for atomic resource deduction and state updates
 - **Squad Power**: Automatically recomputed when upgraded card is in active deck
+- **Receipt Ledger**: Idempotent purchase processing with `PurchaseId` tracking
+- **Array Compaction**: Lootbox arrays are packed after operations to maintain consistency
 
 **v1→v2 Migration:**
 - **Collection Format**: `count: number` → `{ count: number, level: number }`
@@ -229,6 +268,7 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 - **No Soak**: Defence does not reduce incoming damage by percentage
 - **Round Cap**: Maximum 50 rounds to prevent infinite battles
 - **Draw Rules**: Survivor count determines winner
+- **Deterministic**: Seeded RNG ensures reproducible combat outcomes
 
 ## Level-Up System
 
@@ -281,24 +321,31 @@ Row 2: [6] [4] [2]    -- Slots 6, 4, 2 (left to right)
 
 ### Shop Hard-Currency Packs
 
-**Pack Catalog (Domain Only):**
-| Pack | Hard Amount | Price (Robux) |
-| ---: | ----------: | ------------: |
-|    S |         100 |            40 |
-|    M |         330 |           100 |
-|    L |         840 |           200 |
-|   XL |        1950 |           400 |
-|  XXL |        4900 |           800 |
-| XXXL |       12000 |          1500 |
+**Pack Catalog (Complete Implementation):**
+| Pack | Hard Amount | Bonus Hard | Total Credit | Price (Robux) | Dev Product ID |
+| ---: | ----------: | ---------: | -----------: | ------------: | -------------: |
+|    S |         100 |          0 |          100 |            40 |    3400863964 |
+|    M |         330 |          0 |          330 |           100 |    3400864205 |
+|    L |         840 |          0 |          840 |           200 |    3400864901 |
+|   XL |        1950 |          0 |         1950 |           400 |    3400865038 |
+|  XXL |        4900 |          0 |         4900 |           800 |    3400865167 |
+| XXXL |       12000 |          0 |        12000 |          1500 |    3400865325 |
+
+**Note:** The `additionalHard` field allows UI to display bonus amounts (currently 0 for all packs). Server credits `hardAmount + additionalHard` to player.
 
 **API:**
 ```lua
-local pack = ShopPacksCatalog.GetPack("M")  -- Returns {id="M", hardAmount=330, robuxPrice=100}
+local pack = ShopPacksCatalog.GetPack("M")  -- Returns {id="M", hardAmount=330, additionalHard=0, robuxPrice=100, devProductId=3400864205}
 local allPacks = ShopPacksCatalog.AllPacks()  -- Returns sorted array
+local availablePacks = ShopPacksCatalog.GetAvailablePacks()  -- Only packs with devProductId
 local bestValue = ShopPacksCatalog.GetBestValuePack()  -- Highest hard/Robux ratio
+local hasLiveIds = ShopPacksCatalog.hasLiveProductIds()  -- Check if any packs have real IDs
 ```
 
-*Note: Purchase flow with MarketplaceService will be implemented in a later step.*
+**Purchase Flow:**
+- **Client**: `NetworkClient.requestStartPackPurchase(packId)` → Server validates → Client prompts `MarketplaceService:PromptProductPurchase`
+- **Server**: `MarketplaceService.ProcessReceipt` → Atomic currency credit → `ProfileUpdated` with hard currency
+- **Idempotency**: Receipt ledger prevents double-crediting same `PurchaseId`
 
 ### Lootboxes
 
@@ -307,6 +354,14 @@ local bestValue = ShopPacksCatalog.GetBestValuePack()  -- Highest hard/Robux rat
 - **Rare**: 30 minutes, Store: 22 hard, Instant: 11 base  
 - **Epic**: 120 minutes, Store: 55 hard, Instant: 27 base
 - **Legendary**: 240 minutes, Store: 100 hard, Instant: 50 base
+
+**Note:** Lootbox rarities are uncommon, rare, epic, legendary (no "common" rarity exists).
+
+**Hard Currency Purchase:**
+- **Client**: `NetworkClient.requestBuyLootbox(rarity)` → Server validates and deducts hard currency
+- **Server**: Atomic `UpdateAsync` for currency deduction + lootbox addition
+- **Overflow Handling**: Automatic `pendingLootbox` creation when slots are full
+- **ProfileUpdated**: Returns updated currencies, lootboxes, and pending state
 
 **Capacity & States:**
 - **Slots**: Up to 4 lootboxes per profile
@@ -329,8 +384,8 @@ When capacity is full and a new box is awarded:
 **Reward Tables:**
 - **Uncommon**: 80-120 soft, 0 hard, 80% Uncommon/15% Rare/4% Epic/1% Legendary
 - **Rare**: 140-200 soft, 0 hard, 85% Rare/12% Epic/3% Legendary  
-- **Epic**: 220-320 soft, 5% chance +8 hard, 90% Epic/10% Legendary
-- **Legendary**: 350-450 soft, 10% chance +15 hard, 100% Legendary
+- **Epic**: 220-320 soft, 9% chance +1-29 hard (random), 90% Epic/10% Legendary
+- **Legendary**: 350-450 soft, 12% chance +1-77 hard (random), 100% Legendary
 
 **Server API (Atomic Operations):**
 ```lua
@@ -388,7 +443,7 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
     { cardId, count, level }
   },
   shopPacks = {                 -- When RequestGetShopPacks
-    { id, hardAmount, robuxPrice, hasDevProductId }
+    { id, hardAmount, additionalHard, robuxPrice, hasDevProductId }
   }?,
   error = { code, message? } | nil
 }
@@ -423,9 +478,9 @@ ProfileUpdated with hard currency credit
 ```
 
 **Pack Configuration:**
-- **Placeholder Setup**: All packs have `devProductId = nil` by default
-- **Production Setup**: Replace `nil` with real ProductId from Roblox Creator Dashboard
-- **Availability Check**: `ShopPacksCatalog.HasDevProductId(packId)` returns `false` for `nil` values
+- **Placeholder Setup**: All packs have `devProductId` set with real ProductIds
+- **Production Setup**: ProductIds are already configured in `ShopPacksCatalog.lua`
+- **Availability Check**: `ShopPacksCatalog.HasDevProductId(packId)` returns `true` for configured packs
 
 **Server Implementation:**
 - **ShopService**: Handles `MarketplaceService.ProcessReceipt` integration
@@ -482,7 +537,7 @@ ProfileUpdated with hard currency credit
     id = "M", 
     hardAmount = 330,
     robuxPrice = 100,
-    devProductId = 123456789 -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+    devProductId = 3400864205 -- Real ProductId from Roblox Creator Dashboard
 }
 ```
 
@@ -490,6 +545,8 @@ ProfileUpdated with hard currency credit
 - **Mock Mode**: "Shop: Buy Pack [S/M/L] (Mock)" buttons for instant testing
 - **Live Mode**: "Shop: Fetch Packs" to see availability, "Shop: Buy Lootbox [Rarity]" for hard currency purchases
 - **Status Display**: Shows current hard/soft currency and lootbox slot count
+
+
 
 ## Networking Surface
 
@@ -516,6 +573,9 @@ ProfileUpdated with hard currency credit
 - **`RequestGetShopPacks`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestStartPackPurchase`** (C→S) → **`ProfileUpdated`** (S→C)
 - **`RequestBuyLootbox`** (C→S) → **`ProfileUpdated`** (S→C)
+
+**Legacy System:**
+- **`OpenLootbox`** (C→S) → **`ProfileUpdated`** (S→C) - Deprecated, use RequestOpenNow
 
 ### Payload Schemas
 
@@ -575,6 +635,10 @@ ProfileUpdated with hard currency credit
 - **RequestStartUnlock**: 1s cooldown, 10/minute
 - **RequestOpenNow**: 1s cooldown, 10/minute
 - **RequestCompleteUnlock**: 1s cooldown, 10/minute
+- **RequestGetShopPacks**: 1s cooldown, 10/minute
+- **RequestStartPackPurchase**: 1s cooldown, 10/minute
+- **RequestBuyLootbox**: 1s cooldown, 10/minute
+- **OpenLootbox**: 2s cooldown, 5/minute (legacy)
 
 **Concurrency Guards:**
 - **Per-Player State**: `isInMatch` flag prevents overlapping matches
@@ -601,6 +665,8 @@ ProfileUpdated with hard currency credit
 | `BOX_BAD_STATE` | Invalid operation for current lootbox state |
 | `BOX_TIME_NOT_REACHED` | Lootbox timer hasn't finished yet |
 | `INSUFFICIENT_HARD` | Not enough hard currency for instant open |
+| `PACK_NOT_AVAILABLE` | Pack has no devProductId or unknown packId |
+| `LOOTBOX_CAPACITY_FULL` | Direct buy when overflow and no pending resolution |
 | `INTERNAL` | Server-side error |
 
 ## Client Integration Layer
@@ -608,10 +674,10 @@ ProfileUpdated with hard currency credit
 **Reference**: See [docs/ui_integration.md](docs/ui_integration.md) for complete UI integration guide including combat mechanics and defence semantics.
 
 **Core Components:**
-- **NetworkClient**: Unified interface for mock/real server communication (`requestLevelUpCard()`)
-- **ClientState**: Centralized state store with subscription system (`isLeveling`, `lastError`)
-- **Selectors**: Pure functions for data extraction and transformation (upgradeability computation)
-- **ViewModels**: UI-ready data structures (CardVM with level-up fields, DeckVM, ProfileVM)
+- **NetworkClient**: Unified interface for mock/real server communication with all 16 endpoints
+- **ClientState**: Centralized state store with subscription system (`isLeveling`, `lastError`, `serverNow`)
+- **Selectors**: Pure functions for data extraction and transformation (upgradeability computation, lootbox timers)
+- **ViewModels**: UI-ready data structures (CardVM, DeckVM, ProfileVM, LootboxesVM)
 
 **Key Features:**
 - **Time Sync**: `serverNow` for accurate timers and lootbox countdowns
@@ -619,6 +685,9 @@ ProfileUpdated with hard currency credit
 - **Assets**: Centralized manifest and resolver for consistent UI styling
 - **Configuration**: Feature flags for development vs production
 - **Level-Up Flow**: Complete UI integration guide in [Level-Up Flow section](docs/ui_integration.md#level-up-flow)
+- **Shop Integration**: Complete UI integration guide in [Shop UI section](docs/ui_integration.md#shop-ui)
+- **Lootbox Management**: Complete UI integration guide in [Lootboxes UI section](docs/ui_integration.md#lootboxes-ui)
+- **Collection Surface**: Complete UI integration guide in [Collection View section](docs/ui_integration.md#collection-view)
 
 **Quickstart Example:**
 ```lua
@@ -647,6 +716,32 @@ end)
 - **Config Flags**: `USE_MOCKS`, `SHOW_DEV_PANEL`, `DEBUG_LOGS`, `AUTO_REQUEST_PROFILE`
 - **Mock System**: Offline development with realistic data and validation
 - **Dev Panel**: Runtime testing UI with mock toggle and sample actions
+
+## Logging & Debugging
+
+### Structured Logging System
+
+**Logger Module** (`src/shared/Modules/Logger.lua`):
+- **Debug Flag**: Controlled by `Logger.EnableDebug()` / `Logger.DisableDebug()`
+- **Structured Logs**: Single-line, consistent format for key events
+- **Shop Events**: `SHOP_PURCHASE user=<uid> pack=<id> hardBefore=<n> add=<base+bonus> hardAfter=<n>`
+- **Lootbox Events**: `LOOT_ADD`, `LOOT_START`, `LOOT_OPEN_NOW`, `LOOT_COMPLETE`, `LOOT_PENDING_*`
+- **Loot State**: `LOOT_STATE user=<uid> slots=<n> unlocking=<slot|none> remain=<sec|0> pending=<bool>`
+
+**DevPanel Integration:**
+- **Loot State Summary**: "Loot: State Summary" button shows detailed lootbox status
+- **Debug Toggle**: Enable/disable structured logging for development
+- **Event Tracking**: Monitor shop purchases and lootbox operations in real-time
+
+**Log Format Examples:**
+```
+SHOP_PURCHASE user=12345 pack=M hardBefore=1000 add=330 hardAfter=1330
+LOOT_ADD user=12345 rarity=epic overflow=false slots=3
+LOOT_START user=12345 slot=1 rarity=epic start=1640995200 unlocksAt=1640996400 remain=1200
+LOOT_OPEN_NOW user=12345 slot=1 cost=27 remainBefore=600 rewards=soft=250,hard=15,cards=1xdps_003
+LOOT_COMPLETE user=12345 slot=1 rewards=soft=250,hard=15,cards=1xdps_003
+LOOT_STATE user=12345 slots=4 unlocking=1 remain=600 pending=false
+```
 
 ## Testing & Dev Harnesses
 
@@ -728,6 +823,8 @@ Utilities.SelfCheck.RunAllTests()
 - Complete lootbox system (server services, client integration, overflow handling)
 - Collection surface (unified catalog+ownership, selectors, ViewModels)
 - Shop integration (Developer Product packs, lootbox purchases, ProcessReceipt integration)
+- All 16 RemoteEvents with comprehensive rate limiting
+- Atomic UpdateAsync operations for all mutations
 
 **❌ Not Covered:**
 - UI unit tests (no UI framework yet)
@@ -800,6 +897,19 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 
 ## What Changed in This Release
 
+### Lootbox State Casing Standardization
+- **State strings now use TitleCase**: `"Idle"`, `"Unlocking"`, `"Ready"`, `"Consumed"` (was lowercase)
+- **Consistent across entire pipeline**: Server, client, UI, and documentation all use same casing
+- **Client detection fixed**: `box.state == "Idle"` now works correctly for finding available slots
+- **Breaking change**: Update any client code that checks `box.state == "idle"` to use `"Idle"`
+
+### Lootbox Flow Standardization
+- **Overflow error standardized**: 5th box overflow now consistently returns `BOX_DECISION_REQUIRED`
+- **OpenNow preconditions enforced**: Only works on `"Unlocking"` state, returns `BOX_NOT_UNLOCKING` for others
+- **Single unlock rule**: Only one lootbox can be unlocking at a time, returns `BOX_ALREADY_UNLOCKING` for violations
+- **Enhanced error codes**: Added `INVALID_SLOT`, `INVALID_STATE` for better error handling
+- **Structured logging**: All lootbox operations now include clear operation context and state transitions
+
 **Combat Defence Update:**
 - ✅ **Armor Pool Model**: Defence now acts as depleting armor pool instead of 50% soak
 - ✅ **Simplified Mechanics**: Damage depletes defence first, residual reduces HP
@@ -833,21 +943,27 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Testing**: LootboxDevHarness with 9 test suites covering all scenarios
 - ✅ **Documentation**: Complete Lootboxes UI section in [docs/ui_integration.md](docs/ui_integration.md)
 
-**Networking Surface:**
-- ✅ **7 New Endpoints**: `RequestLootState`, `RequestAddBox`, `RequestResolvePendingDiscard/Replace`, `RequestStartUnlock`, `RequestOpenNow`, `RequestCompleteUnlock`
-- ✅ **Rate Limiting**: Comprehensive rate limits for all new endpoints
-- ✅ **Error Codes**: Complete error code coverage for lootbox operations
-- ✅ **Payload Schemas**: Updated ProfileUpdated payload with lootbox data and `serverNow`
-
 **Shop Integration:**
 - ✅ **Developer Product Packs**: Complete integration with `MarketplaceService.ProcessReceipt`
-- ✅ **Pack Configuration**: `devProductId` fields with placeholder setup and production documentation
+- ✅ **Pack Configuration**: Real `devProductId` values configured for all 6 packs (S-XXXL)
 - ✅ **Idempotency**: Receipt ledger prevents double-crediting same purchases
 - ✅ **Lootbox Purchases**: Hard currency purchases with automatic overflow handling
 - ✅ **Client Integration**: NetworkClient methods, MockNetwork simulation, ShopHandler button binding
 - ✅ **DevPanel Integration**: Complete shop testing interface with mock/live mode support
 - ✅ **Testing**: ShopDevHarness with 6 test suites covering all shop functionality
 - ✅ **Error Handling**: Shop-specific error codes with user-friendly messages
+
+**Networking Surface:**
+- ✅ **16 Total Endpoints**: Complete coverage of all game systems
+- ✅ **Rate Limiting**: Comprehensive rate limits for all endpoints
+- ✅ **Error Codes**: Complete error code coverage for all operations
+- ✅ **Payload Schemas**: Updated ProfileUpdated payload with all data slices and `serverNow`
+
+**Profile System v2:**
+- ✅ **Atomic Operations**: All mutations use `UpdateAsync` for consistency
+- ✅ **Receipt Ledger**: Idempotent purchase processing with `PurchaseId` tracking
+- ✅ **Array Compaction**: Lootbox arrays are packed after operations
+- ✅ **Migration**: Safe v1→v2 migration with data preservation
 
 ## Roadmap
 
@@ -927,6 +1043,33 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - ✅ **Atomic Operations**: Server-side helpers for add/start/complete/open with validation
 - ✅ **Comprehensive Testing**: LootboxDevHarness with 9 test suites covering all scenarios
 - ✅ **Documentation**: Complete Packs & Lootboxes section with API examples
+
+**Lootbox Naming Cleanup:**
+- ✅ **Rarity Standardization**: Replaced all "common" lootbox references with "uncommon"
+- ✅ **Profile Migration**: Automatic v1→v2 migration for old profiles with "common" lootboxes
+- ✅ **Self-Check Test**: Added migration validation test in SelfCheck module
+- ✅ **Documentation**: Updated all references to reflect uncommon/rare/epic/legendary only
+
+**Shop Pack Enhancements:**
+- ✅ **AdditionalHard Field**: Added `additionalHard` field to pack entries for UI bonus display
+- ✅ **Server Crediting**: Pack purchases now credit `hardAmount + additionalHard` to player
+- ✅ **Network Updates**: `RequestGetShopPacks` includes `additionalHard` in payload
+- ✅ **Mock Parity**: MockNetwork updated to include `additionalHard` and credit base+bonus
+- ✅ **Documentation**: Updated README with new pack table format and API examples
+
+**Lootbox Hard-Currency Drops:**
+- ✅ **Epic Lootboxes**: 9% chance for 1-29 hard currency (random range)
+- ✅ **Legendary Lootboxes**: 12% chance for 1-77 hard currency (random range)
+- ✅ **Deterministic RNG**: Uses SeededRNG for consistent results across sessions
+- ✅ **Self-Check Tests**: Added comprehensive range validation tests
+- ✅ **Documentation**: Updated reward tables with new chance/range mechanics
+
+**Structured Logging System:**
+- ✅ **Logger Module**: New centralized logging with debug flag control
+- ✅ **Structured Events**: Single-line logs for shop purchases and lootbox operations
+- ✅ **DevPanel Integration**: "Loot: State Summary" button for detailed lootbox status
+- ✅ **Noise Reduction**: Cleaned up verbose prints across Shop/Lootbox/Network services
+- ✅ **Event Tracking**: Real-time monitoring of key game events during development
 
 ---
 ---
@@ -1072,3 +1215,8 @@ Utilities.SelfCheck.RunAllTests()
 * **Armor pool** — defence действует как истощаемый щит; остаточный урон идёт в HP.&#x20;
 * **squadPower** — сумма `power` карт из активной деки.&#x20;
 * **serverNow** — метка времени сервера в каждом ответе/ивенте.&#x20;
+* **Shop Integration** — полная интеграция с Developer Products и покупка лутбоксов за hard currency.
+* **Lootbox System** — 4-слотная система с overflow handling и детерминированными наградами (uncommon/rare/epic/legendary).
+* **Level-Up System** — система прокачки карт 1-10 уровней с атомарными операциями.
+* **Hard Currency Drops** — Epic лутбоксы: 9% шанс 1-29 hard, Legendary: 12% шанс 1-77 hard.
+* **Structured Logging** — централизованная система логирования с debug-флагом для ключевых событий.

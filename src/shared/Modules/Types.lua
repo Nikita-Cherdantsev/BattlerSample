@@ -24,9 +24,9 @@ Types.Class = {
 
 -- Lootbox state enum
 Types.LootboxState = {
-	Idle = "idle",
-	Unlocking = "unlocking",
-	Ready = "ready"
+	Idle = "Idle",
+	Unlocking = "Unlocking",
+	Ready = "Ready"
 }
 
 -- Collection entry type (v2 format)

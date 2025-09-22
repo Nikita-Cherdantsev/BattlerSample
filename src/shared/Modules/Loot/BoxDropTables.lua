@@ -65,8 +65,8 @@ BoxDropTables.RARE = {
 -- Drop table for Epic boxes
 BoxDropTables.EPIC = {
 	softRange = { min = 220, max = 320 },
-	hardChance = 0.05, -- 5% chance
-	hardAmount = 8,
+	hardChance = 0.09, -- 9% chance
+	hardRange = { min = 1, max = 29 }, -- Random int 1..29
 	characterRewards = {
 		{
 			rarity = BoxTypes.BoxRarity.EPIC,
@@ -84,8 +84,8 @@ BoxDropTables.EPIC = {
 -- Drop table for Legendary boxes
 BoxDropTables.LEGENDARY = {
 	softRange = { min = 350, max = 450 },
-	hardChance = 0.10, -- 10% chance
-	hardAmount = 15,
+	hardChance = 0.12, -- 12% chance
+	hardRange = { min = 1, max = 77 }, -- Random int 1..77
 	characterRewards = {
 		{
 			rarity = BoxTypes.BoxRarity.LEGENDARY,

@@ -11,7 +11,7 @@ local Utilities = {}
 Utilities.Types = {
 	Rarity = { Common = "common", Rare = "rare", Epic = "epic", Legendary = "legendary" },
 	Class = { DPS = "dps", Support = "support", Tank = "tank" },
-	LootboxState = { Idle = "idle", Unlocking = "unlocking", Ready = "ready" }
+	LootboxState = { Idle = "Idle", Unlocking = "Unlocking", Ready = "Ready" }
 }
 
 -- Essential TimeUtils (hardcoded for client, matching server format)

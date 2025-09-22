@@ -96,6 +96,39 @@ function ProfileManager.MigrateCardIds(profile)
 	return profile
 end
 
+-- Migrate lootbox rarities: "common" -> "uncommon"
+function ProfileManager.MigrateLootboxRarities(profile)
+	if not profile then
+		return profile
+	end
+	
+	local hasChanges = false
+	
+	-- Migrate lootboxes array
+	if profile.lootboxes then
+		for _, lootbox in ipairs(profile.lootboxes) do
+			if lootbox.rarity == "common" then
+				print("🔄 Migrating lootbox rarity: common -> uncommon")
+				lootbox.rarity = "uncommon"
+				hasChanges = true
+			end
+		end
+	end
+	
+	-- Migrate pending lootbox
+	if profile.pendingLootbox and profile.pendingLootbox.rarity == "common" then
+		print("🔄 Migrating pending lootbox rarity: common -> uncommon")
+		profile.pendingLootbox.rarity = "uncommon"
+		hasChanges = true
+	end
+	
+	if hasChanges then
+		print("🔄 Lootbox rarity migration completed")
+	end
+	
+	return profile
+end
+
 local function IsProfileValid(profile)
 	local isValid, errorMessage = ProfileSchema.ValidateProfile(profile)
 	if not isValid then
@@ -150,6 +183,8 @@ local function MigrateProfileIfNeeded(profile)
 		if hasV2Format then
 			print("🔄 Profile missing version field but has v2 format, adding version")
 			profile.version = "v2"
+			-- Ensure playerId is a string
+			profile.playerId = tostring(profile.playerId)
 			-- Also migrate card IDs for v2 profiles with old card IDs
 			profile = ProfileManager.MigrateCardIds(profile)
 			return profile
@@ -181,6 +216,9 @@ local function MigrateProfileIfNeeded(profile)
 			
 			-- Migrate old card IDs to new ones
 			migratedProfile = ProfileManager.MigrateCardIds(migratedProfile)
+			
+			-- Migrate lootbox rarities: "common" -> "uncommon"
+			migratedProfile = ProfileManager.MigrateLootboxRarities(migratedProfile)
 			
 			return migratedProfile
 		else
@@ -553,6 +591,47 @@ function ProfileManager.ForceSave(userId)
 	end
 	
 	return ProfileManager.SaveProfile(userId, profile)
+end
+
+-- Atomic profile update function
+function ProfileManager.UpdateProfile(userId, updateFunction)
+	userId = tostring(userId)
+	
+	-- Load the profile
+	local profile = ProfileManager.LoadProfile(userId)
+	if not profile then
+		return false, "Profile not found"
+	end
+	
+	-- Apply the update function
+	local success, result = pcall(updateFunction, profile)
+	if not success then
+		return false, "Update function failed: " .. tostring(result)
+	end
+	
+	-- If the update function returned a profile, use it
+	if result and type(result) == "table" then
+		profile = result
+	elseif result == nil then
+		return false, "Update function returned nil"
+	end
+	
+	-- Ensure playerId is still valid after update
+	if not profile.playerId or type(profile.playerId) ~= "string" then
+		warn("Profile playerId corrupted during update:", profile.playerId)
+		profile.playerId = tostring(userId)
+	end
+	
+	-- Update timestamp
+	profile.updatedAt = os.time()
+	
+	-- Save the updated profile
+	local saveSuccess = ProfileManager.SaveProfile(userId, profile)
+	if not saveSuccess then
+		return false, "Failed to save profile"
+	end
+	
+	return true, profile
 end
 
 -- Flush pending DataStore operations

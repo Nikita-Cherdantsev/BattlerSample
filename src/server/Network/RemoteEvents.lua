@@ -3,12 +3,13 @@ local RemoteEvents = {}
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 -- Modules
 local PlayerDataService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlayerDataService"))
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local ShopService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ShopService"))
--- local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService")) -- Temporarily disabled
+local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
 
 -- Network folder and RemoteEvents (created in Init)
 local NetworkFolder = nil
@@ -257,7 +258,7 @@ local function SendProfileUpdate(player, payload)
 	-- Add serverNow timestamp to all profile updates (non-breaking)
 	payload.serverNow = os.time()
 	if ProfileUpdated then
-		ProfileUpdated:FireClient(player, payload)
+	ProfileUpdated:FireClient(player, payload)
 	end
 end
 
@@ -384,15 +385,15 @@ local function HandleRequestProfile(player, requestData)
 	local collection = PlayerDataService.GetCollection(player)
 	local loginInfo = CreateLoginInfo(player)
 	
-	-- Send profile snapshot
-	SendProfileUpdate(player, {
-		deck = profile.deck,
-		collectionSummary = CreateCollectionSummary(collection),
-		loginInfo = loginInfo,
-		updatedAt = os.time()
-	})
-	
-	LogInfo(player, "Profile sent successfully")
+		-- Send profile snapshot
+		SendProfileUpdate(player, {
+			deck = profile.deck,
+			collectionSummary = CreateCollectionSummary(collection),
+			loginInfo = loginInfo,
+			updatedAt = os.time()
+		})
+		
+		LogInfo(player, "Profile sent successfully")
 end
 
 local function HandleRequestStartMatch(player, requestData)
@@ -429,7 +430,7 @@ local function HandleRequestStartMatch(player, requestData)
 	
 	-- Reply on the same event (as per contract)
 	if RequestStartMatch then
-		RequestStartMatch:FireClient(player, result)
+	RequestStartMatch:FireClient(player, result)
 	end
 	
 	if result.ok then
@@ -542,6 +543,17 @@ end
 local function HandleRequestAddBox(player, requestData)
 	LogInfo(player, "Processing add box request")
 	
+	-- Dev gating: Allow in Studio or when explicitly enabled
+	if not RunService:IsStudio() then
+		SendProfileUpdate(player, {
+			error = {
+				code = "FORBIDDEN_DEV_ONLY",
+				message = "RequestAddBox is only available in Studio for development"
+			}
+		})
+		return
+	end
+	
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestAddBox")
 	if not canProceed then
@@ -565,11 +577,12 @@ local function HandleRequestAddBox(player, requestData)
 		return
 	end
 	
-	-- Validate rarity
+	-- Normalize and validate rarity (case-insensitive)
+	local rarity = string.lower(tostring(requestData.rarity))
 	local validRarities = {"uncommon", "rare", "epic", "legendary"}
 	local isValidRarity = false
-	for _, rarity in ipairs(validRarities) do
-		if requestData.rarity == rarity then
+	for _, validRarity in ipairs(validRarities) do
+		if rarity == validRarity then
 			isValidRarity = true
 			break
 		end
@@ -579,15 +592,14 @@ local function HandleRequestAddBox(player, requestData)
 		SendProfileUpdate(player, {
 			error = {
 				code = "INVALID_RARITY",
-				message = "Invalid rarity: " .. tostring(requestData.rarity)
+				message = "Invalid rarity: " .. tostring(requestData.rarity) .. ". Valid rarities: uncommon, rare, epic, legendary"
 			}
 		})
 		return
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.TryAddBox(player.UserId, requestData.rarity, requestData.source) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.TryAddBox(player.UserId, rarity, requestData.source)
 	
 	-- Get updated profile
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
@@ -639,10 +651,20 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.ResolvePendingDiscard(player.UserId) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.ResolvePendingDiscard(player.UserId)
 	
-	-- Get updated profile
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
 		SendProfileUpdate(player, {
@@ -654,26 +676,14 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 		return
 	end
 	
-	-- Send response
-	local payload = {
+	-- Send success response with loot state
+	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox
-	}
+	})
 	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
-	SendProfileUpdate(player, payload)
-	
-	if result.ok then
-		LogInfo(player, "Pending box discarded successfully")
-	else
-		LogWarning(player, "Discard pending failed: %s", tostring(result.error))
-	end
+	Logger.debug("lootboxes: op=discard userId=%s pending=true->false result=OK", tostring(player.UserId))
+	LogInfo(player, "Pending box discarded successfully")
 end
 
 local function HandleRequestResolvePendingReplace(player, requestData)
@@ -714,10 +724,20 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex)
 	
-	-- Get updated profile
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
 		SendProfileUpdate(player, {
@@ -729,26 +749,14 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 		return
 	end
 	
-	-- Send response
-	local payload = {
+	-- Send success response with loot state
+	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox
-	}
+	})
 	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
-	SendProfileUpdate(player, payload)
-	
-	if result.ok then
-		LogInfo(player, "Pending box replaced successfully")
-	else
-		LogWarning(player, "Replace pending failed: %s", tostring(result.error))
-	end
+	Logger.debug("lootboxes: op=replace userId=%s slot=%d pending=true->false result=OK", tostring(player.UserId), requestData.slotIndex)
+	LogInfo(player, "Pending box replaced successfully")
 end
 
 local function HandleRequestStartUnlock(player, requestData)
@@ -789,10 +797,20 @@ local function HandleRequestStartUnlock(player, requestData)
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time())
 	
-	-- Get updated profile
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
 		SendProfileUpdate(player, {
@@ -804,26 +822,14 @@ local function HandleRequestStartUnlock(player, requestData)
 		return
 	end
 	
-	-- Send response
-	local payload = {
+	-- Send success response with loot state
+	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox
-	}
+	})
 	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
-	SendProfileUpdate(player, payload)
-	
-	if result.ok then
-		LogInfo(player, "Unlock started successfully")
-	else
-		LogWarning(player, "Start unlock failed: %s", tostring(result.error))
-	end
+	Logger.debug("lootboxes: op=start userId=%s slot=%d state=Idle->Unlocking result=OK", tostring(player.UserId), requestData.slotIndex)
+	LogInfo(player, "Unlock started successfully")
 end
 
 local function HandleRequestOpenNow(player, requestData)
@@ -864,10 +870,20 @@ local function HandleRequestOpenNow(player, requestData)
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time())
 	
-	-- Get updated profile
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
 		SendProfileUpdate(player, {
@@ -879,33 +895,23 @@ local function HandleRequestOpenNow(player, requestData)
 		return
 	end
 	
-	-- Send response
+	-- Send success response with loot state and currencies
 	local payload = {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox,
 		currencies = profile.currencies
 	}
 	
-	if result.ok and result.rewards then
+	if result.rewards then
 		-- Include collection summary for rewards
 		local collection = PlayerDataService.GetCollection(player)
 		payload.collectionSummary = CreateCollectionSummary(collection)
 	end
 	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
 	SendProfileUpdate(player, payload)
 	
-	if result.ok then
-		LogInfo(player, "Box opened instantly successfully")
-	else
-		LogWarning(player, "Open now failed: %s", tostring(result.error))
-	end
+	Logger.debug("lootboxes: op=openNow userId=%s slot=%d state=Unlocking->removed result=OK", tostring(player.UserId), requestData.slotIndex)
+	LogInfo(player, "Box opened instantly successfully")
 end
 
 local function HandleRequestCompleteUnlock(player, requestData)
@@ -946,10 +952,20 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	end
 	
 	-- Call LootboxService
-	-- local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time()) -- Temporarily disabled
-	local result = { success = false, error = { code = "SERVICE_DISABLED", message = "Lootbox service temporarily disabled" } }
+	local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
 	
-	-- Get updated profile
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
 	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
 		SendProfileUpdate(player, {
@@ -961,33 +977,23 @@ local function HandleRequestCompleteUnlock(player, requestData)
 		return
 	end
 	
-	-- Send response
+	-- Send success response with loot state and currencies
 	local payload = {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox,
 		currencies = profile.currencies
 	}
 	
-	if result.ok and result.rewards then
+	if result.rewards then
 		-- Include collection summary for rewards
 		local collection = PlayerDataService.GetCollection(player)
 		payload.collectionSummary = CreateCollectionSummary(collection)
 	end
 	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
 	SendProfileUpdate(player, payload)
 	
-	if result.ok then
+	Logger.debug("lootboxes: op=complete userId=%s slot=%d state=Unlocking->removed result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Unlock completed successfully")
-else
-	LogWarning(player, "Complete unlock failed: %s", tostring(result.error))
-end
 end
 
 -- Shop handlers

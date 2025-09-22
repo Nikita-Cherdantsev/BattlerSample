@@ -13,16 +13,18 @@ local BoxRoller = require(game.ReplicatedStorage.Modules.Loot.BoxRoller)
 local BoxValidator = require(game.ReplicatedStorage.Modules.Loot.BoxValidator)
 local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
 local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+local Logger = require(game.ReplicatedStorage.Modules.Logger)
 
 -- Error codes
 LootboxService.ErrorCodes = {
-	BOX_CAPACITY_FULL_PENDING = "BOX_CAPACITY_FULL_PENDING",
 	BOX_DECISION_REQUIRED = "BOX_DECISION_REQUIRED",
 	BOX_ALREADY_UNLOCKING = "BOX_ALREADY_UNLOCKING",
+	BOX_NOT_UNLOCKING = "BOX_NOT_UNLOCKING",
 	BOX_BAD_STATE = "BOX_BAD_STATE",
 	BOX_TIME_NOT_REACHED = "BOX_TIME_NOT_REACHED",
 	INVALID_RARITY = "INVALID_RARITY",
 	INVALID_SLOT = "INVALID_SLOT",
+	INVALID_STATE = "INVALID_STATE",
 	INSUFFICIENT_HARD = "INSUFFICIENT_HARD",
 	INTERNAL = "INTERNAL"
 }
@@ -66,7 +68,9 @@ function LootboxService.TryAddBox(userId, rarity, source)
 				end
 			end
 			
-			return { ok = true, box = newBox }
+			-- Store the result for later return
+			profile._lootboxResult = { ok = true, box = newBox }
+			return profile
 		end
 		
 		-- If capacity full and no pending box, set pending
@@ -78,30 +82,39 @@ function LootboxService.TryAddBox(userId, rarity, source)
 				source = source
 			}
 			
-			return { 
+			-- Store the result for later return
+			profile._lootboxResult = { 
 				ok = false, 
-				error = LootboxService.ErrorCodes.BOX_CAPACITY_FULL_PENDING,
+				error = LootboxService.ErrorCodes.BOX_DECISION_REQUIRED,
 				pending = true,
 				pendingBox = profile.pendingLootbox
 			}
+			return profile
 		end
 		
 		-- If capacity full and pending exists, require decision
-		return { 
+		profile._lootboxResult = { 
 			ok = false, 
 			error = LootboxService.ErrorCodes.BOX_DECISION_REQUIRED 
 		}
+		return profile
 	end)
 	
 	if not success then
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	-- Return the stored result from the profile
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 -- Resolve pending box by discarding it
 function LootboxService.ResolvePendingDiscard(userId)
+	-- Log before state
+	local beforeProfile = ProfileManager.GetCachedProfile(userId)
+	local beforeLootCount = beforeProfile and #(beforeProfile.lootboxes or {}) or 0
+	local beforePending = beforeProfile and beforeProfile.pendingLootbox ~= nil or false
+	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
 		-- Validate profile before modification
 		local isValid, errorMsg = BoxValidator.ValidateProfile(profile.lootboxes, profile.pendingLootbox)
@@ -114,14 +127,26 @@ function LootboxService.ResolvePendingDiscard(userId)
 		end
 		
 		profile.pendingLootbox = nil
-		return { ok = true }
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true }
+		return profile
 	end)
 	
 	if not success then
+		Logger.debug("lootboxes: count=%d->%d, pending=%s->%s, op=discard userId=%s result=ERROR:INTERNAL", 
+			beforeLootCount, beforeLootCount, tostring(beforePending), tostring(beforePending), tostring(userId))
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	-- Log after state
+	local afterLootCount = result and #(result.lootboxes or {}) or 0
+	local afterPending = result and result.pendingLootbox ~= nil or false
+	local resultCode = result._lootboxResult and (result._lootboxResult.ok and "OK" or ("ERROR:" .. (result._lootboxResult.error or "UNKNOWN"))) or "ERROR:UNKNOWN"
+	
+	Logger.debug("lootboxes: count=%d->%d, pending=%s->%s, op=discard userId=%s result=%s", 
+		beforeLootCount, afterLootCount, tostring(beforePending), tostring(afterPending), tostring(userId), resultCode)
+	
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 -- Resolve pending box by replacing a slot
@@ -158,14 +183,16 @@ function LootboxService.ResolvePendingReplace(userId, slotIndex)
 		}
 		
 		profile.pendingLootbox = nil
-		return { ok = true, replacedBox = profile.lootboxes[slotIndex] }
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true, replacedBox = profile.lootboxes[slotIndex] }
+		return profile
 	end)
 	
 	if not success then
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 -- Start unlocking a lootbox
@@ -188,8 +215,9 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 			error("No lootbox at slot " .. slotIndex)
 		end
 		
+		-- StartUnlock only works on Idle boxes
 		if lootbox.state ~= BoxTypes.BoxState.IDLE then
-			return { ok = false, error = LootboxService.ErrorCodes.BOX_BAD_STATE }
+			return { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE }
 		end
 		
 		-- Check if any other box is unlocking
@@ -205,14 +233,16 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 		lootbox.startedAt = serverNow
 		lootbox.unlocksAt = serverNow + duration
 		
-		return { ok = true, lootbox = lootbox }
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true, lootbox = lootbox }
+		return profile
 	end)
 	
 	if not success then
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 -- Complete unlocking a lootbox (roll rewards and free slot)
@@ -279,15 +309,16 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 			end
 		end
 		profile.lootboxes = compacted
-		
-		return { ok = true, rewards = rewards }
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true, rewards = rewards }
+		return profile
 	end)
 	
 	if not success then
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 -- Open lootbox instantly with hard currency
@@ -310,19 +341,14 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			error("No lootbox at slot " .. slotIndex)
 		end
 		
-		if lootbox.state ~= BoxTypes.BoxState.IDLE and lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
-			return { ok = false, error = LootboxService.ErrorCodes.BOX_BAD_STATE }
+		-- OpenNow only works on Unlocking boxes
+		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+			return { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
 		end
 		
-		-- Calculate instant open cost
+		-- Calculate instant open cost (only for Unlocking boxes)
 		local totalDuration = BoxTypes.GetDuration(lootbox.rarity)
-		local remainingTime = 0
-		
-		if lootbox.state == BoxTypes.BoxState.IDLE then
-			remainingTime = totalDuration
-		elseif lootbox.state == BoxTypes.BoxState.UNLOCKING then
-			remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
-		end
+		local remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
 		
 		local instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
 		
@@ -369,15 +395,16 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			end
 		end
 		profile.lootboxes = compacted
-		
-		return { ok = true, rewards = rewards, instantCost = instantCost }
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = instantCost }
+		return profile
 	end)
 	
 	if not success then
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
 return LootboxService

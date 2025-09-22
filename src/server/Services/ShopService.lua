@@ -15,6 +15,7 @@ local ShopPacksCatalog = require(game.ReplicatedStorage.Modules.Shop.ShopPacksCa
 local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 local LootboxService = require(script.Parent.LootboxService)
 local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+local Logger = require(game.ReplicatedStorage.Modules.Logger)
 
 -- Error codes
 ShopService.ErrorCodes = {
@@ -56,17 +57,20 @@ function ShopService.ProcessReceipt(receiptInfo)
 				return nil, "Profile not found"
 			end
 			
-			-- Credit hard currency
-			profile.currencies.hard = (profile.currencies.hard or 0) + pack.hardAmount
+			-- Credit hard currency (base + bonus)
+			local totalHard = pack.hardAmount + (pack.additionalHard or 0)
+			profile.currencies.hard = (profile.currencies.hard or 0) + totalHard
 			profile.updatedAt = os.time()
 			
 			return profile
 		end)
 	end)
 	
+	local totalHard = pack.hardAmount + (pack.additionalHard or 0)
+	
 	if not success or not result then
 		warn(string.format("[ShopService] Failed to credit %d hard currency for player %d: %s", 
-			pack.hardAmount, playerId, tostring(result)))
+			totalHard, playerId, tostring(result)))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	
@@ -75,12 +79,11 @@ function ShopService.ProcessReceipt(receiptInfo)
 		playerId = playerId,
 		productId = productId,
 		packId = pack.id,
-		hardAmount = pack.hardAmount,
+		hardAmount = totalHard,
 		processedAt = os.time()
 	}
 	
-	print(string.format("[ShopService] Processed receipt %s: player %d received %d hard currency from pack %s", 
-		purchaseId, playerId, pack.hardAmount, pack.id))
+	Logger.shopPurchase(playerId, pack.id, profile.currencies.hard - totalHard, totalHard, profile.currencies.hard)
 	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
@@ -92,6 +95,7 @@ function ShopService.GetShopPacks()
 		table.insert(packs, {
 			id = pack.id,
 			hardAmount = pack.hardAmount,
+			additionalHard = pack.additionalHard or 0,
 			robuxPrice = pack.robuxPrice,
 			hasDevProductId = pack.devProductId ~= nil
 		})
@@ -130,7 +134,7 @@ function ShopService.BuyLootbox(playerId, rarity)
 	local cost = BoxTypes.StoreHardCost[rarity]
 	
 	-- Load profile
-	local profile = ProfileManager.GetProfile(playerId)
+	local profile = ProfileManager.LoadProfile(playerId)
 	if not profile then
 		return { ok = false, error = ShopService.ErrorCodes.INTERNAL }
 	end
@@ -170,8 +174,7 @@ function ShopService.BuyLootbox(playerId, rarity)
 		return { ok = false, error = ShopService.ErrorCodes.INTERNAL }
 	end
 	
-	print(string.format("[ShopService] Player %d bought %s lootbox for %d hard currency", 
-		playerId, rarity, cost))
+	Logger.debug("Player %d bought %s lootbox for %d hard currency", playerId, rarity, cost)
 	
 	return { ok = true, cost = cost }
 end
@@ -179,16 +182,16 @@ end
 -- Initialize MarketplaceService receipt processing
 function ShopService.Initialize()
 	MarketplaceService.ProcessReceipt = ShopService.ProcessReceipt
-	print("[ShopService] Initialized with MarketplaceService.ProcessReceipt")
+	Logger.info("ShopService initialized with MarketplaceService.ProcessReceipt")
 	
 	-- Check for live product IDs and warn if none found
 	local hasLiveProducts = ShopPacksCatalog.hasLiveProductIds()
 	if not hasLiveProducts then
 		warn("[ShopService] WARNING: No live Developer Product IDs found in ShopPacksCatalog!")
 		warn("[ShopService] All packs have devProductId = nil - update ShopPacksCatalog.lua with real ProductIds")
-		warn("[ShopService] Pack purchase buttons will be disabled until ProductIds are set")
+		Logger.warn("Pack purchase buttons will be disabled until ProductIds are set")
 	else
-		print("[ShopService] Live Developer Product IDs detected - shop is production ready")
+		Logger.info("Live Developer Product IDs detected - shop is production ready")
 	end
 end
 

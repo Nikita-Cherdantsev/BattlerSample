@@ -42,9 +42,9 @@ function LootboxesVM.build(profileState)
 			local remainingTime = 0
 			
 			-- Calculate remaining time
-			if state == "idle" then
+			if state == "Idle" then
 				remainingTime = totalDuration
-			elseif state == "unlocking" and lootbox.unlocksAt then
+			elseif state == "Unlocking" and lootbox.unlocksAt then
 				remainingTime = math.max(0, lootbox.unlocksAt - now)
 			end
 			
@@ -52,9 +52,9 @@ function LootboxesVM.build(profileState)
 			local instantCost = BoxTypes.ComputeInstantOpenCost(rarity, remainingTime, totalDuration)
 			
 			-- Determine capabilities
-			local canStart = (state == "idle")
-			local canOpenNow = (state == "idle" or state == "unlocking") and currencies.hard >= instantCost
-			local isUnlocking = (state == "unlocking")
+			local canStart = (state == "Idle")
+			local canOpenNow = (state == "Idle" or state == "Unlocking") and currencies.hard >= instantCost
+			local isUnlocking = (state == "Unlocking")
 			
 			slots[i] = {
 				slotIndex = i,
@@ -110,7 +110,7 @@ function LootboxesVM.build(profileState)
 	
 	-- Initialize counters
 	local rarities = {"uncommon", "rare", "epic", "legendary"}
-	local states = {"idle", "unlocking", "ready", "consumed"}
+	local states = {"Idle", "Unlocking", "Ready", "Consumed"}
 	
 	for _, rarity in ipairs(rarities) do
 		summary.byRarity[rarity] = 0
@@ -125,7 +125,7 @@ function LootboxesVM.build(profileState)
 		summary.byRarity[lootbox.rarity] = (summary.byRarity[lootbox.rarity] or 0) + 1
 		summary.byState[lootbox.state] = (summary.byState[lootbox.state] or 0) + 1
 		
-		if lootbox.state == "unlocking" then
+		if lootbox.state == "Unlocking" then
 			summary.unlockingCount = summary.unlockingCount + 1
 		end
 	end
@@ -162,7 +162,7 @@ function LootboxesVM.getFirstIdleSlot(vm)
 	
 	for i = 1, 4 do
 		local slot = vm.slots[i]
-		if slot and slot.state == "idle" then
+		if slot and slot.state == "Idle" then
 			return slot
 		end
 	end
@@ -178,7 +178,7 @@ function LootboxesVM.getFirstUnlockingSlot(vm)
 	
 	for i = 1, 4 do
 		local slot = vm.slots[i]
-		if slot and slot.state == "unlocking" then
+		if slot and slot.state == "Unlocking" then
 			return slot
 		end
 	end
@@ -194,7 +194,7 @@ function LootboxesVM.getFirstReadySlot(vm)
 	
 	for i = 1, 4 do
 		local slot = vm.slots[i]
-		if slot and slot.state == "ready" then
+		if slot and slot.state == "Ready" then
 			return slot
 		end
 	end

@@ -60,7 +60,7 @@ function selectors.selectUnlockingCount(state)
 	local lootboxes = selectors.selectLootboxes(state)
 	local count = 0
 	for _, lootbox in ipairs(lootboxes) do
-		if lootbox.state == "unlocking" then
+		if lootbox.state == "Unlocking" then
 			count = count + 1
 		end
 	end
@@ -79,7 +79,7 @@ function selectors.selectCanStartUnlock(state, slotIndex, now)
 	
 	-- Check if slot exists and is idle
 	local lootbox = lootboxes[slotIndex]
-	if not lootbox or lootbox.state ~= "idle" then
+	if not lootbox or lootbox.state ~= "Idle" then
 		return false
 	end
 	
@@ -112,9 +112,9 @@ function selectors.selectInstantOpenCost(state, slotIndex, now)
 	local totalDuration = BoxTypes.GetDuration(rarity)
 	local remainingTime = 0
 	
-	if lootbox.state == "idle" then
+	if lootbox.state == "Idle" then
 		remainingTime = totalDuration
-	elseif lootbox.state == "unlocking" and lootbox.unlocksAt then
+	elseif lootbox.state == "Unlocking" and lootbox.unlocksAt then
 		remainingTime = math.max(0, lootbox.unlocksAt - now)
 	end
 	
@@ -133,7 +133,7 @@ function selectors.selectLootSummary(state)
 	
 	-- Initialize counters
 	local rarities = {"uncommon", "rare", "epic", "legendary"}
-	local states = {"idle", "unlocking", "ready", "consumed"}
+	local states = {"Idle", "Unlocking", "Ready", "Consumed"}
 	
 	for _, rarity in ipairs(rarities) do
 		summary.byRarity[rarity] = 0
@@ -148,7 +148,7 @@ function selectors.selectLootSummary(state)
 		summary.byRarity[lootbox.rarity] = (summary.byRarity[lootbox.rarity] or 0) + 1
 		summary.byState[lootbox.state] = (summary.byState[lootbox.state] or 0) + 1
 		
-		if lootbox.state == "unlocking" then
+		if lootbox.state == "Unlocking" then
 			summary.unlockingCount = summary.unlockingCount + 1
 		end
 	end

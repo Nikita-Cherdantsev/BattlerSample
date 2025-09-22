@@ -5,10 +5,10 @@ ProfileSchema.VERSION = "v2"
 
 -- Lootbox duration constants (in seconds)
 ProfileSchema.LootboxDurations = {
-	Common = 20 * 60,      -- 20 minutes
-	Rare = 60 * 60,        -- 1 hour
-	Epic = 4 * 60 * 60,    -- 4 hours
-	Legendary = 8 * 60 * 60 -- 8 hours
+	Uncommon = 7 * 60,     -- 7 minutes
+	Rare = 30 * 60,        -- 30 minutes
+	Epic = 120 * 60,       -- 120 minutes
+	Legendary = 240 * 60   -- 240 minutes
 }
 
 -- Profile structure definition (v2)
@@ -36,7 +36,7 @@ ProfileSchema.Profile = {
 	tutorialStep = 0,        -- Tutorial progress (default 0)
 	squadPower = 0,          -- Computed power of current deck
 	
-	-- Lootboxes (array of LootboxEntry, max 4, max 1 "unlocking")
+	-- Lootboxes (array of LootboxEntry, max 4, max 1 "Unlocking")
 	lootboxes = {},
 	
 	-- Pending lootbox (when capacity is full)
@@ -47,7 +47,7 @@ ProfileSchema.Profile = {
 ProfileSchema.LootboxEntry = {
 	id = "",                 -- Unique lootbox ID
 	rarity = "",            -- "uncommon", "rare", "epic", "legendary"
-	state = "",             -- "idle", "unlocking", "ready", "consumed"
+	state = "",             -- "Idle", "Unlocking", "Ready", "Consumed"
 	startedAt = nil,        -- Unix timestamp when unlocking started (optional)
 	unlocksAt = nil,        -- Unix timestamp when unlocking ends (optional)
 	seed = 0,               -- Seed for deterministic reward generation
@@ -207,7 +207,7 @@ function ProfileSchema.ValidateProfile(profile)
 			end
 			
 			-- Count unlocking lootboxes
-			if lootbox.state == "unlocking" then
+			if lootbox.state == "Unlocking" then
 				unlockingCount = unlockingCount + 1
 			end
 		end
@@ -255,7 +255,7 @@ end
 
 -- Validate lootbox state
 function ProfileSchema.IsValidLootboxState(state)
-	return state == "idle" or state == "unlocking" or state == "ready" or state == "consumed"
+	return state == "Idle" or state == "Unlocking" or state == "Ready" or state == "Consumed"
 end
 
 -- Create a new profile with defaults (v2)

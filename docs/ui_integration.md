@@ -1196,7 +1196,7 @@ Use `serverNow` + `unlocksAt` for accurate countdown timers without polling the 
 
 ```lua
 local function updateLootboxTimer(slot)
-    if slot.state == "unlocking" and slot.unlocksAt then
+    if slot.state == "Unlocking" and slot.unlocksAt then
         local now = os.time() -- Use client time for UI updates
         local remaining = math.max(0, slot.unlocksAt - now)
         
@@ -1353,6 +1353,32 @@ end
 -- 4. Handle rewards in ProfileUpdated
 -- payload.collectionSummary contains new cards
 -- payload.currencies contains updated currency amounts
+```
+
+### Hard Currency Drops
+
+Epic and Legendary lootboxes have a chance to drop hard currency:
+
+**Epic Lootboxes:**
+- 9% chance to drop 1-29 hard currency (random amount)
+- Use `SeededRNG` for deterministic results
+
+**Legendary Lootboxes:**
+- 12% chance to drop 1-77 hard currency (random amount)
+- Use `SeededRNG` for deterministic results
+
+**UI Display:**
+```lua
+-- Show potential hard currency drops in lootbox preview
+local function updateLootboxPreview(rarity)
+    if rarity == "epic" then
+        previewLabel.Text = "Epic Lootbox\n9% chance for 1-29 hard currency"
+    elseif rarity == "legendary" then
+        previewLabel.Text = "Legendary Lootbox\n12% chance for 1-77 hard currency"
+    else
+        previewLabel.Text = string.format("%s Lootbox", string.upper(rarity))
+    end
+end
 ```
 
 ### Array Compaction
@@ -1530,6 +1556,17 @@ if success then
     -- 5. ProfileUpdated fires with updated currencies
 end
 ```
+
+### Lootbox Error Codes
+
+Common error codes returned by lootbox operations:
+
+- **`BOX_DECISION_REQUIRED`**: Lootbox slots are full, player must discard or replace a lootbox
+- **`BOX_NOT_UNLOCKING`**: OpenNow can only be used on lootboxes in "Unlocking" state
+- **`BOX_ALREADY_UNLOCKING`**: Only one lootbox can be unlocking at a time
+- **`INVALID_SLOT`**: The specified slot index is not valid (out of range)
+- **`INVALID_STATE`**: The lootbox is not in the correct state for the requested action
+- **`INSUFFICIENT_HARD`**: Not enough hard currency for instant open cost
 
 ### Lootbox Purchase Flow
 
@@ -1738,6 +1775,7 @@ The DevPanel provides comprehensive shop testing:
    ["M"] = {
        id = "M", 
        hardAmount = 330,
+       additionalHard = 0,  -- UI bonus display (server credits hardAmount + additionalHard)
        robuxPrice = 100,
        devProductId = 123456789 -- Real ProductId from dashboard
    }
