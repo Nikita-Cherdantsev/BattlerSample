@@ -121,15 +121,8 @@ function ShopHandler:SetupOpenButton()
 		return
 	end
 	
-	print("ShopHandler: LeftPanel found, looking for Shop...")
-	local shopFrame = leftPanel:FindFirstChild("Shop")
-	if not shopFrame then
-		warn("ShopHandler: Shop frame not found in LeftPanel")
-		return
-	end
-	
 	print("ShopHandler: Shop found, looking for Button...")
-	local shopButton = shopFrame:FindFirstChild("Button")
+	local shopButton = leftPanel:FindFirstChild("BtnShop")
 	if not shopButton then
 		warn("ShopHandler: Button not found in Shop frame")
 		return

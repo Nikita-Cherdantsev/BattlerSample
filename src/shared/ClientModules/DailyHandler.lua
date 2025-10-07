@@ -115,15 +115,8 @@ function DailyHandler:SetupOpenButton()
 		return
 	end
 	
-	print("DailyHandler: LeftPanel found, looking for Daily...")
-	local dailyFrame = leftPanel:FindFirstChild("Daily")
-	if not dailyFrame then
-		warn("DailyHandler: Daily frame not found in LeftPanel")
-		return
-	end
-	
 	print("DailyHandler: Daily found, looking for Button...")
-	local dailyButton = dailyFrame:FindFirstChild("Button")
+	local dailyButton = leftPanel:FindFirstChild("BtnDaily")
 	if not dailyButton then
 		warn("DailyHandler: Button not found in Daily frame")
 		return

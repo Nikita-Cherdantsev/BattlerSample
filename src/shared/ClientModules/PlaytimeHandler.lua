@@ -135,15 +135,9 @@ function PlaytimeHandler:SetupOpenButton()
 		return
 	end
 	
-	print("PlaytimeHandler: LeftPanel found, looking for Playtime...")
-	local playtimeFrame = leftPanel:FindFirstChild("Playtime")
-	if not playtimeFrame then
-		warn("PlaytimeHandler: Playtime frame not found in LeftPanel")
-		return
-	end
 	
 	print("PlaytimeHandler: Playtime found, looking for Button...")
-	local playtimeButton = playtimeFrame:FindFirstChild("Button")
+	local playtimeButton = leftPanel:FindFirstChild("BtnPlaytime")
 	if not playtimeButton then
 		warn("PlaytimeHandler: Button not found in Playtime frame")
 		return
