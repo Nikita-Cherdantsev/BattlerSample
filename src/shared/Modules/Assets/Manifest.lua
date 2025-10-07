@@ -36,6 +36,35 @@ Manifest.CardImages = {
 	["card_1800"] = "rbxassetid://0", -- Piccolo
 }
 
+-- Card images (TODO: Replace with actual card art)
+Manifest.CardImagesDisabled = {
+	-- Legendary cards
+	["card_100"] = "rbxassetid://103328158193462",  -- Monkey D. Luffy
+	["card_200"] = "rbxassetid://73595528391131",  -- Roronoa Zoro
+	["card_800"] = "rbxassetid://86376646833476",  -- Vegeta
+	["card_1000"] = "rbxassetid://101835154423145", -- Goku
+	
+	-- Epic cards
+	["card_300"] = "rbxassetid://0",  -- Rock Lee
+	["card_400"] = "rbxassetid://0",  -- Tsunade
+	["card_1200"] = "rbxassetid://0", -- All Might
+	
+	-- Rare cards
+	["card_500"] = "rbxassetid://0",  -- Sanji
+	["card_900"] = "rbxassetid://0",  -- Shino Aburame
+	["card_1500"] = "rbxassetid://0", -- Bakugo
+	
+	-- Uncommon cards
+	["card_600"] = "rbxassetid://0",  -- Tenten
+	["card_700"] = "rbxassetid://0",  -- Koby
+	["card_1100"] = "rbxassetid://0", -- Usopp
+	["card_1300"] = "rbxassetid://0", -- Chopper
+	["card_1400"] = "rbxassetid://0", -- Krillin
+	["card_1600"] = "rbxassetid://0", -- Yamcha
+	["card_1700"] = "rbxassetid://0", -- Midoriya
+	["card_1800"] = "rbxassetid://0", -- Piccolo
+}
+
 -- Class icons (TODO: Replace with actual class icons)
 Manifest.ClassIcons = {
 	["DPS"] = "rbxassetid://0",     -- TODO: Add DPS class icon
@@ -45,7 +74,7 @@ Manifest.ClassIcons = {
 
 -- Rarity frames (TODO: Replace with actual frame images)
 Manifest.RarityFrames = {
-	["Common"] = "rbxassetid://0",     -- TODO: Add Common frame
+	["Uncommon"] = "rbxassetid://0",     -- TODO: Add Uncommon frame
 	["Rare"] = "rbxassetid://0",       -- TODO: Add Rare frame
 	["Epic"] = "rbxassetid://0",       -- TODO: Add Epic frame
 	["Legendary"] = "rbxassetid://0",  -- TODO: Add Legendary frame
@@ -53,10 +82,25 @@ Manifest.RarityFrames = {
 
 -- Rarity colors (base UI colors)
 Manifest.RarityColors = {
-	["Uncommon"] = Color3.fromRGB(150, 150, 150),     -- Gray
-	["Rare"] = Color3.fromRGB(0, 150, 255),         -- Blue
-	["Epic"] = Color3.fromRGB(150, 0, 255),         -- Purple
-	["Legendary"] = Color3.fromRGB(255, 150, 0),    -- Orange
+	["Uncommon"] = Color3.fromHex("7CD226"),     
+	["Rare"] = Color3.fromHex("6294F6"),         
+	["Epic"] = Color3.fromHex("BF51F6"),         
+	["Legendary"] = Color3.fromHex("FBBA38"),    
+}
+
+Manifest.RarityColorsDisabled = {
+	["Uncommon"] = Color3.fromHex("648643"),     
+	["Rare"] = Color3.fromHex("566A92"),         
+	["Epic"] = Color3.fromHex("845B99"),         
+	["Legendary"] = Color3.fromHex("A9956B"),    
+}
+
+-- Rarity gradient colors
+Manifest.RarityColorsGradient = {
+	["Uncommon"] = Color3.fromHex("004132"),     
+	["Rare"] = Color3.fromHex("001A5E"),         
+	["Epic"] = Color3.fromHex("5B005D"),         
+	["Legendary"] = Color3.fromHex("BE3D1D"),    
 }
 
 -- Placeholder assets (fallbacks)
@@ -127,10 +171,10 @@ Manifest.Pattern = {
 
 -- HUD button assets
 Manifest.HUDIcon = {
-	Shop = "rbxassetid://0",
-	Deck = "rbxassetid://0",
-	Daily = "rbxassetid://0",
-	Playtime = "rbxassetid://0",
+	Shop = "rbxassetid://98279351247805",
+	Deck = "rbxassetid://116603307842496",
+	Daily = "rbxassetid://96877636462338",
+	Playtime = "rbxassetid://95074985955823",
 }
 
 return Manifest

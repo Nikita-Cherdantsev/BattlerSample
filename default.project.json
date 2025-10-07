@@ -9,6 +9,9 @@
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
         },
+        "DeckHandler": {
+          "$path": "src/shared/ClientModules/DeckHandler.lua"
+        },
         "PlaytimeHandler": {
           "$path": "src/shared/ClientModules/PlaytimeHandler.lua"
         },

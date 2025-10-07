@@ -14,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local NetworkClient = require(script.Parent.NetworkClient)
 local ClientState = require(script.Parent.Parent.State.ClientState)
 local DailyHandler = require(ReplicatedStorage.ClientModules.DailyHandler)
+local DeckHandler = require(ReplicatedStorage.ClientModules.DeckHandler)
 local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
 
@@ -39,6 +40,7 @@ function MainController:Init()
 	
 	-- Initialize handlers
 	DailyHandler:Init(self)
+	DeckHandler:Init(self)
 	PlaytimeHandler:Init(self)
 	ShopHandler:Init(self)
     
@@ -75,6 +77,10 @@ function MainController:Cleanup()
     -- Cleanup handlers
     if DailyHandler.Cleanup then
         DailyHandler:Cleanup()
+    end
+    
+    if DeckHandler.Cleanup then
+        DeckHandler:Cleanup()
     end
     
     if PlaytimeHandler.Cleanup then
