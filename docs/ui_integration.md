@@ -1568,6 +1568,32 @@ Common error codes returned by lootbox operations:
 - **`INVALID_STATE`**: The lootbox is not in the correct state for the requested action
 - **`INSUFFICIENT_HARD`**: Not enough hard currency for instant open cost
 
+### Studio Test Runbook
+
+For testing lootbox flows in Studio, use the robust test script:
+
+```lua
+-- Load the test script
+loadstring(game:HttpGet("path/to/test_lootbox_robust.lua"))()
+```
+
+**Test Flow:**
+1. **Clean State**: Automatically clears any existing loot and pending boxes
+2. **Fill to 4**: Adds boxes until exactly 4 slots are filled (handles pending auto-discard)
+3. **Overflow Test**: Adds 5th box → expects `BOX_DECISION_REQUIRED` with `pending=YES`
+4. **Discard Test**: Discards pending → expects `pending=NO`, 4 slots intact
+5. **Replace Test**: Creates pending again, replaces slot 1 → expects slot 1 = new box in `Idle`
+6. **OpenNow Precondition**: Tries OpenNow on `Idle` → expects `BOX_NOT_UNLOCKING`
+7. **Start→OpenNow**: Starts unlock → `Unlocking` → OpenNow → rewards granted, slot removed
+
+**Helper Functions:**
+- `_G.dumpLoot()` - Show current loot state
+- `_G.findSlotByState('Idle')` - Find slot by state
+- `_G.Loot.*` - All lootbox operations
+
+**Dev-Only Reset:**
+- `_G.Loot.clear()` - Clear all lootboxes and pending (Studio only)
+
 ### Lootbox Purchase Flow
 
 ```lua

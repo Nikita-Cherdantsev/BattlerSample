@@ -10,6 +10,8 @@ local PlayerDataService = require(game.ServerScriptService:WaitForChild("Service
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local ShopService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ShopService"))
 local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
+local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
+local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
 -- Network folder and RemoteEvents (created in Init)
 local NetworkFolder = nil
@@ -89,6 +91,10 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestBuyLootbox = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestClearLoot = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	}
@@ -629,9 +635,9 @@ local function HandleRequestAddBox(player, requestData)
 	SendProfileUpdate(player, payload)
 	
 	if result.ok then
-		LogInfo(player, "Box added successfully")
+		LogInfo(player, "Add box request completed successfully")
 	else
-		LogWarning(player, "Add box failed: %s", tostring(result.error))
+		LogWarning(player, "Add box request failed: %s", tostring(result.error))
 	end
 end
 
@@ -996,6 +1002,58 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	LogInfo(player, "Unlock completed successfully")
 end
 
+-- Dev-only handlers
+local function HandleRequestClearLoot(player, requestData)
+	-- Studio-only endpoint for testing
+	if not RunService:IsStudio() then
+		LogWarning(player, "RequestClearLoot called outside Studio - ignored")
+		SendProfileUpdate(player, {
+			error = {
+				code = "FORBIDDEN",
+				message = "RequestClearLoot is only available in Studio"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	LogInfo(player, "Processing clear loot request (dev-only)")
+	
+	local success, result = ProfileManager.UpdateProfile(player.UserId, function(profile)
+		-- Clear all lootboxes and pending
+		profile.lootboxes = {}
+		profile.pendingLootbox = nil
+		profile.updatedAt = os.time()
+		
+		-- Store success result
+		profile._lootboxResult = { ok = true }
+		return profile
+	end)
+	
+	if not success then
+		Logger.debug("lootboxes: op=clear userId=%s result=ERR code=INTERNAL", tostring(player.UserId))
+		LogWarning(player, "Clear loot failed: INTERNAL")
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to clear loot"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Send updated profile
+	SendProfileUpdate(player, {
+		lootboxes = result.lootboxes,
+		pendingLootbox = result.pendingLootbox,
+		serverNow = os.time()
+	})
+	
+	Logger.debug("lootboxes: op=clear userId=%s result=OK", tostring(player.UserId))
+	LogInfo(player, "Loot cleared successfully (dev-only)")
+end
+
 -- Shop handlers
 local function HandleRequestGetShopPacks(player, requestData)
 	LogInfo(player, "Processing get shop packs request")
@@ -1212,6 +1270,11 @@ function RemoteEvents.Init()
 	RequestCompleteUnlock.Name = "RequestCompleteUnlock"
 	RequestCompleteUnlock.Parent = NetworkFolder
 	
+	-- Dev-only RemoteEvents
+	RequestClearLoot = Instance.new("RemoteEvent")
+	RequestClearLoot.Name = "RequestClearLoot"
+	RequestClearLoot.Parent = NetworkFolder
+	
 	RequestGetShopPacks = Instance.new("RemoteEvent")
 	RequestGetShopPacks.Name = "RequestGetShopPacks"
 	RequestGetShopPacks.Parent = NetworkFolder
@@ -1270,6 +1333,7 @@ function RemoteEvents.Init()
 	RequestStartUnlock.OnServerEvent:Connect(HandleRequestStartUnlock)
 	RequestOpenNow.OnServerEvent:Connect(HandleRequestOpenNow)
 	RequestCompleteUnlock.OnServerEvent:Connect(HandleRequestCompleteUnlock)
+	RequestClearLoot.OnServerEvent:Connect(HandleRequestClearLoot)
 	RequestGetShopPacks.OnServerEvent:Connect(HandleRequestGetShopPacks)
 	RequestStartPackPurchase.OnServerEvent:Connect(HandleRequestStartPackPurchase)
 	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)

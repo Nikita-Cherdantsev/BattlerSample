@@ -904,11 +904,13 @@ Config.SHOW_DEV_PANEL = true    -- Development UI
 - **Breaking change**: Update any client code that checks `box.state == "idle"` to use `"Idle"`
 
 ### Lootbox Flow Standardization
-- **Overflow error standardized**: 5th box overflow now consistently returns `BOX_DECISION_REQUIRED`
+- **Overflow error standardized**: 5th box overflow now consistently returns `BOX_DECISION_REQUIRED` and sets `pendingLootbox`
 - **OpenNow preconditions enforced**: Only works on `"Unlocking"` state, returns `BOX_NOT_UNLOCKING` for others
 - **Single unlock rule**: Only one lootbox can be unlocking at a time, returns `BOX_ALREADY_UNLOCKING` for violations
 - **Enhanced error codes**: Added `INVALID_SLOT`, `INVALID_STATE` for better error handling
 - **Structured logging**: All lootbox operations now include clear operation context and state transitions
+- **Error-only payloads**: Handlers send error-only payloads on failure (no `lootboxes` slice), full slices on success
+- **Dev-only reset**: Added `RequestClearLoot` endpoint for deterministic Studio testing
 
 **Combat Defence Update:**
 - ✅ **Armor Pool Model**: Defence now acts as depleting armor pool instead of 50% soak

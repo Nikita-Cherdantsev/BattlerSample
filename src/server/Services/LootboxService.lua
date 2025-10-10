@@ -15,6 +15,20 @@ local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
 local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 local Logger = require(game.ReplicatedStorage.Modules.Logger)
 
+-- Helper function to preserve profile invariants
+local function preserveProfileInvariants(profile, userId)
+	profile.updatedAt = os.time()
+	profile.playerId = tostring(userId)
+	profile.schemaVersion = profile.schemaVersion or 1
+	
+	-- Ensure createdAt is valid
+	if not profile.createdAt or type(profile.createdAt) ~= "number" or profile.createdAt <= 0 then
+		profile.createdAt = os.time()
+	end
+	
+	return profile
+end
+
 -- Error codes
 LootboxService.ErrorCodes = {
 	BOX_DECISION_REQUIRED = "BOX_DECISION_REQUIRED",
@@ -70,7 +84,7 @@ function LootboxService.TryAddBox(userId, rarity, source)
 			
 			-- Store the result for later return
 			profile._lootboxResult = { ok = true, box = newBox }
-			return profile
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- If capacity full and no pending box, set pending
@@ -97,7 +111,7 @@ function LootboxService.TryAddBox(userId, rarity, source)
 			ok = false, 
 			error = LootboxService.ErrorCodes.BOX_DECISION_REQUIRED 
 		}
-		return profile
+		return preserveProfileInvariants(profile, userId)
 	end)
 	
 	if not success then
@@ -129,7 +143,7 @@ function LootboxService.ResolvePendingDiscard(userId)
 		profile.pendingLootbox = nil
 		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true }
-		return profile
+		return preserveProfileInvariants(profile, userId)
 	end)
 	
 	if not success then
@@ -185,7 +199,7 @@ function LootboxService.ResolvePendingReplace(userId, slotIndex)
 		profile.pendingLootbox = nil
 		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, replacedBox = profile.lootboxes[slotIndex] }
-		return profile
+		return preserveProfileInvariants(profile, userId)
 	end)
 	
 	if not success then
@@ -235,7 +249,7 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 		
 		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, lootbox = lootbox }
-		return profile
+		return preserveProfileInvariants(profile, userId)
 	end)
 	
 	if not success then
@@ -311,7 +325,7 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		profile.lootboxes = compacted
 		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, rewards = rewards }
-		return profile
+		return preserveProfileInvariants(profile, userId)
 	end)
 	
 	if not success then
@@ -395,7 +409,10 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			end
 		end
 		profile.lootboxes = compacted
-		profile.updatedAt = os.time()
+		
+		-- Preserve profile invariants
+		profile = preserveProfileInvariants(profile, userId)
+		
 		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = instantCost }
 		return profile
 	end)
