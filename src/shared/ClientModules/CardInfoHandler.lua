@@ -540,16 +540,16 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 		canLevelUp = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
 	end
 	
-	-- Update Collection button
+	-- Update Collection button (show if card is in deck and can be removed)
 	local btnCollection = buttons:FindFirstChild("BtnCollection")
 	if btnCollection then
-		btnCollection.Visible = not isInCollection
+		btnCollection.Visible = isInCollection and isInDeck
 	end
 	
-	-- Update Deck button
+	-- Update Deck button (show if card is in collection but not in deck)
 	local btnDeck = buttons:FindFirstChild("BtnDeck")
 	if btnDeck then
-		btnDeck.Visible = not isInDeck
+		btnDeck.Visible = isInCollection and not isInDeck
 	end
 	
 	-- Update Level Up button
@@ -583,6 +583,140 @@ function CardInfoHandler:GetCurrentCardRarity()
 	return cardData.rarity:gsub("^%l", string.upper)
 end
 
+-- Helper function to check if a card is in the deck
+function CardInfoHandler:IsCardInDeck(cardId)
+	if not self.currentProfile or not self.currentProfile.deck then
+		return false
+	end
+	
+	for _, deckCardId in pairs(self.currentProfile.deck) do
+		if deckCardId == cardId then
+			return true
+		end
+	end
+	return false
+end
+
+-- Helper function to add a card to the deck
+function CardInfoHandler:AddCardToDeck(cardId)
+	if not self.currentProfile then
+		warn("CardInfoHandler: No profile available for deck operations")
+		return false
+	end
+	
+	-- Validate that player owns this card
+	local collectionEntry = self.currentProfile.collection and self.currentProfile.collection[cardId]
+	if not collectionEntry or collectionEntry.count <= 0 then
+		warn("CardInfoHandler: Player does not own card:", cardId)
+		return false
+	end
+	
+	-- Check if card is already in deck
+	if self:IsCardInDeck(cardId) then
+		warn("CardInfoHandler: Card is already in deck:", cardId)
+		return false
+	end
+	
+	-- Get current deck
+	local currentDeck = self.currentProfile.deck or {}
+	
+	-- Check if deck is full (max 6 cards)
+	if #currentDeck >= 6 then
+		warn("CardInfoHandler: Deck is full (6/6 cards). Cannot add more cards.")
+		return false
+	end
+	
+	-- Create new deck with the card added
+	local newDeck = {}
+	for i, deckCardId in ipairs(currentDeck) do
+		newDeck[i] = deckCardId
+	end
+	newDeck[#newDeck + 1] = cardId
+	
+	-- Validate the new deck using DeckValidator
+	local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
+	local isValid, errorMessage = DeckValidator.ValidateDeck(newDeck)
+	if not isValid then
+		warn("CardInfoHandler: New deck would be invalid:", errorMessage)
+		return false
+	end
+	
+	-- Additional validation: Check if deck would exceed 6 cards (should not happen due to earlier check, but safety)
+	if #newDeck > 6 then
+		warn("CardInfoHandler: Deck would exceed maximum size (6 cards)")
+		return false
+	end
+	
+	-- Request deck update via network
+	print("CardInfoHandler: Adding card to deck:", cardId)
+	if NetworkClient and NetworkClient.requestSetDeck then
+		local success, error = NetworkClient.requestSetDeck(newDeck)
+		if success then
+			print("CardInfoHandler: Successfully requested to add card to deck")
+			-- The UI will update automatically when ProfileUpdated event is received
+			return true
+		else
+			warn("CardInfoHandler: Failed to request deck update:", error)
+			-- TODO: Show user-friendly error message
+			return false
+		end
+	else
+		warn("CardInfoHandler: NetworkClient.requestSetDeck not available")
+		return false
+	end
+end
+
+-- Helper function to remove a card from the deck
+function CardInfoHandler:RemoveCardFromDeck(cardId)
+	if not self.currentProfile then
+		warn("CardInfoHandler: No profile available for deck operations")
+		return false
+	end
+	
+	-- Check if card is in deck
+	if not self:IsCardInDeck(cardId) then
+		warn("CardInfoHandler: Card is not in deck:", cardId)
+		return false
+	end
+	
+	-- Get current deck and remove the card
+	local currentDeck = self.currentProfile.deck or {}
+	local newDeck = {}
+	
+	for i, deckCardId in ipairs(currentDeck) do
+		if deckCardId ~= cardId then
+			newDeck[#newDeck + 1] = deckCardId
+		end
+	end
+	
+	-- Note: Deck can have less than 6 cards, so we don't validate size here
+	-- But we still validate the structure
+	local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
+	local isValid, errorMessage = DeckValidator.ValidateDeck(newDeck)
+	if not isValid then
+		warn("CardInfoHandler: New deck would be invalid:", errorMessage)
+		return false
+	end
+	
+	-- Request deck update via network
+	print("CardInfoHandler: Removing card from deck:", cardId)
+	if NetworkClient and NetworkClient.requestSetDeck then
+		local success, error = NetworkClient.requestSetDeck(newDeck)
+		if success then
+			print("CardInfoHandler: Successfully requested to remove card from deck")
+			-- The UI will update automatically when ProfileUpdated event is received
+			return true
+		else
+			warn("CardInfoHandler: Failed to request deck update:", error)
+			-- TODO: Show user-friendly error message
+			return false
+		end
+	else
+		warn("CardInfoHandler: NetworkClient.requestSetDeck not available")
+		return false
+	end
+end
+
 function CardInfoHandler:OnCollectionButtonClicked()
 	if not self.currentCardId then
 		warn("CardInfoHandler: No current card selected for collection action")
@@ -591,11 +725,11 @@ function CardInfoHandler:OnCollectionButtonClicked()
 	
 	print("CardInfoHandler: Collection button clicked for card:", self.currentCardId)
 	
-	-- Request to add card to collection via network
-	if NetworkClient and NetworkClient.requestRemoveCardFromDeck then
-		-- TODO: Implement add to collection logic
+	-- Remove card from deck if it's currently in the deck
+	if self:IsCardInDeck(self.currentCardId) then
+		self:RemoveCardFromDeck(self.currentCardId)
 	else
-		warn("CardInfoHandler: NetworkClient.requestRemoveCardFromDeck not available")
+		print("CardInfoHandler: Card is not in deck, no action needed")
 	end
 end
 
@@ -607,11 +741,11 @@ function CardInfoHandler:OnDeckButtonClicked()
 	
 	print("CardInfoHandler: Deck button clicked for card:", self.currentCardId)
 	
-	-- Request to add card to deck via network
-	if NetworkClient and NetworkClient.requestAddCardToDeck then
-		-- TODO: Implement add to deck logic
+	-- Add card to deck if it's not already in the deck
+	if not self:IsCardInDeck(self.currentCardId) then
+		self:AddCardToDeck(self.currentCardId)
 	else
-		warn("CardInfoHandler: NetworkClient.requestAddCardToDeck not available")
+		print("CardInfoHandler: Card is already in deck, no action needed")
 	end
 end
 
