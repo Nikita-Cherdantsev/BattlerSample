@@ -30,6 +30,9 @@ function DeckHandler:Init(controller)
 	self.ClientState = controller:GetClientState()
 	self.Utilities = controller:GetModule("Utilities")
 	
+	-- Get CardInfoHandler reference
+	self.CardInfoHandler = nil
+	
 	-- Initialize state
 	self.Connections = {}
 	self.currentProfile = nil
@@ -456,22 +459,20 @@ function DeckHandler:UpdateCardAppearance(cardInstance, cardData, hasCard, cardL
 		end
 	end
 	
-	-- Update hero image
-	local heroImage = cardInstance:FindFirstChild("Content")
-	if heroImage then
-		heroImage = heroImage:FindFirstChild("ImgHero")
-		if heroImage then
+	-- Update card image
+	local cardContent = cardInstance:FindFirstChild("Content")
+	if cardContent then
+		local imgHero = cardContent:FindFirstChild("ImgHero")
+		if imgHero then
 			local imageId
 			if hasCard then
-				-- Use normal image if player has the card
 				imageId = Manifest.CardImages[cardData.id]
 			else
-				-- Use disabled image if player doesn't have the card
 				imageId = Manifest.CardImagesDisabled[cardData.id]
 			end
 			
 			if imageId then
-				heroImage.Image = imageId
+				imgHero.Image = imageId
 			end
 		end
 	end
@@ -570,12 +571,34 @@ end
 
 function DeckHandler:OnCollectionCardClicked(cardId)
 	print("DeckHandler: Collection card clicked: " .. cardId)
-	-- TODO: Implement card selection logic for deck building
+	
+	-- Get CardInfoHandler reference if not already set
+	if not self.CardInfoHandler then
+		self.CardInfoHandler = self.Controller:GetCardInfoHandler()
+	end
+	
+	-- Show card info
+	if self.CardInfoHandler and self.CardInfoHandler.ShowCardInfo then
+		self.CardInfoHandler:ShowCardInfo(cardId, nil)
+	else
+		warn("DeckHandler: CardInfoHandler not available")
+	end
 end
 
 function DeckHandler:OnDeckCardClicked(cardId, slotIndex)
 	print("DeckHandler: Deck card clicked: " .. cardId .. " in slot " .. slotIndex)
-	-- TODO: Implement card removal from deck
+	
+	-- Get CardInfoHandler reference if not already set
+	if not self.CardInfoHandler then
+		self.CardInfoHandler = self.Controller:GetCardInfoHandler()
+	end
+	
+	-- Show card info
+	if self.CardInfoHandler and self.CardInfoHandler.ShowCardInfo then
+		self.CardInfoHandler:ShowCardInfo(cardId, slotIndex)
+	else
+		warn("DeckHandler: CardInfoHandler not available")
+	end
 end
 
 function DeckHandler:OpenWindow()

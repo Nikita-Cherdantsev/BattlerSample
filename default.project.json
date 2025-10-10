@@ -6,6 +6,9 @@
     "ReplicatedStorage": {
       "ClientModules": {  
         "$className": "Folder",
+        "CardInfoHandler": {
+          "$path": "src/shared/ClientModules/CardInfoHandler.lua"
+        },
         "DailyHandler": {
           "$path": "src/shared/ClientModules/DailyHandler.lua"
         },

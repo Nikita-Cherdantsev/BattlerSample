@@ -15,11 +15,13 @@ local NetworkClient = require(script.Parent.NetworkClient)
 local ClientState = require(script.Parent.Parent.State.ClientState)
 local DailyHandler = require(ReplicatedStorage.ClientModules.DailyHandler)
 local DeckHandler = require(ReplicatedStorage.ClientModules.DeckHandler)
+local CardInfoHandler = require(ReplicatedStorage.ClientModules.CardInfoHandler)
 local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
 
 -- State
 local isInitialized = false
+local cardInfoHandlerInstance = nil
 
 -- Public API
 
@@ -41,6 +43,8 @@ function MainController:Init()
 	-- Initialize handlers
 	DailyHandler:Init(self)
 	DeckHandler:Init(self)
+	cardInfoHandlerInstance = CardInfoHandler
+	cardInfoHandlerInstance:Init(self)
 	PlaytimeHandler:Init(self)
 	ShopHandler:Init(self)
     
@@ -59,6 +63,11 @@ function MainController:GetModule(moduleName)
         return require(ReplicatedStorage.Modules.Utilities)
     end
     return nil
+end
+
+-- Get CardInfoHandler instance
+function MainController:GetCardInfoHandler()
+    return cardInfoHandlerInstance
 end
 
 -- Check if MainController is initialized
@@ -81,6 +90,10 @@ function MainController:Cleanup()
     
     if DeckHandler.Cleanup then
         DeckHandler:Cleanup()
+    end
+    
+    if cardInfoHandlerInstance and cardInfoHandlerInstance.Cleanup then
+        cardInfoHandlerInstance:Cleanup()
     end
     
     if PlaytimeHandler.Cleanup then
