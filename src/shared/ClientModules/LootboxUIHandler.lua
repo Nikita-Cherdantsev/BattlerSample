@@ -299,10 +299,10 @@ function LootboxUIHandler:UpdateLootboxStates()
 	end
 	print("LootboxUIHandler: Pending lootbox:", pendingLootbox ~= nil)
 	
-	-- First, check if any lootbox is currently unlocking
+	-- First, check if any lootbox is currently unlocking (timer not completed)
 	local isAnyUnlocking = false
 	for i, lootbox in ipairs(lootboxes) do
-		if lootbox and lootbox.state == "Unlocking" then
+		if lootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
 			isAnyUnlocking = true
 			break
 		end
@@ -318,9 +318,16 @@ function LootboxUIHandler:UpdateLootboxStates()
 			local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
 			
 			if lootbox then
-				-- If this lootbox is unlocking, show SpeedUp state
+				-- Check if this lootbox is unlocking and if timer has completed
 				if lootbox.state == "Unlocking" then
-					self:UpdatePackState(packIndex, "Unlocking", lootbox)
+					-- Check if timer has completed
+					if lootbox.unlocksAt and lootbox.unlocksAt <= os.time() then
+						-- Timer completed, lootbox is ready to open
+						self:UpdatePackState(packIndex, "Ready", lootbox)
+					else
+						-- Still unlocking, show SpeedUp state
+						self:UpdatePackState(packIndex, "Unlocking", lootbox)
+					end
 				-- If any other lootbox is unlocking, lock this one (unless it's the unlocking one)
 				elseif isAnyUnlocking then
 					self:UpdatePackState(packIndex, "Locked", nil)
@@ -394,6 +401,7 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.btnOpen.Visible = true
 			pack.btnOpen.Active = true
 		end
+		print("LootboxUIHandler: Showing Open button for Pack" .. packIndex)
 		
 	elseif state == "Locked" then
 		-- Show locked frame
