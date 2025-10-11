@@ -41,14 +41,32 @@ function MainController:Init()
     -- Request initial profile
 	NetworkClient.requestProfile()
 	
-	-- Initialize handlers
-	DailyHandler:Init(self)
-	DeckHandler:Init(self)
-	cardInfoHandlerInstance = CardInfoHandler
-	cardInfoHandlerInstance:Init(self)
-	LootboxUIHandler:Init(self)
-	PlaytimeHandler:Init(self)
-	ShopHandler:Init(self)
+	-- Initialize handlers with error handling
+	local handlers = {
+		{name = "DailyHandler", handler = DailyHandler},
+		{name = "DeckHandler", handler = DeckHandler},
+		{name = "CardInfoHandler", handler = CardInfoHandler},
+		{name = "LootboxUIHandler", handler = LootboxUIHandler},
+		{name = "PlaytimeHandler", handler = PlaytimeHandler},
+		{name = "ShopHandler", handler = ShopHandler}
+	}
+	
+	for _, handlerInfo in ipairs(handlers) do
+		local success, result = pcall(function()
+			if handlerInfo.name == "CardInfoHandler" then
+				cardInfoHandlerInstance = handlerInfo.handler
+				return handlerInfo.handler:Init(self)
+			else
+				return handlerInfo.handler:Init(self)
+			end
+		end)
+		
+		if success then
+			print("✅ " .. handlerInfo.name .. " initialized successfully")
+		else
+			warn("❌ Failed to initialize " .. handlerInfo.name .. ": " .. tostring(result))
+		end
+	end
     
     isInitialized = true
     print("✅ MainController initialized successfully!")

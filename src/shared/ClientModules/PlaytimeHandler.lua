@@ -78,11 +78,16 @@ function PlaytimeHandler:SetupPlaytime()
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
-	local gameGui = playerGui:WaitForChild("GameUI", 10) -- Wait up to 10 seconds
+	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		warn("PlaytimeHandler: GameUI not found in PlayerGui after waiting")
-		return
+		print("PlaytimeHandler: GameUI not found initially, waiting longer...")
+		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
+		
+		if not gameGui then
+			warn("PlaytimeHandler: GameUI not found in PlayerGui after extended waiting")
+			return
+		end
 	end
 	
 	print("PlaytimeHandler: Found GameUI: " .. tostring(gameGui))

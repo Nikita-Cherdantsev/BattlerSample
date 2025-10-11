@@ -28,7 +28,21 @@ CardInfoHandler.currentSlotIndex = nil
 function CardInfoHandler:Init(controller)
 	self.Controller = controller
 	self.ClientState = controller:GetClientState()
-	self.Utilities = controller:GetModule("Utilities")
+	
+	-- Safe require of Utilities to avoid loading errors
+	local success, utilities = pcall(function()
+		return controller:GetModule("Utilities")
+	end)
+	
+	if success then
+		self.Utilities = utilities
+	else
+		warn("CardInfoHandler: Could not load Utilities module: " .. tostring(utilities))
+		self.Utilities = {
+			TweenUI = { FadeIn = function() end, FadeOut = function() end },
+			Blur = { Show = function() end, Hide = function() end }
+		}
+	end
 	
 	-- Initialize state
 	self.Connections = {}
@@ -59,11 +73,16 @@ function CardInfoHandler:SetupCardInfo()
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
-	local gameGui = playerGui:WaitForChild("GameUI", 10) -- Wait up to 10 seconds
+	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		warn("CardInfoHandler: GameUI not found in PlayerGui after waiting")
-		return
+		print("CardInfoHandler: GameUI not found initially, waiting longer...")
+		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
+		
+		if not gameGui then
+			warn("CardInfoHandler: GameUI not found in PlayerGui after extended waiting")
+			return
+		end
 	end
 	
 	print("CardInfoHandler: Found GameUI: " .. tostring(gameGui))

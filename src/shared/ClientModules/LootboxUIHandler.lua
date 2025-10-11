@@ -24,6 +24,21 @@ function LootboxUIHandler:Init(controller)
 	self.Controller = controller
 	self.ClientState = controller:GetClientState()
 	
+	-- Safe require of Utilities to avoid loading errors
+	local success, utilities = pcall(function()
+		return controller:GetModule("Utilities")
+	end)
+	
+	if success then
+		self.Utilities = utilities
+	else
+		warn("LootboxUIHandler: Could not load Utilities module: " .. tostring(utilities))
+		self.Utilities = {
+			TweenUI = { FadeIn = function() end, FadeOut = function() end },
+			Blur = { Show = function() end, Hide = function() end }
+		}
+	end
+	
 	-- Initialize state
 	self.Connections = {}
 	self.timerConnections = {}
@@ -47,10 +62,16 @@ function LootboxUIHandler:SetupLootboxUI()
 	print("LootboxUIHandler: Looking for UI in PlayerGui...")
 	
 	-- Wait for GameUI
-	local gameGui = playerGui:WaitForChild("GameUI", 10)
+	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
+	
 	if not gameGui then
-		warn("LootboxUIHandler: GameUI not found in PlayerGui after waiting")
-		return
+		print("LootboxUIHandler: GameUI not found initially, waiting longer...")
+		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
+		
+		if not gameGui then
+			warn("LootboxUIHandler: GameUI not found in PlayerGui after extended waiting")
+			return
+		end
 	end
 	
 	print("LootboxUIHandler: Found GameUI: " .. tostring(gameGui))

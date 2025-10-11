@@ -65,11 +65,16 @@ function DailyHandler:SetupDaily()
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
 	-- This is the correct way to get the UI that the player can actually interact with
-	local gameGui = playerGui:WaitForChild("GameUI", 10) -- Wait up to 10 seconds
+	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		warn("DailyHandler: GameUI not found in PlayerGui after waiting")
-		return
+		print("DailyHandler: GameUI not found initially, waiting longer...")
+		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
+		
+		if not gameGui then
+			warn("DailyHandler: GameUI not found in PlayerGui after extended waiting")
+			return
+		end
 	end
 	
 	print("DailyHandler: Found GameUI: " .. tostring(gameGui))
