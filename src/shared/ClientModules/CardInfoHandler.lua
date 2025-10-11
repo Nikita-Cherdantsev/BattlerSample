@@ -39,8 +39,7 @@ function CardInfoHandler:Init(controller)
 	else
 		warn("CardInfoHandler: Could not load Utilities module: " .. tostring(utilities))
 		self.Utilities = {
-			TweenUI = { FadeIn = function() end, FadeOut = function() end },
-			Blur = { Show = function() end, Hide = function() end }
+			TweenUI = { FadeIn = function() end, FadeOut = function() end }
 		}
 	end
 	
@@ -805,14 +804,6 @@ function CardInfoHandler:OpenWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
 
-	-- Hide HUD panels if they exist
-	if self.UI.LeftPanel then
-		self.UI.LeftPanel.Visible = false
-	end
-	if self.UI.BottomPanel then
-		self.UI.BottomPanel.Visible = false
-	end
-
 	-- Show card info frame
 	self.CardInfoFrame.Visible = true
 
@@ -822,9 +813,6 @@ function CardInfoHandler:OpenWindow()
 			self.Utilities.TweenUI.FadeIn(self.CardInfoFrame, .3, function ()
 				self.isAnimating = false
 			end)
-		end
-		if self.Utilities.Blur then
-			self.Utilities.Blur.Show()
 		end
 	else
 		-- Fallback: no animation
@@ -846,21 +834,10 @@ function CardInfoHandler:CloseWindow()
 				self.isAnimating = false
 			end)
 		end
-		if self.Utilities.Blur then
-			self.Utilities.Blur.Hide()
-		end
 	else
 		-- Fallback: no animation
 		self.CardInfoFrame.Visible = false
 		self.isAnimating = false
-	end
-
-	-- Show HUD panels
-	if self.UI.LeftPanel then
-		self.UI.LeftPanel.Visible = true
-	end
-	if self.UI.BottomPanel then
-		self.UI.BottomPanel.Visible = true
 	end
 	
 	-- Clear current card data

@@ -17,12 +17,12 @@ Manifest.CardImages = {
 	
 	-- Epic cards
 	["card_300"] = "rbxassetid://109391071241644",  -- Rock Lee
-	["card_400"] = "rbxassetid://129627997182384",  -- Tsunade
+	["card_400"] = "rbxassetid://71605508055920",  -- Tsunade
 	["card_1200"] = "rbxassetid://129062570319296", -- All Might
 	
 	-- Rare cards
 	["card_500"] = "rbxassetid://114047411638621",  -- Sanji
-	["card_900"] = "rbxassetid://107307003564755",  -- Shino Aburame
+	["card_900"] = "rbxassetid://138302650162634",  -- Shino Aburame
 	["card_1500"] = "rbxassetid://105914633790557", -- Bakugo
 	
 	-- Uncommon cards
@@ -46,12 +46,12 @@ Manifest.CardImagesDisabled = {
 	
 	-- Epic cards
 	["card_300"] = "rbxassetid://97638914176130",  -- Rock Lee
-	["card_400"] = "rbxassetid://71898620972133",  -- Tsunade
+	["card_400"] = "rbxassetid://102888844348492",  -- Tsunade
 	["card_1200"] = "rbxassetid://82108859330046", -- All Might
 	
 	-- Rare cards
 	["card_500"] = "rbxassetid://140547037001157",  -- Sanji
-	["card_900"] = "rbxassetid://131459926213865",  -- Shino Aburame
+	["card_900"] = "rbxassetid://132901170494459",  -- Shino Aburame
 	["card_1500"] = "rbxassetid://120103825726197", -- Bakugo
 	
 	-- Uncommon cards
