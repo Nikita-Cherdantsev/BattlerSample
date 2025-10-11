@@ -15,6 +15,9 @@
         "DeckHandler": {
           "$path": "src/shared/ClientModules/DeckHandler.lua"
         },
+        "LootboxUIHandler": {
+          "$path": "src/shared/ClientModules/LootboxUIHandler.lua"
+        },
         "PlaytimeHandler": {
           "$path": "src/shared/ClientModules/PlaytimeHandler.lua"
         },

@@ -16,6 +16,7 @@ local ClientState = require(script.Parent.Parent.State.ClientState)
 local DailyHandler = require(ReplicatedStorage.ClientModules.DailyHandler)
 local DeckHandler = require(ReplicatedStorage.ClientModules.DeckHandler)
 local CardInfoHandler = require(ReplicatedStorage.ClientModules.CardInfoHandler)
+local LootboxUIHandler = require(ReplicatedStorage.ClientModules.LootboxUIHandler)
 local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
 
@@ -45,6 +46,7 @@ function MainController:Init()
 	DeckHandler:Init(self)
 	cardInfoHandlerInstance = CardInfoHandler
 	cardInfoHandlerInstance:Init(self)
+	LootboxUIHandler:Init(self)
 	PlaytimeHandler:Init(self)
 	ShopHandler:Init(self)
     
@@ -70,6 +72,32 @@ function MainController:GetCardInfoHandler()
     return cardInfoHandlerInstance
 end
 
+	-- Get the DeckHandler instance
+function MainController:GetDeckHandler()
+    return DeckHandler
+end
+
+-- Get the LootboxUIHandler instance
+function MainController:GetLootboxUIHandler()
+    return LootboxUIHandler
+end
+
+-- Debug function to test lootbox functionality
+function MainController:DebugLootboxes()
+    print("🔍 MainController: DebugLootboxes called")
+    print("MainController initialized:", isInitialized)
+    
+    if not isInitialized then
+        warn("❌ MainController not initialized yet")
+        return
+    end
+    
+    print("LootboxUIHandler initialized:", LootboxUIHandler:IsInitialized())
+    
+    -- Refresh lootbox states
+    LootboxUIHandler:DebugRefreshStates()
+end
+
 -- Check if MainController is initialized
 function MainController:IsInitialized()
     return isInitialized
@@ -90,6 +118,9 @@ function MainController:Cleanup()
     
     if DeckHandler.Cleanup then
         DeckHandler:Cleanup()
+    end
+    if LootboxUIHandler.Cleanup then
+        LootboxUIHandler:Cleanup()
     end
     
     if cardInfoHandlerInstance and cardInfoHandlerInstance.Cleanup then

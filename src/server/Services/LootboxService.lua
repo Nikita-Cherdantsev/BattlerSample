@@ -231,13 +231,15 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 		
 		-- StartUnlock only works on Idle boxes
 		if lootbox.state ~= BoxTypes.BoxState.IDLE then
-			return { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- Check if any other box is unlocking
 		for i = 1, BoxTypes.MAX_SLOTS do
 			if profile.lootboxes[i] and profile.lootboxes[i].state == BoxTypes.BoxState.UNLOCKING then
-				return { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING }
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING }
+				return preserveProfileInvariants(profile, userId)
 			end
 		end
 		
@@ -357,7 +359,8 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		
 		-- OpenNow only works on Unlocking boxes
 		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
-			return { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- Calculate instant open cost (only for Unlocking boxes)
@@ -368,7 +371,8 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		
 		-- Check if player has enough hard currency
 		if profile.currencies.hard < instantCost then
-			return { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- Deduct hard currency
