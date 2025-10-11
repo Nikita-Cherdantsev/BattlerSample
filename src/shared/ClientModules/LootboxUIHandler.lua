@@ -292,7 +292,17 @@ function LootboxUIHandler:UpdateLootboxStates()
 	print("LootboxUIHandler: Current lootboxes:")
 	for i, lootbox in ipairs(lootboxes) do
 		if lootbox then
-			print("  Slot " .. i .. ": state=" .. tostring(lootbox.state) .. ", unlocksAt=" .. tostring(lootbox.unlocksAt))
+			local hasLootbox = lootbox.state and (
+				(lootbox.state == "Idle" and lootbox.unlocksAt) or
+				(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
+				(lootbox.state == "Ready") or
+				(lootbox.state == "Consumed")
+			)
+			if hasLootbox then
+				print("  Slot " .. i .. ": HAS LOOTBOX - state=" .. tostring(lootbox.state) .. ", unlocksAt=" .. tostring(lootbox.unlocksAt))
+			else
+				print("  Slot " .. i .. ": NO LOOTBOX - state=" .. tostring(lootbox.state) .. ", unlocksAt=" .. tostring(lootbox.unlocksAt))
+			end
 		else
 			print("  Slot " .. i .. ": empty")
 		end
@@ -302,7 +312,15 @@ function LootboxUIHandler:UpdateLootboxStates()
 	-- First, check if any lootbox is currently unlocking (timer not completed)
 	local isAnyUnlocking = false
 	for i, lootbox in ipairs(lootboxes) do
-		if lootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
+		-- Only consider slots that actually have lootboxes
+		local hasLootbox = lootbox and lootbox.state and (
+			(lootbox.state == "Idle" and lootbox.unlocksAt) or
+			(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
+			(lootbox.state == "Ready") or
+			(lootbox.state == "Consumed")
+		)
+		
+		if hasLootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
 			isAnyUnlocking = true
 			break
 		end
@@ -317,8 +335,17 @@ function LootboxUIHandler:UpdateLootboxStates()
 			local slotIndex = pack.slotIndex
 			local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
 			
-			if lootbox then
-				-- Check if this lootbox is unlocking and if timer has completed
+			-- Check if this slot actually has a lootbox
+			-- A lootbox exists if it has valid state AND unlocksAt timestamp (for Idle/Unlocking/Ready)
+			local hasLootbox = lootbox and lootbox.state and (
+				(lootbox.state == "Idle" and lootbox.unlocksAt) or
+				(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
+				(lootbox.state == "Ready") or
+				(lootbox.state == "Consumed")
+			)
+			
+			if hasLootbox then
+				-- This slot has a real lootbox
 				if lootbox.state == "Unlocking" then
 					-- Check if timer has completed
 					if lootbox.unlocksAt and lootbox.unlocksAt <= os.time() then
@@ -328,7 +355,7 @@ function LootboxUIHandler:UpdateLootboxStates()
 						-- Still unlocking, show SpeedUp state
 						self:UpdatePackState(packIndex, "Unlocking", lootbox)
 					end
-				-- If any other lootbox is unlocking, lock this one (unless it's the unlocking one)
+				-- If any other lootbox is unlocking, lock this one
 				elseif isAnyUnlocking then
 					self:UpdatePackState(packIndex, "Locked", nil)
 				-- Otherwise, show normal state
@@ -336,12 +363,12 @@ function LootboxUIHandler:UpdateLootboxStates()
 					self:UpdatePackState(packIndex, lootbox.state, lootbox)
 				end
 			else
-				-- No lootbox in this slot
+				-- No lootbox in this slot - show appropriate state
 				if isAnyUnlocking then
 					-- If any lootbox is unlocking, show locked state for empty slots
 					self:UpdatePackState(packIndex, "Locked", nil)
 				else
-					-- No lootboxes unlocking, empty slots can show unlock button (to add lootbox)
+					-- No lootboxes unlocking, show empty state (no buttons)
 					self:UpdatePackState(packIndex, "Empty", nil)
 				end
 			end
@@ -411,12 +438,9 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 		print("LootboxUIHandler: Showing Locked frame for Pack" .. packIndex)
 		
 	elseif state == "Empty" then
-		-- Empty slots can show unlock button (to add new lootbox)
-		if pack.btnUnlock then
-			pack.btnUnlock.Visible = true
-			pack.btnUnlock.Active = true
-		end
-		print("LootboxUIHandler: Showing Unlock button for empty Pack" .. packIndex .. " (to add lootbox)")
+		-- Empty slots show nothing - no buttons, no interaction
+		-- Players can only get lootboxes through the shop or other means
+		print("LootboxUIHandler: Showing empty state for Pack" .. packIndex .. " (no lootbox)")
 	end
 end
 
