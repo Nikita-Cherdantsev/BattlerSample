@@ -44,6 +44,7 @@ function LootboxUIHandler:Init(controller)
 	self.timerConnections = {}
 	self.currentProfile = nil
 	self.lootboxPacks = {}
+	self._updatingStates = false -- Prevent infinite loops
 
 	-- Setup Lootbox UI
 	self:SetupLootboxUI()
@@ -276,6 +277,14 @@ function LootboxUIHandler:UpdateLootboxStates()
 		return
 	end
 	
+	-- Prevent infinite loops by checking if we're already updating
+	if self._updatingStates then
+		print("LootboxUIHandler: Already updating states, skipping to prevent loop")
+		return
+	end
+	
+	self._updatingStates = true
+	
 	local lootboxes = self.currentProfile.lootboxes
 	local pendingLootbox = self.currentProfile.pendingLootbox
 	
@@ -337,6 +346,9 @@ function LootboxUIHandler:UpdateLootboxStates()
 		print("LootboxUIHandler: Pending lootbox detected, this is a separate pending state")
 		-- Pending lootbox doesn't affect the regular pack states
 	end
+	
+	-- Clear the updating flag to allow future updates
+	self._updatingStates = false
 end
 
 function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
@@ -428,11 +440,8 @@ function LootboxUIHandler:StartTimer(packIndex, lootboxData)
 				NetworkClient.requestProfile()
 			end
 			
-			-- Schedule a delayed UI update to handle the state change
-			task.spawn(function()
-				task.wait(0.5) -- Small delay to allow server processing
-				self:UpdateLootboxStates()
-			end)
+			-- Don't call UpdateLootboxStates here - it will be called automatically
+			-- when the ProfileUpdated event fires from the server response
 			return
 		end
 		
