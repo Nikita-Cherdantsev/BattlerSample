@@ -48,11 +48,11 @@ function BoxRoller.RollRewards(rng, rarity)
 	local characterRoll = rng:NextFloat()
 	local cumulativeProbability = 0
 	
-	for _, reward in ipairs(dropTable.characterRewards) do
+	for i, reward in ipairs(dropTable.characterRewards) do
 		cumulativeProbability = cumulativeProbability + reward.probability
 		if characterRoll <= cumulativeProbability then
 			-- Select a card of this rarity
-			local cardId = BoxRoller.SelectCardByRarity(reward.rarity)
+			local cardId = BoxRoller.SelectCardByRarity(reward.rarity, rng)
 			if cardId then
 				-- Roll copies within range
 				local copiesRange = reward.copiesRange.max - reward.copiesRange.min
@@ -78,7 +78,7 @@ end
 
 -- Select a card uniformly from cards of the given rarity
 -- If no cards of that rarity exist, fallback to next lower rarity with cards
-function BoxRoller.SelectCardByRarity(targetRarity)
+function BoxRoller.SelectCardByRarity(targetRarity, rng)
 	local rarityOrder = {
 		BoxTypes.BoxRarity.LEGENDARY,
 		BoxTypes.BoxRarity.EPIC,
@@ -105,8 +105,7 @@ function BoxRoller.SelectCardByRarity(targetRarity)
 		local cardsOfRarity = CardCatalog.GetCardsByRarity(rarity)
 		
 		if #cardsOfRarity > 0 then
-			-- Select uniformly from available cards
-			local rng = SeededRNG.new(os.time()) -- Use current time for uniform selection
+			-- Select uniformly from available cards using the provided RNG
 			local cardIndex = rng:NextInt(1, #cardsOfRarity)
 			return cardsOfRarity[cardIndex].id
 		end

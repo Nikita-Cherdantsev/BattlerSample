@@ -168,9 +168,6 @@
         "Types": {
           "$path": "src/shared/Modules/Types.lua"
         }
-      },
-      "TestRunner": {
-        "$path": "src/shared/TestRunner.lua"
       }
     },
 
@@ -190,12 +187,6 @@
         "DataStoreWrapper": {
           "$path": "src/server/Persistence/DataStoreWrapper.lua"
         },
-        "DevHarness": {
-          "$path": "src/server/Persistence/DevHarness.server.lua",
-          "$properties": {
-            "Enabled": true
-          }
-        },
         "ProfileManager": {
           "$path": "src/server/Persistence/ProfileManager.lua"
         },
@@ -208,50 +199,14 @@
         "CombatEngine": {
           "$path": "src/server/Services/CombatEngine.lua"
         },
-        "CombatEngineDevHarness": {
-          "$path": "src/server/Services/CombatEngineDevHarness.server.lua",
-          "$properties": {
-            "Enabled": false
-          }
-        },
-        "LevelUpDevHarness": {
-          "$path": "src/server/Services/LevelUpDevHarness.server.lua",
-          "$properties": {
-            "Enabled": false
-          }
-        },
-        "LootboxDevHarness": {
-          "$path": "src/server/Services/LootboxDevHarness.server.lua",
-          "$properties": {
-            "Enabled": true
-          }
-        },
         "LootboxService": {
           "$path": "src/server/Services/LootboxService.lua"
         },
         "MatchService": {
           "$path": "src/server/Services/MatchService.lua"
-        }, 
-        "MatchServiceDevHarness": {
-          "$path": "src/server/Services/MatchServiceDevHarness.server.lua",
-          "$properties": {
-            "Enabled": false
-          }
-        }, 
+        },
         "PlayerDataService": {
           "$path": "src/server/Services/PlayerDataService.lua"
-        },
-        "PlayerDataServiceDevHarness": {
-          "$path": "src/server/Services/PlayerDataServiceDevHarness.server.lua",
-          "$properties": {
-            "Enabled": false
-          }
-        },
-        "ShopDevHarness": {
-          "$path": "src/server/Services/ShopDevHarness.server.lua",
-          "$properties": {
-            "Enabled": true
-          }
         },
         "ShopService": {
           "$path": "src/server/Services/ShopService.lua"
@@ -275,21 +230,6 @@
             "$path": "src/client/Controllers/NetworkClient.lua"
           }
         },
-        "Dev": {
-          "$className": "Folder",
-          "DevPanel": {
-            "$path": "src/client/Dev/DevPanel.client.lua"
-          },
-          "MockData": {
-            "$path": "src/client/Dev/MockData.lua"
-          },
-          "MockNetwork": {
-            "$path": "src/client/Dev/MockNetwork.lua"
-          },
-          "VMHarness": {
-            "$path": "src/client/Dev/VMHarness.client.lua"
-          }
-        },
         "State": {
           "$className": "Folder",
           "ClientState": {
@@ -301,15 +241,6 @@
         },
         "Config": {
           "$path": "src/client/Config.lua"
-        },
-        "MatchTestHarness": {
-          "$path": "src/client/MatchTestHarness.client.lua",
-          "$properties": {
-            "Enabled": false
-          }
-        },
-        "NetworkTest": {
-          "$path": "src/client/NetworkTest.client.lua"
         },
         "Utilities": {
           "$path": "src/client/Utilities.lua"

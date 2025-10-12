@@ -69,19 +69,15 @@ function PlaytimeHandler:SetupPlaytime()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("PlaytimeHandler: Looking for UI in PlayerGui...")
 	
 	-- Debug: Print all children in PlayerGui
-	print("Available children in PlayerGui:")
 	for _, child in pairs(playerGui:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		print("PlaytimeHandler: GameUI not found initially, waiting longer...")
 		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
 		
 		if not gameGui then
@@ -90,20 +86,16 @@ function PlaytimeHandler:SetupPlaytime()
 		end
 	end
 	
-	print("PlaytimeHandler: Found GameUI: " .. tostring(gameGui))
 	
 	-- Check if Playtime frame exists
 	local playtimeFrame = gameGui:FindFirstChild("Playtime")
 	if not playtimeFrame then
 		warn("PlaytimeHandler: Playtime frame not found in " .. gameGui.Name .. " - Playtime UI not available")
-		print("PlaytimeHandler: Available children in " .. gameGui.Name .. ":")
 		for _, child in pairs(gameGui:GetChildren()) do
-			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
 		return
 	end
 	
-	print("PlaytimeHandler: Playtime frame found, setting up handlers...")
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
@@ -132,7 +124,6 @@ end
 function PlaytimeHandler:SetupOpenButton()
 	-- Look for playtime button in the UI
 	-- Path: GameUI -> LeftPanel -> Playtime -> Button
-	print("PlaytimeHandler: Looking for playtime button...")
 	
 	local leftPanel = self.UI:FindFirstChild("LeftPanel")
 	if not leftPanel then
@@ -141,19 +132,16 @@ function PlaytimeHandler:SetupOpenButton()
 	end
 	
 	
-	print("PlaytimeHandler: Playtime found, looking for Button...")
 	local playtimeButton = leftPanel:FindFirstChild("BtnPlaytime")
 	if not playtimeButton then
 		warn("PlaytimeHandler: Button not found in Playtime frame")
 		return
 	end
 	
-	print("PlaytimeHandler: Playtime button found: " .. playtimeButton.Name .. " (" .. playtimeButton.ClassName .. ")")
 	
 	-- Test if the button has the right events
 	if playtimeButton:IsA("TextButton") then
 		local connection = playtimeButton.MouseButton1Click:Connect(function()
-			print("PlaytimeHandler: Playtime button clicked!")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -225,7 +213,6 @@ function PlaytimeHandler:LoadPlaytimeData()
 		if state and state.playtime then
 			self.totalPlaytime = state.playtime.totalTime or 0
 			self.claimedRewards = state.playtime.claimedRewards or {}
-			print("PlaytimeHandler: Loaded playtime data - Total: " .. self.totalPlaytime .. "s, Claimed: " .. #self.claimedRewards)
 		end
 	end
 end
@@ -239,7 +226,6 @@ function PlaytimeHandler:SavePlaytimeData()
 			claimedRewards = self.claimedRewards
 		}
 		self.ClientState:SetState(state)
-		print("PlaytimeHandler: Saved playtime data - Total: " .. self.totalPlaytime .. "s")
 	end
 end
 
@@ -309,11 +295,9 @@ end
 
 function PlaytimeHandler:ClaimReward(rewardIndex)
 	if not self:IsRewardAvailable(rewardIndex) then
-		print("PlaytimeHandler: Reward " .. rewardIndex .. " is not available for claiming")
 		return
 	end
 	
-	print("PlaytimeHandler: Claiming reward " .. rewardIndex)
 	
 	-- Add to claimed rewards
 	table.insert(self.claimedRewards, rewardIndex)
@@ -539,7 +523,6 @@ function PlaytimeHandler:SetupProfileUpdatedHandler()
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
 		-- Check if this is a playtime reward response
 		if payload.playtimeReward then
-			print("PlaytimeHandler: Received playtime reward response")
 			-- TODO: Handle server response for playtime rewards
 		end
 	end)
@@ -563,7 +546,6 @@ end
 
 --// Cleanup
 function PlaytimeHandler:Cleanup()
-	print("Cleaning up PlaytimeHandler...")
 
 	-- Stop time tracking
 	self:StopTimeTracking()

@@ -1,11 +1,12 @@
 local CardCatalog = {}
 
 -- Rarity definitions (canon set)
+-- Note: These must match BoxTypes.BoxRarity exactly
 CardCatalog.Rarities = {
-	UNCOMMON = "Uncommon",
-	RARE = "Rare",
-	EPIC = "Epic",
-	LEGENDARY = "Legendary"
+	UNCOMMON = "uncommon",
+	RARE = "rare",
+	EPIC = "epic",
+	LEGENDARY = "legendary"
 }
 
 -- Class/Role definitions (canon set)

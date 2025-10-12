@@ -26,6 +26,7 @@ local RequestAddBox = nil
 local RequestResolvePendingDiscard = nil
 local RequestResolvePendingReplace = nil
 local RequestStartUnlock = nil
+local RequestSpeedUp = nil
 local RequestOpenNow = nil
 local RequestCompleteUnlock = nil
 local RequestGetShopPacks = nil
@@ -71,6 +72,10 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestStartUnlock = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestSpeedUp = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	},
@@ -178,6 +183,11 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestStartUnlock = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestSpeedUp = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -391,15 +401,18 @@ local function HandleRequestProfile(player, requestData)
 	local collection = PlayerDataService.GetCollection(player)
 	local loginInfo = CreateLoginInfo(player)
 	
-		-- Send profile snapshot
-		SendProfileUpdate(player, {
-			deck = profile.deck,
-			collectionSummary = CreateCollectionSummary(collection),
-			loginInfo = loginInfo,
-			updatedAt = os.time()
-		})
-		
-		LogInfo(player, "Profile sent successfully")
+	-- Send profile snapshot (including lootboxes and currencies)
+	SendProfileUpdate(player, {
+		deck = profile.deck,
+		collectionSummary = CreateCollectionSummary(collection),
+		loginInfo = loginInfo,
+		lootboxes = profile.lootboxes or {},
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies or { soft = 0, hard = 0 },
+		updatedAt = os.time()
+	})
+	
+	LogInfo(player, "Profile sent successfully")
 end
 
 local function HandleRequestStartMatch(player, requestData)
@@ -838,6 +851,80 @@ local function HandleRequestStartUnlock(player, requestData)
 	LogInfo(player, "Unlock started successfully")
 end
 
+local function HandleRequestSpeedUp(player, requestData)
+	LogInfo(player, "Processing speed up request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestSpeedUp")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			}
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.slotIndex then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing slotIndex field"
+			}
+		})
+		return
+	end
+	
+	-- Validate slot index
+	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_SLOT",
+				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
+			}
+		})
+		return
+	end
+	
+	-- Call LootboxService
+	local result = LootboxService.SpeedUp(player.UserId, requestData.slotIndex, os.time())
+	
+	if not result.ok then
+		-- Send error without loot state
+		SendProfileUpdate(player, {
+			error = {
+				code = result.error,
+				message = result.error
+			}
+		})
+		return
+	end
+	
+	-- Get updated profile for success case
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load updated profile"
+			}
+		})
+		return
+	end
+	
+	-- Send success response with loot state and currencies
+	SendProfileUpdate(player, {
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
+	})
+	
+	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Ready result=OK", tostring(player.UserId), requestData.slotIndex)
+	LogInfo(player, "Speed up completed successfully")
+end
+
 local function HandleRequestOpenNow(player, requestData)
 	LogInfo(player, "Processing open now request")
 	
@@ -909,7 +996,8 @@ local function HandleRequestOpenNow(player, requestData)
 	}
 	
 	if result.rewards then
-		-- Include collection summary for rewards
+		-- Include rewards and collection summary
+		payload.rewards = result.rewards
 		local collection = PlayerDataService.GetCollection(player)
 		payload.collectionSummary = CreateCollectionSummary(collection)
 	end
@@ -991,7 +1079,8 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	}
 	
 	if result.rewards then
-		-- Include collection summary for rewards
+		-- Include rewards and collection summary
+		payload.rewards = result.rewards
 		local collection = PlayerDataService.GetCollection(player)
 		payload.collectionSummary = CreateCollectionSummary(collection)
 	end
@@ -1000,58 +1089,6 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	
 	Logger.debug("lootboxes: op=complete userId=%s slot=%d state=Unlocking->removed result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Unlock completed successfully")
-end
-
--- Dev-only handlers
-local function HandleRequestClearLoot(player, requestData)
-	-- Studio-only endpoint for testing
-	if not RunService:IsStudio() then
-		LogWarning(player, "RequestClearLoot called outside Studio - ignored")
-		SendProfileUpdate(player, {
-			error = {
-				code = "FORBIDDEN",
-				message = "RequestClearLoot is only available in Studio"
-			},
-			serverNow = os.time()
-		})
-		return
-	end
-	
-	LogInfo(player, "Processing clear loot request (dev-only)")
-	
-	local success, result = ProfileManager.UpdateProfile(player.UserId, function(profile)
-		-- Clear all lootboxes and pending
-		profile.lootboxes = {}
-		profile.pendingLootbox = nil
-		profile.updatedAt = os.time()
-		
-		-- Store success result
-		profile._lootboxResult = { ok = true }
-		return profile
-	end)
-	
-	if not success then
-		Logger.debug("lootboxes: op=clear userId=%s result=ERR code=INTERNAL", tostring(player.UserId))
-		LogWarning(player, "Clear loot failed: INTERNAL")
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to clear loot"
-			},
-			serverNow = os.time()
-		})
-		return
-	end
-	
-	-- Send updated profile
-	SendProfileUpdate(player, {
-		lootboxes = result.lootboxes,
-		pendingLootbox = result.pendingLootbox,
-		serverNow = os.time()
-	})
-	
-	Logger.debug("lootboxes: op=clear userId=%s result=OK", tostring(player.UserId))
-	LogInfo(player, "Loot cleared successfully (dev-only)")
 end
 
 -- Shop handlers
@@ -1199,6 +1236,7 @@ RemoteEvents.RequestAddBox = RequestAddBox
 RemoteEvents.RequestResolvePendingDiscard = RequestResolvePendingDiscard
 RemoteEvents.RequestResolvePendingReplace = RequestResolvePendingReplace
 RemoteEvents.RequestStartUnlock = RequestStartUnlock
+RemoteEvents.RequestSpeedUp = RequestSpeedUp
 RemoteEvents.RequestOpenNow = RequestOpenNow
 RemoteEvents.RequestCompleteUnlock = RequestCompleteUnlock
 RemoteEvents.RequestGetShopPacks = RequestGetShopPacks
@@ -1262,6 +1300,10 @@ function RemoteEvents.Init()
 	RequestStartUnlock.Name = "RequestStartUnlock"
 	RequestStartUnlock.Parent = NetworkFolder
 	
+	RequestSpeedUp = Instance.new("RemoteEvent")
+	RequestSpeedUp.Name = "RequestSpeedUp"
+	RequestSpeedUp.Parent = NetworkFolder
+	
 	RequestOpenNow = Instance.new("RemoteEvent")
 	RequestOpenNow.Name = "RequestOpenNow"
 	RequestOpenNow.Parent = NetworkFolder
@@ -1270,11 +1312,7 @@ function RemoteEvents.Init()
 	RequestCompleteUnlock.Name = "RequestCompleteUnlock"
 	RequestCompleteUnlock.Parent = NetworkFolder
 	
-	-- Dev-only RemoteEvents
-	RequestClearLoot = Instance.new("RemoteEvent")
-	RequestClearLoot.Name = "RequestClearLoot"
-	RequestClearLoot.Parent = NetworkFolder
-	
+	-- Shop RemoteEvents
 	RequestGetShopPacks = Instance.new("RemoteEvent")
 	RequestGetShopPacks.Name = "RequestGetShopPacks"
 	RequestGetShopPacks.Parent = NetworkFolder
@@ -1331,9 +1369,9 @@ function RemoteEvents.Init()
 	RequestResolvePendingDiscard.OnServerEvent:Connect(HandleRequestResolvePendingDiscard)
 	RequestResolvePendingReplace.OnServerEvent:Connect(HandleRequestResolvePendingReplace)
 	RequestStartUnlock.OnServerEvent:Connect(HandleRequestStartUnlock)
+	RequestSpeedUp.OnServerEvent:Connect(HandleRequestSpeedUp)
 	RequestOpenNow.OnServerEvent:Connect(HandleRequestOpenNow)
 	RequestCompleteUnlock.OnServerEvent:Connect(HandleRequestCompleteUnlock)
-	RequestClearLoot.OnServerEvent:Connect(HandleRequestClearLoot)
 	RequestGetShopPacks.OnServerEvent:Connect(HandleRequestGetShopPacks)
 	RequestStartPackPurchase.OnServerEvent:Connect(HandleRequestStartPackPurchase)
 	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)

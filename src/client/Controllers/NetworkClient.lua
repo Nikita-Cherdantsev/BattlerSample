@@ -10,11 +10,6 @@ local NetworkClient = {}
 -- Config
 local Config = require(script.Parent.Parent.Config)
 
-local MockNetwork = require(script.Parent.Parent.Dev.MockNetwork)
-
--- Debug flag
-local DEBUG = Config.DEBUG_LOGS
-
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -35,6 +30,7 @@ local RequestAddBox = Network:WaitForChild("RequestAddBox")
 local RequestResolvePendingDiscard = Network:WaitForChild("RequestResolvePendingDiscard")
 local RequestResolvePendingReplace = Network:WaitForChild("RequestResolvePendingReplace")
 local RequestStartUnlock = Network:WaitForChild("RequestStartUnlock")
+local RequestSpeedUp = Network:WaitForChild("RequestSpeedUp")
 local RequestOpenNow = Network:WaitForChild("RequestOpenNow")
 local RequestCompleteUnlock = Network:WaitForChild("RequestCompleteUnlock")
 local RequestGetShopPacks = Network:WaitForChild("RequestGetShopPacks")
@@ -60,9 +56,8 @@ local DEBOUNCE_MS = 300
 
 -- Utility functions
 local function log(message, ...)
-	if DEBUG then
-		print(string.format("[NetworkClient] %s", string.format(message, ...)))
-	end
+	-- Optional: Enable for debugging
+	-- print(string.format("[NetworkClient] %s", string.format(message, ...)))
 end
 
 local function debounce(lastRequestTime)
@@ -77,10 +72,6 @@ end
 
 -- Request profile from server
 function NetworkClient.requestProfile()
-	if Config.USE_MOCKS then
-		return MockNetwork.requestProfile()
-	end
-	
 	if debounce(lastProfileRequest) then
 		log("Debouncing profile request")
 		return
@@ -93,10 +84,6 @@ end
 
 -- Request deck update
 function NetworkClient.requestSetDeck(deckIds)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestSetDeck(deckIds)
-	end
-	
 	if not deckIds or #deckIds ~= 6 then
 		return false, "Invalid deck: must have exactly 6 cards"
 	end
@@ -115,10 +102,6 @@ end
 
 -- Request match start
 function NetworkClient.requestStartMatch(opts)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestStartMatch(opts)
-	end
-	
 	opts = opts or {}
 	local requestData = {
 		mode = opts.mode or "PvE",
@@ -132,10 +115,6 @@ end
 
 -- Request card level-up
 function NetworkClient.requestLevelUpCard(cardId)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestLevelUpCard(cardId)
-	end
-	
 	if not cardId or type(cardId) ~= "string" then
 		return false, "Invalid card ID"
 	end
@@ -154,10 +133,6 @@ end
 
 -- Subscribe to profile updates
 function NetworkClient.onProfileUpdated(callback)
-	if Config.USE_MOCKS then
-		return MockNetwork.onProfileUpdated(callback)
-	end
-	
 	return ProfileUpdated.OnClientEvent:Connect(function(payload)
 		-- Update server time
 		if payload.serverNow then
@@ -178,10 +153,6 @@ end
 
 -- Subscribe to profile updates (one-time)
 function NetworkClient.onceProfile(callback)
-	if Config.USE_MOCKS then
-		return MockNetwork.onceProfile(callback)
-	end
-	
 	local connection
 	connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
 		-- Update server time
@@ -204,18 +175,11 @@ end
 
 -- Get last known server time
 function NetworkClient.getServerNow()
-	if Config.USE_MOCKS then
-		return MockNetwork.getServerNow()
-	end
 	return lastServerNow
 end
 
 -- Get current client time (approximate)
 function NetworkClient.getClientTime()
-	if Config.USE_MOCKS then
-		return MockNetwork.getClientTime()
-	end
-	
 	if lastServerNow == 0 then
 		return os.time()
 	end
@@ -229,10 +193,6 @@ end
 
 -- Request loot state from server
 function NetworkClient.requestLootState()
-	if Config.USE_MOCKS then
-		return MockNetwork.requestLootState()
-	end
-	
 	if debounce(lastLootStateRequest) then
 		log("Debouncing loot state request")
 		return false, "Request too frequent, please wait"
@@ -247,10 +207,6 @@ end
 
 -- Request add box (dev/test only)
 function NetworkClient.requestAddBox(rarity, source)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestAddBox(rarity, source)
-	end
-	
 	if not rarity or type(rarity) ~= "string" then
 		return false, "Invalid rarity"
 	end
@@ -269,10 +225,6 @@ end
 
 -- Request resolve pending discard
 function NetworkClient.requestResolvePendingDiscard()
-	if Config.USE_MOCKS then
-		return MockNetwork.requestResolvePendingDiscard()
-	end
-	
 	if debounce(lastResolvePendingDiscardRequest) then
 		log("Debouncing resolve pending discard request")
 		return false, "Request too frequent, please wait"
@@ -287,10 +239,6 @@ end
 
 -- Request resolve pending replace
 function NetworkClient.requestResolvePendingReplace(slotIndex)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestResolvePendingReplace(slotIndex)
-	end
-	
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return false, "Invalid slot index"
 	end
@@ -309,10 +257,6 @@ end
 
 -- Request start unlock
 function NetworkClient.requestStartUnlock(slotIndex)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestStartUnlock(slotIndex)
-	end
-	
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return false, "Invalid slot index"
 	end
@@ -329,12 +273,27 @@ function NetworkClient.requestStartUnlock(slotIndex)
 	return true
 end
 
--- Request open now
-function NetworkClient.requestOpenNow(slotIndex)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestOpenNow(slotIndex)
+-- Request speed up
+function NetworkClient.requestSpeedUp(slotIndex)
+	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
+		return false, "Invalid slot index"
 	end
 	
+	if debounce(lastOpenNowRequest) then
+		log("Debouncing speed up request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastOpenNowRequest = os.time()
+	
+	log("Requesting speed up: slot %d", slotIndex)
+	RequestSpeedUp:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
+-- Request open now
+function NetworkClient.requestOpenNow(slotIndex)
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return false, "Invalid slot index"
 	end
@@ -353,10 +312,6 @@ end
 
 -- Request complete unlock
 function NetworkClient.requestCompleteUnlock(slotIndex)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestCompleteUnlock(slotIndex)
-	end
-	
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return false, "Invalid slot index"
 	end
@@ -375,10 +330,6 @@ end
 
 -- Shop methods
 function NetworkClient.requestGetShopPacks()
-	if Config.USE_MOCKS then
-		return MockNetwork.requestGetShopPacks()
-	end
-	
 	if debounce(lastGetShopPacksRequest) then
 		log("Debouncing get shop packs request")
 		return false, "Request too frequent, please wait"
@@ -392,10 +343,6 @@ function NetworkClient.requestGetShopPacks()
 end
 
 function NetworkClient.requestStartPackPurchase(packId)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestStartPackPurchase(packId)
-	end
-	
 	if not packId or type(packId) ~= "string" then
 		return false, "Invalid pack ID"
 	end
@@ -413,10 +360,6 @@ function NetworkClient.requestStartPackPurchase(packId)
 end
 
 function NetworkClient.requestBuyLootbox(rarity)
-	if Config.USE_MOCKS then
-		return MockNetwork.requestBuyLootbox(rarity)
-	end
-	
 	if not rarity or type(rarity) ~= "string" then
 		return false, "Invalid rarity"
 	end
@@ -435,10 +378,6 @@ end
 
 -- Check if any request is currently in flight
 function NetworkClient.isBusy()
-	if Config.USE_MOCKS then
-		return MockNetwork.isBusy()
-	end
-	
 	local now = tick() * 1000
 	local recentThreshold = DEBOUNCE_MS * 2  -- Consider busy if request was made within 2x debounce time
 	
@@ -476,11 +415,6 @@ function NetworkClient.reinitialize()
 	lastGetShopPacksRequest = 0
 	lastStartPackPurchaseRequest = 0
 	lastBuyLootboxRequest = 0
-	
-	-- Reset mock network if using mocks
-	if Config.USE_MOCKS then
-		MockNetwork.reset()
-	end
 	
 	log("NetworkClient reinitialized")
 end

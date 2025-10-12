@@ -42,12 +42,9 @@ function ShopHandler:SetupShop()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("ShopHandler: Looking for UI in PlayerGui...")
 	
 	-- Debug: Print all children in PlayerGui
-	print("Available children in PlayerGui:")
 	for _, child in pairs(playerGui:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Debug: Check all GameUI instances
@@ -57,9 +54,7 @@ function ShopHandler:SetupShop()
 			table.insert(gameUIs, child)
 		end
 	end
-	print("ShopHandler: Found " .. #gameUIs .. " GameUI instances")
 	for i, gameUI in ipairs(gameUIs) do
-		print("  GameUI " .. i .. ": " .. tostring(gameUI))
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
@@ -71,22 +66,17 @@ function ShopHandler:SetupShop()
 		return
 	end
 	
-	print("ShopHandler: Found GameUI: " .. tostring(gameGui))
 	
-	print("ShopHandler: Main UI container found: " .. gameGui.Name)
 	
 	-- Look for Shop frame
 	local shopFrame = gameGui:FindFirstChild("Shop")
 	if not shopFrame then
 		warn("ShopHandler: Shop frame not found in " .. gameGui.Name)
-		print("Available children in " .. gameGui.Name .. ":")
 		for _, child in pairs(gameGui:GetChildren()) do
-			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
 		return
 	end
 	
-	print("ShopHandler: Shop frame found, setting up handlers...")
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
@@ -102,9 +92,7 @@ function ShopHandler:SetupShop()
 	print("✅ ShopHandler: Shop UI setup completed")
 	
 	-- Setup shop purchase buttons
-	print("ShopHandler: About to setup shop buttons...")
 	self:SetupShopButtons()
-	print("ShopHandler: Shop buttons setup completed")
 	
 	-- Setup ProfileUpdated event handler for pack purchase responses
 	self:SetupProfileUpdatedHandler()
@@ -113,7 +101,6 @@ end
 function ShopHandler:SetupOpenButton()
 	-- Look for shop button in the UI
 	-- Path: GameUI -> LeftPanel -> Shop -> Button
-	print("ShopHandler: Looking for shop button...")
 	
 	local leftPanel = self.UI:FindFirstChild("LeftPanel")
 	if not leftPanel then
@@ -121,27 +108,20 @@ function ShopHandler:SetupOpenButton()
 		return
 	end
 	
-	print("ShopHandler: Shop found, looking for Button...")
 	local shopButton = leftPanel:FindFirstChild("BtnShop")
 	if not shopButton then
 		warn("ShopHandler: Button not found in Shop frame")
 		return
 	end
 	
-	print("ShopHandler: Shop button found: " .. shopButton.Name .. " (" .. shopButton.ClassName .. ")")
 	
 	-- Test if the button has the right events
 	if shopButton:IsA("GuiButton") then
 		local connection = shopButton.MouseButton1Click:Connect(function()
-			print("ShopHandler: Shop button clicked!")
-			print("ShopHandler: Button instance: " .. tostring(shopButton))
-			print("ShopHandler: Button parent: " .. tostring(shopButton.Parent))
-			print("ShopHandler: Button parent parent: " .. tostring(shopButton.Parent.Parent))
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
 		print("✅ ShopHandler: Open button connected")
-		print("ShopHandler: Button connection created for: " .. tostring(shopButton))
 	else
 		warn("ShopHandler: Found element '" .. shopButton.Name .. "' but it's not a GuiButton (it's a " .. shopButton.ClassName .. ")")
 	end
@@ -179,30 +159,21 @@ function ShopHandler:SetupCloseButton()
 end
 
 function ShopHandler:SetupShopButtons()
-	print("ShopHandler: Setting up shop purchase buttons...")
-	print("ShopHandler: ShopFrame exists:", self.ShopFrame ~= nil)
 	if self.ShopFrame then
-		print("ShopHandler: ShopFrame name:", self.ShopFrame.Name)
-		print("ShopHandler: ShopFrame children count:", #self.ShopFrame:GetChildren())
 	end
 	
 	-- Look for pack purchase buttons
-	print("ShopHandler: Setting up pack buttons...")
 	self:SetupPackButtons()
 	
 	-- Look for lootbox purchase buttons
-	print("ShopHandler: Setting up lootbox buttons...")
 	self:SetupLootboxButtons()
 	
 	print("✅ ShopHandler: Shop purchase buttons setup completed")
 end
 
 function ShopHandler:SetupPackButtons()
-	print("ShopHandler: Setting up pack buttons...")
 	
 	-- Debug: Print the entire shop frame structure
-	print("ShopHandler: Debugging shop frame structure:")
-	self:debugPrintChildren(self.ShopFrame, 0)
 	
 	-- Try multiple possible UI structures
 	local possiblePaths = {
@@ -225,27 +196,21 @@ function ShopHandler:SetupPackButtons()
 	local packIds = {"S", "M", "L", "XL", "XXL", "XXXL"}
 	
 	for _, pathInfo in ipairs(possiblePaths) do
-		print("ShopHandler: Trying path:", table.concat(pathInfo.path, "/"))
 		
 		local currentFrame = self.ShopFrame
 		for _, childName in ipairs(pathInfo.path) do
 			currentFrame = currentFrame:FindFirstChild(childName)
 			if not currentFrame then
-				print("ShopHandler: Path failed at:", childName)
 				break
 			end
 		end
 		
 		if currentFrame then
-			print("ShopHandler: Found container, looking for frames...")
-			self:debugPrintChildren(currentFrame, 1)
 			
 			-- Try to find buttons in this container
 			for i, frameName in ipairs(pathInfo.frames) do
 				local frame = currentFrame:FindFirstChild(frameName)
 				if frame then
-					print("ShopHandler: Found frame %s, looking for button...", frameName)
-					self:debugPrintChildren(frame, 3) -- Increased depth to see inside CoinItem
 					
 					-- Look for button with various possible names
 					local button = self:findButtonInFrame(frame)
@@ -253,13 +218,12 @@ function ShopHandler:SetupPackButtons()
 						-- Try to find ANY GuiButton in the entire hierarchy
 						button = self:findAnyButtonInFrame(frame)
 						if button then
-							print("ShopHandler: Found alternative button:", button.Name, "in", frameName)
 						end
 					end
 					
 					if button then
 						local packId = packIds[i]
-						print("ShopHandler: Found pack button: %s in %s", packId, frameName)
+						-- Pack button found, connecting
 						
 						-- Connect button click
 						local connection = button.MouseButton1Click:Connect(function()
@@ -267,24 +231,11 @@ function ShopHandler:SetupPackButtons()
 						end)
 						table.insert(self.Connections, connection)
 						
-						print("✅ ShopHandler: Pack button connected: %s", packId)
 					else
-						print("ShopHandler: No buttons of any type found in", frameName)
 					end
-				else
-					print("ShopHandler: Frame not found: %s", frameName)
+				-- else: Frame not found (normal for alternate paths)
 				end
 			end
-		end
-	end
-end
-
-function ShopHandler:debugPrintChildren(parent, depth)
-	local indent = string.rep("  ", depth)
-	for _, child in pairs(parent:GetChildren()) do
-		print(indent .. "- " .. child.Name .. " (" .. child.ClassName .. ")")
-		if depth < 2 then -- Limit depth to avoid spam
-			self:debugPrintChildren(child, depth + 1)
 		end
 	end
 end
@@ -347,7 +298,6 @@ function ShopHandler:findAnyButtonInFrame(frame)
 end
 
 function ShopHandler:SetupLootboxButtons()
-	print("ShopHandler: Setting up lootbox buttons...")
 	
 	-- Try multiple possible UI structures for lootboxes
 	local possiblePaths = {
@@ -370,25 +320,21 @@ function ShopHandler:SetupLootboxButtons()
 	local rarities = {"uncommon", "rare", "epic", "legendary"}
 	
 	for _, pathInfo in ipairs(possiblePaths) do
-		print("ShopHandler: Trying lootbox path:", table.concat(pathInfo.path, "/"))
 		
 		local currentFrame = self.ShopFrame
 		for _, childName in ipairs(pathInfo.path) do
 			currentFrame = currentFrame:FindFirstChild(childName)
 			if not currentFrame then
-				print("ShopHandler: Lootbox path failed at:", childName)
 				break
 			end
 		end
 		
 		if currentFrame then
-			print("ShopHandler: Found lootbox container, looking for frames...")
 			
 			-- Try to find buttons in this container
 			for i, frameName in ipairs(pathInfo.frames) do
 				local frame = currentFrame:FindFirstChild(frameName)
 				if frame then
-					print("ShopHandler: Found lootbox frame %s, looking for button...", frameName)
 					
 					-- Look for button with various possible names
 					local button = self:findButtonInFrame(frame)
@@ -396,13 +342,12 @@ function ShopHandler:SetupLootboxButtons()
 						-- Try to find ANY GuiButton in the entire hierarchy
 						button = self:findAnyButtonInFrame(frame)
 						if button then
-							print("ShopHandler: Found alternative lootbox button:", button.Name, "in", frameName)
 						end
 					end
 					
 					if button then
 						local rarity = rarities[i]
-						print("ShopHandler: Found lootbox button: %s in %s", rarity, frameName)
+						-- Lootbox button found, connecting
 						
 						-- Connect button click
 						local connection = button.MouseButton1Click:Connect(function()
@@ -410,12 +355,8 @@ function ShopHandler:SetupLootboxButtons()
 						end)
 						table.insert(self.Connections, connection)
 						
-						print("✅ ShopHandler: Lootbox button connected: %s", rarity)
-					else
-						print("ShopHandler: No buttons of any type found in lootbox frame", frameName)
 					end
-				else
-					print("ShopHandler: Lootbox frame not found: %s", frameName)
+				-- else: Lootbox frame not found (normal for alternate paths)
 				end
 			end
 		end
@@ -423,7 +364,6 @@ function ShopHandler:SetupLootboxButtons()
 end
 
 function ShopHandler:HandlePackPurchase(packId, button)
-	print("ShopHandler: Pack purchase clicked: %s", packId)
 	
 	-- Disable button while processing
 	button.Active = false
@@ -443,7 +383,6 @@ function ShopHandler:HandlePackPurchase(packId, button)
 	end)
 	
 	if not success then
-		print("ShopHandler: Pack purchase request failed: %s", tostring(result))
 		self:ShowError("Network Error", tostring(result))
 		
 		-- Re-enable button
@@ -454,7 +393,6 @@ function ShopHandler:HandlePackPurchase(packId, button)
 	end
 	
 	if not result then
-		print("ShopHandler: No response from server")
 		self:ShowError("No Response", "No response from server")
 		
 		-- Re-enable button
@@ -466,11 +404,9 @@ function ShopHandler:HandlePackPurchase(packId, button)
 	
 	-- The actual response will come via ProfileUpdated event
 	-- We'll handle it in the ProfileUpdated callback
-	print("ShopHandler: Pack purchase request sent, waiting for server response...")
 end
 
 function ShopHandler:HandleLootboxPurchase(rarity, button)
-	print("ShopHandler: Lootbox purchase clicked: %s", rarity)
 	
 	-- Disable button while processing
 	button.Active = false
@@ -482,7 +418,6 @@ function ShopHandler:HandleLootboxPurchase(rarity, button)
 	-- Request lootbox purchase
 	local success, errorMessage = NetworkClient.requestBuyLootbox(rarity)
 	if not success then
-		print("ShopHandler: Lootbox purchase request failed: %s", errorMessage)
 		self:ShowError("Lootbox Purchase Failed", errorMessage)
 		
 		-- Re-enable button
@@ -491,7 +426,6 @@ function ShopHandler:HandleLootboxPurchase(rarity, button)
 		return
 	end
 	
-	print("ShopHandler: Lootbox purchase successful: %s", rarity)
 	button.Text = "Purchased!"
 	
 	-- Re-enable after delay
@@ -502,7 +436,6 @@ end
 
 function ShopHandler:ShowError(title, message)
 	-- Simple error display (in a real implementation, you'd use a proper error dialog)
-	print("ShopHandler Error: %s - %s", title, message)
 	
 	-- You could also fire a custom event for the UI to handle
 	if self.UI and self.UI:FindFirstChild("ErrorDialog") then
@@ -593,55 +526,39 @@ function ShopHandler:SetupProfileUpdatedHandler()
 		if payload.packId and self.pendingPackPurchase then
 			local pending = self.pendingPackPurchase
 			if pending.packId == payload.packId then
-				print("ShopHandler: Received pack purchase response for: %s", payload.packId)
-				
-				-- Check if we're in mock mode
-				local isMockMode = Config.USE_MOCKS
 				
 				if payload.error then
 					-- Handle error
-					print("ShopHandler: Pack purchase error: %s", payload.error.message or payload.error.code)
 					self:ShowError("Pack Purchase Failed", payload.error.message or payload.error.code)
 					
 					-- Re-enable button
 					pending.button.Active = true
 					pending.button.Text = pending.originalText
-				elseif isMockMode then
-					-- Mock mode: purchase completed
-					print("ShopHandler: Mock pack purchase completed")
-					pending.button.Text = "Purchased!"
+				elseif payload.devProductId then
+					-- Real mode: proceed with Roblox purchase
 					
-					-- Re-enable after delay
-					task.wait(2)
-					pending.button.Active = true
-					pending.button.Text = pending.originalText
-				else
-					-- Live mode: prompt MarketplaceService
-					print("ShopHandler: Prompting MarketplaceService for pack: %s", payload.packId)
-					pending.button.Text = "Opening Store..."
+					-- Prompt Roblox purchase
+					local success, purchaseError = pcall(function()
+						MarketplaceService:PromptProductPurchase(player, payload.devProductId)
+					end)
 					
-					-- Get the devProductId from the server response
-					if payload.devProductId then
-						-- Call MarketplaceService to prompt the purchase
-						local success, errorMessage = pcall(function()
-							MarketplaceService:PromptProductPurchase(Players.LocalPlayer, payload.devProductId)
-						end)
+					if not success then
+						self:ShowError("Purchase Failed", "Could not prompt purchase")
 						
-						if success then
-							print("ShopHandler: MarketplaceService prompt successful")
-							pending.button.Text = "Purchase Prompted"
-						else
-							print("ShopHandler Error: %s - %s", "MarketplaceService Error", tostring(errorMessage))
-							self:ShowError("Store Error", tostring(errorMessage))
-							pending.button.Active = true
-							pending.button.Text = pending.originalText
-						end
-					else
-						print("ShopHandler Error: %s - %s", "Missing Product ID", "Server did not provide devProductId")
-						self:ShowError("Missing Product ID", "Server did not provide devProductId")
+						-- Re-enable button
 						pending.button.Active = true
 						pending.button.Text = pending.originalText
+					else
+						-- Wait for ProcessReceipt to complete
+						pending.button.Text = "Purchasing..."
 					end
+				else
+					-- No devProductId - this shouldn't happen in production
+					self:ShowError("Purchase Failed", "Invalid server response")
+					
+					-- Re-enable button
+					pending.button.Active = true
+					pending.button.Text = pending.originalText
 				end
 				
 				-- Clear pending purchase
@@ -655,7 +572,6 @@ function ShopHandler:SetupProfileUpdatedHandler()
 end
 
 function ShopHandler:Cleanup()
-	print("Cleaning up ShopHandler...")
 
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do

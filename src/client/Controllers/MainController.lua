@@ -100,22 +100,6 @@ function MainController:GetLootboxUIHandler()
     return LootboxUIHandler
 end
 
--- Debug function to test lootbox functionality
-function MainController:DebugLootboxes()
-    print("🔍 MainController: DebugLootboxes called")
-    print("MainController initialized:", isInitialized)
-    
-    if not isInitialized then
-        warn("❌ MainController not initialized yet")
-        return
-    end
-    
-    print("LootboxUIHandler initialized:", LootboxUIHandler:IsInitialized())
-    
-    -- Refresh lootbox states
-    LootboxUIHandler:DebugRefreshStates()
-end
-
 -- Check if MainController is initialized
 function MainController:IsInitialized()
     return isInitialized

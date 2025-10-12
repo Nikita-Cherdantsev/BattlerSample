@@ -206,8 +206,10 @@ function ProfileSchema.ValidateProfile(profile)
 				return false, "Invalid lootbox source at slot " .. i
 			end
 			
-			-- Count unlocking lootboxes
-			if lootbox.state == "Unlocking" then
+			-- Count actively unlocking lootboxes (timer still running)
+			-- Note: We allow multiple "Unlocking" state lootboxes in profile,
+			-- but business logic in StartUnlock prevents starting new unlocks
+			if lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
 				unlockingCount = unlockingCount + 1
 			end
 		end

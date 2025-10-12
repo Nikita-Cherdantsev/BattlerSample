@@ -235,9 +235,10 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 			return preserveProfileInvariants(profile, userId)
 		end
 		
-		-- Check if any other box is unlocking
+		-- Check if any other box is actively unlocking (timer still running)
 		for i = 1, BoxTypes.MAX_SLOTS do
-			if profile.lootboxes[i] and profile.lootboxes[i].state == BoxTypes.BoxState.UNLOCKING then
+			local otherBox = profile.lootboxes[i]
+			if otherBox and otherBox.state == BoxTypes.BoxState.UNLOCKING and otherBox.unlocksAt and otherBox.unlocksAt > serverNow then
 				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING }
 				return preserveProfileInvariants(profile, userId)
 			end
@@ -291,7 +292,7 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		end
 		
 		-- Roll rewards using stored seed
-		local rng = SeededRNG.new(lootbox.seed)
+		local rng = SeededRNG.New(lootbox.seed)
 		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
 		
 		-- Grant rewards
@@ -307,9 +308,18 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 			
 			if profile.collection[cardId] then
 				profile.collection[cardId].count = profile.collection[cardId].count + copies
+				print("🎁 [LootboxService.CompleteUnlock] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
 			else
 				profile.collection[cardId] = { count = copies, level = 1 }
+				print("🎁 [LootboxService.CompleteUnlock] NEW CARD unlocked:", cardId, "with", copies, "copies")
 			end
+			
+			-- Debug: Show all cards in collection
+			local collectionCount = 0
+			for _ in pairs(profile.collection) do
+				collectionCount = collectionCount + 1
+			end
+			print("🎁 [LootboxService.CompleteUnlock] Total unique cards in collection:", collectionCount)
 		end
 		
 		-- Free the slot (remove the lootbox)
@@ -357,29 +367,35 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			error("No lootbox at slot " .. slotIndex)
 		end
 		
-		-- OpenNow only works on Unlocking boxes
-		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+		-- OpenNow works on Unlocking or Ready boxes
+		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING and lootbox.state ~= BoxTypes.BoxState.READY then
 			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
 			return preserveProfileInvariants(profile, userId)
 		end
 		
-		-- Calculate instant open cost (only for Unlocking boxes)
-		local totalDuration = BoxTypes.GetDuration(lootbox.rarity)
-		local remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
-		
-		local instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
-		
-		-- Check if player has enough hard currency
-		if profile.currencies.hard < instantCost then
-			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
-			return preserveProfileInvariants(profile, userId)
+		-- Calculate cost based on state
+		local instantCost = 0
+		if lootbox.state == BoxTypes.BoxState.UNLOCKING then
+			-- For unlocking boxes, calculate speed-up cost
+			local totalDuration = BoxTypes.GetDuration(lootbox.rarity)
+			local remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
+			instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
+			
+			-- Check if player has enough hard currency
+			if profile.currencies.hard < instantCost then
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+				return preserveProfileInvariants(profile, userId)
+			end
+			
+			-- Deduct hard currency
+			profile.currencies.hard = profile.currencies.hard - instantCost
+		elseif lootbox.state == BoxTypes.BoxState.READY then
+			-- For ready boxes, no additional cost
+			instantCost = 0
 		end
 		
-		-- Deduct hard currency
-		profile.currencies.hard = profile.currencies.hard - instantCost
-		
 		-- Roll rewards using stored seed
-		local rng = SeededRNG.new(lootbox.seed)
+		local rng = SeededRNG.New(lootbox.seed)
 		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
 		
 		-- Grant rewards
@@ -395,9 +411,18 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			
 			if profile.collection[cardId] then
 				profile.collection[cardId].count = profile.collection[cardId].count + copies
+				print("🎁 [LootboxService.OpenNow] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
 			else
 				profile.collection[cardId] = { count = copies, level = 1 }
+				print("🎁 [LootboxService.OpenNow] NEW CARD unlocked:", cardId, "with", copies, "copies")
 			end
+			
+			-- Debug: Show all cards in collection
+			local collectionCount = 0
+			for _ in pairs(profile.collection) do
+				collectionCount = collectionCount + 1
+			end
+			print("🎁 [LootboxService.OpenNow] Total unique cards in collection:", collectionCount)
 		end
 		
 		-- Free the slot (remove the lootbox)
@@ -422,6 +447,63 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 	end)
 	
 	if not success then
+		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	end
+	
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+end
+
+--- Speed up unlocking (complete timer and make lootbox ready)
+function LootboxService.SpeedUp(userId, slotIndex, serverNow)
+	-- Validate slot index
+	local isValidSlot, errorMsg = BoxValidator.ValidateSlotIndex(slotIndex)
+	if not isValidSlot then
+		return { ok = false, error = LootboxService.ErrorCodes.INVALID_SLOT }
+	end
+	
+	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
+		-- Validate profile before modification
+		local isValid, errorMsg = BoxValidator.ValidateProfile(profile.lootboxes, profile.pendingLootbox)
+		if not isValid then
+			error("Profile validation failed: " .. errorMsg)
+		end
+		
+		local lootbox = profile.lootboxes[slotIndex]
+		if not lootbox then
+			error("No lootbox at slot " .. slotIndex)
+		end
+		
+		-- SpeedUp only works on Unlocking boxes
+		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
+		-- Calculate instant speed up cost
+		local totalDuration = BoxTypes.GetDuration(lootbox.rarity)
+		local remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
+		local instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
+		
+		-- Check if player has enough hard currency
+		if profile.currencies.hard < instantCost then
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
+		-- Deduct hard currency
+		profile.currencies.hard = profile.currencies.hard - instantCost
+		
+		-- Complete the timer (set unlocksAt to current time)
+		lootbox.unlocksAt = serverNow
+		lootbox.state = BoxTypes.BoxState.READY
+		
+		profile.updatedAt = os.time()
+		profile._lootboxResult = { ok = true, lootbox = lootbox, speedUpCost = instantCost }
+		return preserveProfileInvariants(profile, userId)
+	end)
+	
+	if not success then
+		print("❌ [LootboxService.SpeedUp] ProfileManager.UpdateProfile failed:", result)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	

@@ -25,7 +25,18 @@ end
 
 -- Create a new RNG instance with a seed
 function SeededRNG.New(seed)
-	return CreateRNG(seed)
+	local rng = CreateRNG(seed)
+	
+	-- Add instance methods
+	rng.NextFloat = function(self)
+		return NextRandom(self)
+	end
+	
+	rng.NextInt = function(self, min, max)
+		return SeededRNG.RandomInt(self, min, max)
+	end
+	
+	return rng
 end
 
 -- Get a random integer between min and max (inclusive)

@@ -40,10 +40,17 @@ BoxTypes.StoreHardCost = {
 
 -- Base cost for instant opening (before pro-rata calculation)
 BoxTypes.InstantOpenBaseCost = {
-	[BoxTypes.BoxRarity.UNCOMMON] = 4,
-	[BoxTypes.BoxRarity.RARE] = 11,
-	[BoxTypes.BoxRarity.EPIC] = 27,
-	[BoxTypes.BoxRarity.LEGENDARY] = 50
+	-- Original costs (commented for testing):
+	-- [BoxTypes.BoxRarity.UNCOMMON] = 4,
+	-- [BoxTypes.BoxRarity.RARE] = 11,
+	-- [BoxTypes.BoxRarity.EPIC] = 27,
+	-- [BoxTypes.BoxRarity.LEGENDARY] = 50
+	
+	-- Testing: Set to 0 for free SpeedUp
+	[BoxTypes.BoxRarity.UNCOMMON] = 0,
+	[BoxTypes.BoxRarity.RARE] = 0,
+	[BoxTypes.BoxRarity.EPIC] = 0,
+	[BoxTypes.BoxRarity.LEGENDARY] = 0
 }
 
 -- Maximum number of lootbox slots per profile
@@ -57,7 +64,7 @@ function BoxTypes.ComputeInstantOpenCost(rarity, remainingSeconds, totalSeconds)
 	end
 	
 	if remainingSeconds <= 0 then
-		return 1 -- Minimum cost
+		return 0 -- Minimum cost (testing: was 1)
 	end
 	
 	if remainingSeconds >= totalSeconds then
@@ -67,7 +74,7 @@ function BoxTypes.ComputeInstantOpenCost(rarity, remainingSeconds, totalSeconds)
 	-- Pro-rata calculation: ceil(baseCost * (remaining / total))
 	local ratio = remainingSeconds / totalSeconds
 	local cost = math.ceil(baseCost * ratio)
-	return math.max(1, cost) -- Ensure minimum cost of 1
+	return math.max(0, cost) -- Ensure minimum cost of 0 (testing: was 1)
 end
 
 -- Helper function to get duration for a rarity

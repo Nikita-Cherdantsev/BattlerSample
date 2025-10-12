@@ -132,8 +132,8 @@ function BoxValidator.ValidateLootboxes(lootboxes)
 				return false, "Box at slot " .. i .. ": " .. errorMsg
 			end
 			
-			-- Count unlocking boxes
-			if lootboxes[i].state == BoxTypes.BoxState.UNLOCKING then
+			-- Count actively unlocking boxes (timer still running)
+			if lootboxes[i].state == BoxTypes.BoxState.UNLOCKING and lootboxes[i].unlocksAt and lootboxes[i].unlocksAt > os.time() then
 				unlockingCount = unlockingCount + 1
 			end
 		end

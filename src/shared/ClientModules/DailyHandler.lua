@@ -45,22 +45,15 @@ function DailyHandler:SetupDaily()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("DailyHandler: Looking for UI in PlayerGui...")
 	
 	-- Debug: Print all children in PlayerGui
-	print("Available children in PlayerGui:")
 	for _, child in pairs(playerGui:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Debug: Check if GameUI already exists
 	local existingGameUI = playerGui:FindFirstChild("GameUI")
 	if existingGameUI then
-		print("DailyHandler: Found existing GameUI: " .. tostring(existingGameUI))
-		print("DailyHandler: GameUI parent: " .. tostring(existingGameUI.Parent))
-		print("DailyHandler: GameUI children count: " .. #existingGameUI:GetChildren())
 	else
-		print("DailyHandler: No existing GameUI found")
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
@@ -68,7 +61,6 @@ function DailyHandler:SetupDaily()
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		print("DailyHandler: GameUI not found initially, waiting longer...")
 		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
 		
 		if not gameGui then
@@ -77,22 +69,17 @@ function DailyHandler:SetupDaily()
 		end
 	end
 	
-	print("DailyHandler: Found GameUI: " .. tostring(gameGui))
 	
-	print("DailyHandler: Main UI container found: " .. gameGui.Name)
 	
 	-- Check if Daily frame exists
 	local dailyFrame = gameGui:FindFirstChild("Daily")
 	if not dailyFrame then
 		warn("DailyHandler: Daily frame not found in " .. gameGui.Name .. " - Daily UI not available")
-		print("DailyHandler: Available children in " .. gameGui.Name .. ":")
 		for _, child in pairs(gameGui:GetChildren()) do
-			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
 		return
 	end
 	
-	print("DailyHandler: Daily frame found, setting up handlers...")
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
@@ -112,7 +99,6 @@ end
 function DailyHandler:SetupOpenButton()
 	-- Look for daily button in the UI
 	-- Path: GameUI -> LeftPanel -> Daily -> Button
-	print("DailyHandler: Looking for daily button...")
 	
 	local leftPanel = self.UI:FindFirstChild("LeftPanel")
 	if not leftPanel then
@@ -120,29 +106,22 @@ function DailyHandler:SetupOpenButton()
 		return
 	end
 	
-	print("DailyHandler: Daily found, looking for Button...")
 	local dailyButton = leftPanel:FindFirstChild("BtnDaily")
 	if not dailyButton then
 		warn("DailyHandler: Button not found in Daily frame")
 		return
 	end
 	
-	print("DailyHandler: Daily button found: " .. dailyButton.Name .. " (" .. dailyButton.ClassName .. ")")
 	
 	-- Test if the button has the right events
 	if dailyButton:IsA("GuiButton") then
 		local connection = dailyButton.MouseButton1Click:Connect(function()
-			print("DailyHandler: Daily button clicked!")
-			print("DailyHandler: Button instance: " .. tostring(dailyButton))
-			print("DailyHandler: Button parent: " .. tostring(dailyButton.Parent))
-			print("DailyHandler: Button parent parent: " .. tostring(dailyButton.Parent.Parent))
 			-- For now, just open the window for testing
 			-- TODO: Add RemoteEvent integration when DailyBonus remote is available
 			self:OpenWindow({}, 1, false)
 		end)
 		table.insert(self.Connections, connection)
 		print("✅ DailyHandler: Open button connected")
-		print("DailyHandler: Button connection created for: " .. tostring(dailyButton))
 	else
 		warn("DailyHandler: Found element '" .. dailyButton.Name .. "' but it's not a GuiButton (it's a " .. dailyButton.ClassName .. ")")
 	end
@@ -168,7 +147,6 @@ function DailyHandler:SetupClaimButton()
 	local connection = claimButton.MouseButton1Click:Connect(function()
 		-- For now, simulate claim for testing
 		-- TODO: Add RemoteEvent integration when DailyBonus remote is available
-		print("DailyHandler: Claim button clicked (mock mode)")
 		self:CloseWindow()
 	end)
 
@@ -311,7 +289,6 @@ end
 
 --// Cleanup
 function DailyHandler:Cleanup()
-	print("Cleaning up DailyHandler...")
 
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do

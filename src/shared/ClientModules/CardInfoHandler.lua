@@ -63,19 +63,15 @@ function CardInfoHandler:SetupCardInfo()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("CardInfoHandler: Looking for UI in PlayerGui...")
 	
 	-- Debug: Print all children in PlayerGui
-	print("Available children in PlayerGui:")
 	for _, child in pairs(playerGui:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		print("CardInfoHandler: GameUI not found initially, waiting longer...")
 		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
 		
 		if not gameGui then
@@ -84,20 +80,16 @@ function CardInfoHandler:SetupCardInfo()
 		end
 	end
 	
-	print("CardInfoHandler: Found GameUI: " .. tostring(gameGui))
 	
 	-- Look for CardInfo frame
 	local cardInfoFrame = gameGui:FindFirstChild("CardInfo")
 	if not cardInfoFrame then
 		warn("CardInfoHandler: CardInfo frame not found in " .. gameGui.Name)
-		print("Available children in " .. gameGui.Name .. ":")
 		for _, child in pairs(gameGui:GetChildren()) do
-			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
 		return
 	end
 	
-	print("CardInfoHandler: CardInfo frame found, setting up handlers...")
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
@@ -183,13 +175,11 @@ function CardInfoHandler:LoadProfileData()
 		local state = self.ClientState:GetState()
 		if state and state.profile then
 			self.currentProfile = state.profile
-			print("CardInfoHandler: Loaded profile data")
 			return true
 		end
 	end
 	
 	-- Request profile from server if not available
-	print("CardInfoHandler: Requesting profile from server...")
 	NetworkClient.requestProfile()
 	return false
 end
@@ -555,7 +545,15 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 	-- Check if can level up
 	local canLevelUp = false
 	if hasCard then
-		canLevelUp = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
+		local canLevel, reason = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
+		canLevelUp = canLevel
+		
+		-- Debug: Log level-up status
+		if canLevel then
+			print("✅ CardInfoHandler: Card", cardData.id, "CAN level up - Level:", cardLevel, "Count:", cardCount, "Soft:", self.currentProfile.currencies.soft)
+		else
+			print("❌ CardInfoHandler: Card", cardData.id, "CANNOT level up - Level:", cardLevel, "Count:", cardCount, "Reason:", reason)
+		end
 	end
 	
 	-- Update Collection button (show if card is in deck and can be removed)
@@ -666,11 +664,9 @@ function CardInfoHandler:AddCardToDeck(cardId)
 	end
 	
 	-- Request deck update via network
-	print("CardInfoHandler: Adding card to deck:", cardId)
 	if NetworkClient and NetworkClient.requestSetDeck then
 		local success, error = NetworkClient.requestSetDeck(newDeck)
 		if success then
-			print("CardInfoHandler: Successfully requested to add card to deck")
 			-- The UI will update automatically when ProfileUpdated event is received
 			return true
 		else
@@ -717,11 +713,9 @@ function CardInfoHandler:RemoveCardFromDeck(cardId)
 	end
 	
 	-- Request deck update via network
-	print("CardInfoHandler: Removing card from deck:", cardId)
 	if NetworkClient and NetworkClient.requestSetDeck then
 		local success, error = NetworkClient.requestSetDeck(newDeck)
 		if success then
-			print("CardInfoHandler: Successfully requested to remove card from deck")
 			-- The UI will update automatically when ProfileUpdated event is received
 			return true
 		else
@@ -741,13 +735,11 @@ function CardInfoHandler:OnCollectionButtonClicked()
 		return
 	end
 	
-	print("CardInfoHandler: Collection button clicked for card:", self.currentCardId)
 	
 	-- Remove card from deck if it's currently in the deck
 	if self:IsCardInDeck(self.currentCardId) then
 		self:RemoveCardFromDeck(self.currentCardId)
 	else
-		print("CardInfoHandler: Card is not in deck, no action needed")
 	end
 end
 
@@ -757,13 +749,11 @@ function CardInfoHandler:OnDeckButtonClicked()
 		return
 	end
 	
-	print("CardInfoHandler: Deck button clicked for card:", self.currentCardId)
 	
 	-- Add card to deck if it's not already in the deck
 	if not self:IsCardInDeck(self.currentCardId) then
 		self:AddCardToDeck(self.currentCardId)
 	else
-		print("CardInfoHandler: Card is already in deck, no action needed")
 	end
 end
 
@@ -773,7 +763,6 @@ function CardInfoHandler:OnLevelUpButtonClicked()
 		return
 	end
 	
-	print("CardInfoHandler: Level up button clicked for card:", self.currentCardId)
 	
 	-- Get current card data for validation
 	local collectionEntry = self.currentProfile.collection and self.currentProfile.collection[self.currentCardId]
@@ -854,7 +843,6 @@ function CardInfoHandler:SetupProfileUpdatedHandler()
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
 		-- Check if this is a profile update (not an error)
 		if not payload.error then
-			print("CardInfoHandler: Received profile update")
 			
 			-- Initialize profile if not exists
 			if not self.currentProfile then
@@ -887,8 +875,9 @@ function CardInfoHandler:SetupProfileUpdatedHandler()
 				self.currentProfile.currencies = payload.currencies
 			end
 			
-			-- Update display if window is open and we have current card
-			if self.CardInfoFrame and self.CardInfoFrame.Visible and self.currentCardId then
+			-- Always update display if we have current card (even if window is closed)
+			-- This ensures level-up status is accurate when window is opened
+			if self.CardInfoFrame and self.currentCardId then
 				local cardData = CardCatalog.GetCard(self.currentCardId)
 				if cardData then
 					local collectionEntry = self.currentProfile.collection[self.currentCardId]
@@ -896,11 +885,15 @@ function CardInfoHandler:SetupProfileUpdatedHandler()
 					local cardLevel = hasCard and collectionEntry.level or 0
 					local cardCount = hasCard and collectionEntry.count or 0
 					
+					-- Update display (whether window is open or closed)
 					self:UpdateCardInfoDisplay(cardData, hasCard, cardLevel, cardCount)
+					
+					if self.CardInfoFrame.Visible then
+						print("✅ CardInfoHandler: Updated card info for", self.currentCardId, "- count:", cardCount, "level:", cardLevel)
+					end
 				end
 			end
 		else
-			print("CardInfoHandler: Received profile error:", payload.error.message or payload.error.code)
 		end
 	end)
 	
@@ -915,7 +908,6 @@ end
 
 --// Cleanup
 function CardInfoHandler:Cleanup()
-	print("Cleaning up CardInfoHandler...")
 
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do

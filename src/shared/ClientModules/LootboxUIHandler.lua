@@ -60,13 +60,11 @@ function LootboxUIHandler:SetupLootboxUI()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("LootboxUIHandler: Looking for UI in PlayerGui...")
 	
 	-- Wait for GameUI
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		print("LootboxUIHandler: GameUI not found initially, waiting longer...")
 		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
 		
 		if not gameGui then
@@ -75,7 +73,6 @@ function LootboxUIHandler:SetupLootboxUI()
 		end
 	end
 	
-	print("LootboxUIHandler: Found GameUI: " .. tostring(gameGui))
 	
 	-- Find the lootbox packs container
 	-- Path: GameUI -> BottomPanel -> Packs -> Outline -> Content
@@ -103,7 +100,6 @@ function LootboxUIHandler:SetupLootboxUI()
 		return
 	end
 	
-	print("LootboxUIHandler: Found lootbox packs container")
 	
 	-- Store UI reference
 	self.UI = gameGui
@@ -125,7 +121,6 @@ function LootboxUIHandler:SetupLootboxPacks()
 		local packFrame = self.LootboxContainer:FindFirstChild(packName)
 		
 		if packFrame then
-			print("LootboxUIHandler: Found " .. packName)
 			
 			-- Store pack reference (slot index matches pack number 1-4)
 			self.lootboxPacks[i] = {
@@ -165,7 +160,6 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 			self:OnUnlockButtonClicked(packIndex)
 		end)
 		table.insert(self.Connections, connection)
-		print("LootboxUIHandler: BtnUnlock connected for Pack" .. packIndex)
 	end
 	
 	-- Setup BtnOpen
@@ -174,7 +168,6 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 			self:OnOpenButtonClicked(packIndex)
 		end)
 		table.insert(self.Connections, connection)
-		print("LootboxUIHandler: BtnOpen connected for Pack" .. packIndex)
 	end
 	
 	-- Setup BtnSpeedUp
@@ -183,7 +176,6 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 			self:OnSpeedUpButtonClicked(packIndex)
 		end)
 		table.insert(self.Connections, connection)
-		print("LootboxUIHandler: BtnSpeedUp connected for Pack" .. packIndex)
 	end
 end
 
@@ -192,32 +184,15 @@ function LootboxUIHandler:OnUnlockButtonClicked(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	print("LootboxUIHandler: Unlock button clicked for Pack" .. packIndex .. " (slot " .. pack.slotIndex .. ")")
-	
 	-- Check current lootbox state before attempting unlock
 	local currentLootbox = self.currentProfile and self.currentProfile.lootboxes and self.currentProfile.lootboxes[pack.slotIndex]
-	if currentLootbox then
-		print("LootboxUIHandler: Current lootbox state for slot " .. pack.slotIndex .. ": " .. tostring(currentLootbox.state))
-		if currentLootbox.state ~= "Idle" then
-			warn("LootboxUIHandler: Cannot start unlock - lootbox is in state: " .. tostring(currentLootbox.state))
-			return
-		end
-	else
-		print("LootboxUIHandler: No lootbox found in slot " .. pack.slotIndex)
-		print("LootboxUIHandler: Note: You need to add a lootbox to this slot first before unlocking")
-		return -- Don't try to unlock empty slots
+	if not currentLootbox or currentLootbox.state ~= "Idle" then
+		return -- Can only unlock Idle lootboxes
 	end
 	
-	-- Call backend to start unlock
+	-- Request unlock from server
 	if NetworkClient and NetworkClient.requestStartUnlock then
-		local success, error = NetworkClient.requestStartUnlock(pack.slotIndex)
-		if success then
-			print("LootboxUIHandler: Start unlock request sent successfully")
-		else
-			warn("LootboxUIHandler: Start unlock request failed:", error)
-		end
-	else
-		warn("LootboxUIHandler: NetworkClient.requestStartUnlock not available")
+		NetworkClient.requestStartUnlock(pack.slotIndex)
 	end
 end
 
@@ -225,18 +200,9 @@ function LootboxUIHandler:OnOpenButtonClicked(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	print("LootboxUIHandler: Open button clicked for Pack" .. packIndex .. " (slot " .. pack.slotIndex .. ")")
-	
-	-- Call backend to open lootbox
+	-- Request to open lootbox from server
 	if NetworkClient and NetworkClient.requestOpenNow then
-		local success, error = NetworkClient.requestOpenNow(pack.slotIndex)
-		if success then
-			print("LootboxUIHandler: Open now request sent successfully")
-		else
-			warn("LootboxUIHandler: Open now request failed:", error)
-		end
-	else
-		warn("LootboxUIHandler: NetworkClient.requestOpenNow not available")
+		NetworkClient.requestOpenNow(pack.slotIndex)
 	end
 end
 
@@ -244,17 +210,15 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	print("LootboxUIHandler: SpeedUp button clicked for Pack" .. packIndex .. " (slot " .. pack.slotIndex .. ")")
 	
 	-- Check if player has enough hard currency
 	if self.currentProfile and self.currentProfile.currencies then
 		local hardCurrency = self.currentProfile.currencies.hard or 0
 		if hardCurrency >= self.SPEED_UP_COST then
-			-- Call backend to speed up (open now)
-			if NetworkClient and NetworkClient.requestOpenNow then
-				local success, error = NetworkClient.requestOpenNow(pack.slotIndex)
+			-- Call backend to speed up (complete timer)
+			if NetworkClient and NetworkClient.requestSpeedUp then
+				local success, error = NetworkClient.requestSpeedUp(pack.slotIndex)
 				if success then
-					print("LootboxUIHandler: Speed up request sent successfully")
 				else
 					warn("LootboxUIHandler: Speed up request failed:", error)
 				end
@@ -262,7 +226,6 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 				warn("LootboxUIHandler: NetworkClient.requestOpenNow not available")
 			end
 		else
-			print("LootboxUIHandler: Not enough hard currency for speed up. Need: " .. self.SPEED_UP_COST .. ", Have: " .. hardCurrency)
 			-- TODO: Show UI message to top up currency
 		end
 	else
@@ -273,13 +236,11 @@ end
 -- Update lootbox UI state
 function LootboxUIHandler:UpdateLootboxStates()
 	if not self.currentProfile or not self.currentProfile.lootboxes then
-		print("LootboxUIHandler: No profile or lootboxes data available")
 		return
 	end
 	
 	-- Prevent infinite loops by checking if we're already updating
 	if self._updatingStates then
-		print("LootboxUIHandler: Already updating states, skipping to prevent loop")
 		return
 	end
 	
@@ -288,45 +249,18 @@ function LootboxUIHandler:UpdateLootboxStates()
 	local lootboxes = self.currentProfile.lootboxes
 	local pendingLootbox = self.currentProfile.pendingLootbox
 	
-	print("LootboxUIHandler: Updating lootbox states...")
-	print("LootboxUIHandler: Current lootboxes:")
-	for i, lootbox in ipairs(lootboxes) do
-		if lootbox then
-			local hasLootbox = lootbox.state and (
-				(lootbox.state == "Idle" and lootbox.unlocksAt) or
-				(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
-				(lootbox.state == "Ready") or
-				(lootbox.state == "Consumed")
-			)
-			if hasLootbox then
-				print("  Slot " .. i .. ": HAS LOOTBOX - state=" .. tostring(lootbox.state) .. ", unlocksAt=" .. tostring(lootbox.unlocksAt))
-			else
-				print("  Slot " .. i .. ": NO LOOTBOX - state=" .. tostring(lootbox.state) .. ", unlocksAt=" .. tostring(lootbox.unlocksAt))
-			end
-		else
-			print("  Slot " .. i .. ": empty")
-		end
-	end
-	print("LootboxUIHandler: Pending lootbox:", pendingLootbox ~= nil)
+	-- Update lootbox UI based on current player data
 	
 	-- First, check if any lootbox is currently unlocking (timer not completed)
 	local isAnyUnlocking = false
 	for i, lootbox in ipairs(lootboxes) do
-		-- Only consider slots that actually have lootboxes
-		local hasLootbox = lootbox and lootbox.state and (
-			(lootbox.state == "Idle" and lootbox.unlocksAt) or
-			(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
-			(lootbox.state == "Ready") or
-			(lootbox.state == "Consumed")
-		)
-		
-		if hasLootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
+		-- Check if this lootbox is actively unlocking (has timer that hasn't completed)
+		if lootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
 			isAnyUnlocking = true
 			break
 		end
 	end
 	
-	print("LootboxUIHandler: Any lootbox unlocking:", isAnyUnlocking)
 	
 	-- Update each pack
 	for packIndex = 1, 4 do
@@ -336,13 +270,14 @@ function LootboxUIHandler:UpdateLootboxStates()
 			local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
 			
 			-- Check if this slot actually has a lootbox
-			-- A lootbox exists if it has valid state AND unlocksAt timestamp (for Idle/Unlocking/Ready)
+			-- A lootbox exists if it has a valid state
 			local hasLootbox = lootbox and lootbox.state and (
-				(lootbox.state == "Idle" and lootbox.unlocksAt) or
-				(lootbox.state == "Unlocking" and lootbox.unlocksAt) or
-				(lootbox.state == "Ready") or
-				(lootbox.state == "Consumed")
+				lootbox.state == "Idle" or
+				lootbox.state == "Unlocking" or
+				lootbox.state == "Ready" or
+				lootbox.state == "Consumed"
 			)
+			
 			
 			if hasLootbox then
 				-- This slot has a real lootbox
@@ -355,29 +290,22 @@ function LootboxUIHandler:UpdateLootboxStates()
 						-- Still unlocking, show SpeedUp state
 						self:UpdatePackState(packIndex, "Unlocking", lootbox)
 					end
-				-- If any other lootbox is unlocking, lock this one
-				elseif isAnyUnlocking then
+				-- If any other lootbox is unlocking, lock only Idle lootboxes
+				elseif isAnyUnlocking and lootbox.state == "Idle" then
 					self:UpdatePackState(packIndex, "Locked", nil)
 				-- Otherwise, show normal state
 				else
 					self:UpdatePackState(packIndex, lootbox.state, lootbox)
 				end
 			else
-				-- No lootbox in this slot - show appropriate state
-				if isAnyUnlocking then
-					-- If any lootbox is unlocking, show locked state for empty slots
-					self:UpdatePackState(packIndex, "Locked", nil)
-				else
-					-- No lootboxes unlocking, show empty state (no buttons)
-					self:UpdatePackState(packIndex, "Empty", nil)
-				end
+				-- No lootbox in this slot - always show empty state
+				self:UpdatePackState(packIndex, "Empty", nil)
 			end
 		end
 	end
 	
 	-- Handle pending lootbox (if any) - this is separate from regular lootboxes
 	if pendingLootbox then
-		print("LootboxUIHandler: Pending lootbox detected, this is a separate pending state")
 		-- Pending lootbox doesn't affect the regular pack states
 	end
 	
@@ -389,10 +317,7 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	print("LootboxUIHandler: Updating Pack" .. packIndex .. " to state: " .. tostring(state))
-	if lootboxData then
-		print("  - Lootbox data: state=" .. tostring(lootboxData.state) .. ", unlocksAt=" .. tostring(lootboxData.unlocksAt))
-	end
+	-- Update pack state
 	
 	-- Hide all buttons and frames first
 	if pack.btnUnlock then pack.btnUnlock.Visible = false end
@@ -408,7 +333,6 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.btnUnlock.Visible = true
 			pack.btnUnlock.Active = true
 		end
-		print("LootboxUIHandler: Showing Unlock button for Pack" .. packIndex)
 		
 	elseif state == "Unlocking" then
 		-- Show speed up button and timer
@@ -420,7 +344,6 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.timerFrame.Visible = true
 			self:StartTimer(packIndex, lootboxData)
 		end
-		print("LootboxUIHandler: Showing SpeedUp button for Pack" .. packIndex)
 		
 	elseif state == "Ready" then
 		-- Show open button
@@ -428,19 +351,16 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.btnOpen.Visible = true
 			pack.btnOpen.Active = true
 		end
-		print("LootboxUIHandler: Showing Open button for Pack" .. packIndex)
 		
 	elseif state == "Locked" then
 		-- Show locked frame
 		if pack.lockedFrame then
 			pack.lockedFrame.Visible = true
 		end
-		print("LootboxUIHandler: Showing Locked frame for Pack" .. packIndex)
 		
 	elseif state == "Empty" then
 		-- Empty slots show nothing - no buttons, no interaction
 		-- Players can only get lootboxes through the shop or other means
-		print("LootboxUIHandler: Showing empty state for Pack" .. packIndex .. " (no lootbox)")
 	end
 end
 
@@ -467,7 +387,6 @@ function LootboxUIHandler:StartTimer(packIndex, lootboxData)
 			self:StopTimer(packIndex)
 			
 			-- Request fresh profile data from server to get updated lootbox state
-			print("LootboxUIHandler: Timer completed, requesting fresh profile data...")
 			if NetworkClient and NetworkClient.requestProfile then
 				NetworkClient.requestProfile()
 			end
@@ -515,7 +434,6 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 	
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
 		if not payload.error then
-			print("LootboxUIHandler: Received profile update")
 			
 			-- Initialize profile if not exists
 			if not self.currentProfile then
@@ -543,10 +461,27 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 				self.currentProfile.currencies = payload.currencies
 			end
 			
+			-- Show rewards if any
+			if payload.rewards then
+				local rewardCount = 0
+				if payload.rewards.softDelta and payload.rewards.softDelta > 0 then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Soft currency reward:", payload.rewards.softDelta)
+				end
+				if payload.rewards.hardDelta and payload.rewards.hardDelta > 0 then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Hard currency reward:", payload.rewards.hardDelta)
+				end
+				if payload.rewards.card then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Card reward:", payload.rewards.card.cardId, "x" .. payload.rewards.card.copies)
+				end
+				print("🎁 [LootboxUIHandler] Total rewards received:", rewardCount, "items")
+			end
+			
 			-- Update UI
 			self:UpdateLootboxStates()
 		else
-			print("LootboxUIHandler: Received profile error:", payload.error.message or payload.error.code)
 		end
 	end)
 	
@@ -559,86 +494,8 @@ function LootboxUIHandler:IsInitialized()
 	return self._initialized
 end
 
--- Debug function to manually refresh lootbox states
-function LootboxUIHandler:DebugRefreshStates()
-	print("LootboxUIHandler: Manual state refresh requested")
-	print("Current profile exists:", self.currentProfile ~= nil)
-	if self.currentProfile then
-		print("Lootboxes count:", #(self.currentProfile.lootboxes or {}))
-		print("Pending lootbox:", self.currentProfile.pendingLootbox ~= nil)
-	end
-	
-	-- Request fresh profile data
-	if NetworkClient and NetworkClient.requestProfile then
-		NetworkClient.requestProfile()
-		print("Profile refresh requested")
-	else
-		print("NetworkClient.requestProfile not available")
-	end
-	
-	-- Also trigger immediate UI update
-	self:UpdateLootboxStates()
-end
-
--- Debug function to clear all lootboxes (for testing)
-function LootboxUIHandler:DebugClearLootboxes()
-	print("LootboxUIHandler: Clearing all lootboxes for testing...")
-	if NetworkClient and NetworkClient.requestClearLoot then
-		local success, error = NetworkClient.requestClearLoot()
-		if success then
-			print("LootboxUIHandler: Clear loot request sent successfully")
-			-- Wait a moment and then refresh UI
-			task.wait(1)
-			self:UpdateLootboxStates()
-		else
-			warn("LootboxUIHandler: Clear loot request failed:", error)
-		end
-	else
-		warn("LootboxUIHandler: NetworkClient.requestClearLoot not available")
-	end
-end
-
--- Debug function to show current UI state vs lootbox states
-function LootboxUIHandler:DebugShowUIState()
-	print("LootboxUIHandler: Current UI State vs Lootbox States:")
-	
-	if not self.currentProfile or not self.currentProfile.lootboxes then
-		print("  No profile or lootboxes available")
-		return
-	end
-	
-	for packIndex = 1, 4 do
-		local pack = self.lootboxPacks[packIndex]
-		if pack then
-			local slotIndex = pack.slotIndex
-			local lootbox = self.currentProfile.lootboxes[slotIndex]
-			
-			print("  Pack" .. packIndex .. " (slot " .. slotIndex .. "):")
-			if lootbox then
-				print("    Lootbox state: " .. tostring(lootbox.state))
-			else
-				print("    Lootbox state: empty")
-			end
-			
-			-- Show what buttons are currently visible
-			local visibleButtons = {}
-			if pack.btnUnlock and pack.btnUnlock.Visible then table.insert(visibleButtons, "Unlock") end
-			if pack.btnOpen and pack.btnOpen.Visible then table.insert(visibleButtons, "Open") end
-			if pack.btnSpeedUp and pack.btnSpeedUp.Visible then table.insert(visibleButtons, "SpeedUp") end
-			if pack.lockedFrame and pack.lockedFrame.Visible then table.insert(visibleButtons, "Locked") end
-			
-			if #visibleButtons > 0 then
-				print("    UI showing: " .. table.concat(visibleButtons, ", "))
-			else
-				print("    UI showing: nothing")
-			end
-		end
-	end
-end
-
 -- Cleanup
 function LootboxUIHandler:Cleanup()
-	print("Cleaning up LootboxUIHandler...")
 	
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do

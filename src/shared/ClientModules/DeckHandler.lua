@@ -67,19 +67,15 @@ function DeckHandler:SetupDeck()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	print("DeckHandler: Looking for UI in PlayerGui...")
 	
 	-- Debug: Print all children in PlayerGui
-	print("Available children in PlayerGui:")
 	for _, child in pairs(playerGui:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
 	if not gameGui then
-		print("DeckHandler: GameUI not found initially, waiting longer...")
 		gameGui = playerGui:WaitForChild("GameUI", 10) -- Extended wait
 		
 		if not gameGui then
@@ -88,20 +84,16 @@ function DeckHandler:SetupDeck()
 		end
 	end
 	
-	print("DeckHandler: Found GameUI: " .. tostring(gameGui))
 	
 	-- Look for Deck frame
 	local deckFrame = gameGui:FindFirstChild("Deck")
 	if not deckFrame then
 		warn("DeckHandler: Deck frame not found in " .. gameGui.Name)
-		print("Available children in " .. gameGui.Name .. ":")
 		for _, child in pairs(gameGui:GetChildren()) do
-			print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 		end
 		return
 	end
 	
-	print("DeckHandler: Deck frame found, setting up handlers...")
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
@@ -124,7 +116,6 @@ end
 function DeckHandler:SetupOpenButton()
 	-- Look for deck button in the UI
 	-- Path: GameUI -> LeftPanel -> BtnDeck
-	print("DeckHandler: Looking for deck button...")
 	
 	local leftPanel = self.UI:FindFirstChild("LeftPanel")
 	if not leftPanel then
@@ -132,27 +123,21 @@ function DeckHandler:SetupOpenButton()
 		return
 	end
 	
-	print("DeckHandler: LeftPanel found, looking for BtnDeck...")
 	local deckButton = leftPanel:FindFirstChild("BtnDeck")
 	if not deckButton then
 		warn("DeckHandler: BtnDeck not found in LeftPanel")
 		return
 	end
 	
-	print("DeckHandler: Deck button found: " .. deckButton.Name .. " (" .. deckButton.ClassName .. ")")
 	
 	-- Debug: Print the structure of the deck button
-	print("DeckHandler: Deck button children:")
 	for _, child in pairs(deckButton:GetChildren()) do
-		print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
 	end
 	
 	-- Connect to the TextButton itself (not the ImgLabel)
 	-- The TextButton is the actual clickable element
 	if deckButton:IsA("TextButton") then
-		print("DeckHandler: Connecting click handler to TextButton")
 		local connection = deckButton.MouseButton1Click:Connect(function()
-			print("DeckHandler: Deck button (TextButton) clicked!")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -165,9 +150,7 @@ function DeckHandler:SetupOpenButton()
 	
 	-- Try to connect to other clickable elements as fallback
 	if deckButton:IsA("GuiButton") or deckButton:IsA("ImageButton") then
-		print("DeckHandler: Attempting to connect click handler to " .. deckButton.ClassName)
 		local connection = deckButton.MouseButton1Click:Connect(function()
-			print("DeckHandler: Deck button (fallback) clicked!")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -262,13 +245,11 @@ function DeckHandler:LoadProfileData()
 		local state = self.ClientState:GetState()
 		if state and state.profile then
 			self.currentProfile = state.profile
-			print("DeckHandler: Loaded profile data")
 			return true
 		end
 	end
 	
 	-- Request profile from server if not available
-	print("DeckHandler: Requesting profile from server...")
 	NetworkClient.requestProfile()
 	return false
 end
@@ -620,7 +601,6 @@ function DeckHandler:UpdateCardAppearance(cardInstance, cardData, hasCard, cardL
 end
 
 function DeckHandler:OnCollectionCardClicked(cardId)
-	print("DeckHandler: Collection card clicked: " .. cardId)
 	
 	-- Get CardInfoHandler reference if not already set
 	if not self.CardInfoHandler then
@@ -636,7 +616,6 @@ function DeckHandler:OnCollectionCardClicked(cardId)
 end
 
 function DeckHandler:OnDeckCardClicked(cardId, slotIndex)
-	print("DeckHandler: Deck card clicked: " .. cardId .. " in slot " .. slotIndex)
 	
 	-- Get CardInfoHandler reference if not already set
 	if not self.CardInfoHandler then
@@ -652,51 +631,39 @@ function DeckHandler:OnDeckCardClicked(cardId, slotIndex)
 end
 
 function DeckHandler:OpenWindow()
-	print("DeckHandler: OpenWindow called")
 	
 	if self.isAnimating then 
-		print("DeckHandler: Already animating, ignoring request")
 		return 
 	end
 	self.isAnimating = true
 
 	-- Load profile data if not available
 	if not self.currentProfile then
-		print("DeckHandler: No profile data, attempting to load...")
 		if not self:LoadProfileData() then
 			-- Profile not available yet, wait for ProfileUpdated event
-			print("DeckHandler: Profile not available, waiting for ProfileUpdated event")
 			self.isAnimating = false
 			return
 		end
 	end
 
-	print("DeckHandler: Hiding HUD panels...")
 	-- Hide HUD panels if they exist
 	if self.UI.LeftPanel then
-		print("DeckHandler: Hiding LeftPanel")
 		self.UI.LeftPanel.Visible = false
 	else
-		print("DeckHandler: LeftPanel not found")
 	end
 	
 	if self.UI.BottomPanel then
-		print("DeckHandler: Hiding BottomPanel")
 		self.UI.BottomPanel.Visible = false
 	else
-		print("DeckHandler: BottomPanel not found")
 	end
 
-	print("DeckHandler: Updating displays...")
 	-- Update displays
 	self:UpdateCollectionDisplay()
 	self:UpdateDeckDisplay()
 
-	print("DeckHandler: Showing deck frame...")
 	-- Show deck frame
 	if self.DeckFrame then
 		self.DeckFrame.Visible = true
-		print("DeckHandler: DeckFrame.Visible set to true")
 	else
 		warn("DeckHandler: DeckFrame is nil!")
 		self.isAnimating = false
@@ -705,26 +672,20 @@ function DeckHandler:OpenWindow()
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities then
-		print("DeckHandler: Using TweenUI for animation")
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.DeckFrame, .3, function ()
-				print("DeckHandler: FadeIn animation complete")
 				self.isAnimating = false
 			end)
 		else
-			print("DeckHandler: TweenUI.FadeIn not available")
 			self.isAnimating = false
 		end
 		
 		if self.Utilities.Blur and self.Utilities.Blur.Show then
 			self.Utilities.Blur.Show()
-			print("DeckHandler: Blur effect enabled")
 		else
-			print("DeckHandler: Blur effect not available")
 		end
 	else
 		-- Fallback: no animation
-		print("DeckHandler: No Utilities available, using fallback")
 		self.isAnimating = false
 	end
 	
@@ -770,7 +731,6 @@ function DeckHandler:SetupProfileUpdatedHandler()
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
 		-- Check if this is a profile update (not an error)
 		if not payload.error then
-			print("DeckHandler: Received profile update")
 			
 			-- Initialize profile if not exists
 			if not self.currentProfile then
@@ -803,13 +763,19 @@ function DeckHandler:SetupProfileUpdatedHandler()
 				self.currentProfile.currencies = payload.currencies
 			end
 			
-			-- Update displays if window is open
-			if self.DeckFrame and self.DeckFrame.Visible then
+			-- Always update collection display if collection changed (even if window is closed)
+			-- This ensures new cards from lootboxes are immediately visible when opening the deck
+			if payload.collectionSummary and self.DeckFrame then
+				local cardCount = #payload.collectionSummary
+				print("✅ DeckHandler: Updating collection display with", cardCount, "unique cards")
 				self:UpdateCollectionDisplay()
+			end
+			
+			-- Update deck display if window is open
+			if self.DeckFrame and self.DeckFrame.Visible then
 				self:UpdateDeckDisplay()
 			end
 		else
-			print("DeckHandler: Received profile error:", payload.error.message or payload.error.code)
 		end
 	end)
 	
@@ -824,24 +790,14 @@ end
 
 -- Debug function to manually open deck window
 function DeckHandler:DebugOpenWindow()
-	print("DeckHandler: DebugOpenWindow called")
-	print("DeckHandler: Is initialized:", self._initialized)
-	print("DeckHandler: DeckFrame exists:", self.DeckFrame ~= nil)
-	print("DeckHandler: UI exists:", self.UI ~= nil)
 	
 	if self.DeckFrame then
-		print("DeckHandler: DeckFrame.Visible:", self.DeckFrame.Visible)
-		print("DeckHandler: DeckFrame.Parent:", self.DeckFrame.Parent)
 	end
 	
 	if self.UI then
-		print("DeckHandler: UI.LeftPanel exists:", self.UI.LeftPanel ~= nil)
-		print("DeckHandler: UI.BottomPanel exists:", self.UI.BottomPanel ~= nil)
 		if self.UI.LeftPanel then
-			print("DeckHandler: UI.LeftPanel.Visible:", self.UI.LeftPanel.Visible)
 		end
 		if self.UI.BottomPanel then
-			print("DeckHandler: UI.BottomPanel.Visible:", self.UI.BottomPanel.Visible)
 		end
 	end
 	
@@ -850,7 +806,6 @@ end
 
 --// Cleanup
 function DeckHandler:Cleanup()
-	print("Cleaning up DeckHandler...")
 
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do
