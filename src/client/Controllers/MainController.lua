@@ -20,6 +20,7 @@ local LootboxUIHandler = require(ReplicatedStorage.ClientModules.LootboxUIHandle
 local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
 local CurrencyHandler = require(ReplicatedStorage.ClientModules.CurrencyHandler)
+local CloseButtonHandler = require(ReplicatedStorage.ClientModules.CloseButtonHandler)
 
 -- State
 local isInitialized = false
@@ -50,7 +51,8 @@ function MainController:Init()
 		{name = "LootboxUIHandler", handler = LootboxUIHandler},
 		{name = "PlaytimeHandler", handler = PlaytimeHandler},
 		{name = "ShopHandler", handler = ShopHandler},
-		{name = "CurrencyHandler", handler = CurrencyHandler}
+		{name = "CurrencyHandler", handler = CurrencyHandler},
+		{name = "CloseButtonHandler", handler = CloseButtonHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do

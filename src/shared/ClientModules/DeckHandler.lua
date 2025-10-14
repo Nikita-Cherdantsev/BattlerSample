@@ -161,27 +161,8 @@ function DeckHandler:SetupOpenButton()
 end
 
 function DeckHandler:SetupCloseButton()
-	-- Look for close button in the deck frame
-	-- Path: GameUI.Deck.TopPanel.BtnClose.Button
-	local closeButton = self.DeckFrame:FindFirstChild("TopPanel")
-	if closeButton then
-		closeButton = closeButton:FindFirstChild("BtnClose")
-		if closeButton then
-			closeButton = closeButton:FindFirstChild("Button")
-		end
-	end
-	
-	if not closeButton then
-		warn("DeckHandler: Close button not found - you may need to add a CloseButton to Deck frame")
-		return
-	end
-
-	local connection = closeButton.MouseButton1Click:Connect(function()
-		self:CloseWindow()
-	end)
-
-	table.insert(self.Connections, connection)
-	print("✅ DeckHandler: Close button connected")
+	-- Close button is now handled by CloseButtonHandler
+	-- No need to set up individual close button here
 end
 
 function DeckHandler:SetupCardContainers()
@@ -664,6 +645,9 @@ function DeckHandler:OpenWindow()
 	-- Show deck frame
 	if self.DeckFrame then
 		self.DeckFrame.Visible = true
+		
+		-- Register with close button handler
+		self:RegisterWithCloseButton(true)
 	else
 		warn("DeckHandler: DeckFrame is nil!")
 		self.isAnimating = false
@@ -720,6 +704,9 @@ function DeckHandler:CloseWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
 	end
+	
+	-- Register with close button handler
+	self:RegisterWithCloseButton(false)
 	
 	print("✅ DeckHandler: Deck window closed")
 end
@@ -802,6 +789,31 @@ function DeckHandler:DebugOpenWindow()
 	end
 	
 	self:OpenWindow()
+end
+
+-- Register with close button handler
+function DeckHandler:RegisterWithCloseButton(isOpen)
+	local success, CloseButtonHandler = pcall(function()
+		return require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	end)
+	
+	if success and CloseButtonHandler then
+		local instance = CloseButtonHandler.GetInstance()
+		if instance and instance.isInitialized then
+			if isOpen then
+				instance:RegisterFrameOpen("Deck")
+			else
+				instance:RegisterFrameClosed("Deck")
+			end
+		end
+	end
+end
+
+-- Close the deck frame (called by close button handler)
+function DeckHandler:CloseFrame()
+	if self.DeckFrame and self.DeckFrame.Visible then
+		self:CloseWindow()
+	end
 end
 
 --// Cleanup

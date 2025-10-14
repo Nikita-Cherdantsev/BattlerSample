@@ -152,26 +152,8 @@ function PlaytimeHandler:SetupOpenButton()
 end
 
 function PlaytimeHandler:SetupCloseButton()
-	-- Look for close button in the playtime frame
-	local closeButton = self.PlaytimeFrame:FindFirstChild("TopPanel")
-	if closeButton then
-		closeButton = closeButton:FindFirstChild("BtnClose")
-		if closeButton then
-			closeButton = closeButton:FindFirstChild("Button")
-		end
-	end
-	
-	if not closeButton then
-		warn("PlaytimeHandler: Close button not found - you may need to add a CloseButton to Playtime frame")
-		return
-	end
-
-	local connection = closeButton.MouseButton1Click:Connect(function()
-		self:CloseWindow()
-	end)
-
-	table.insert(self.Connections, connection)
-	print("✅ PlaytimeHandler: Close button connected")
+	-- Close button is now handled by CloseButtonHandler
+	-- No need to set up individual close button here
 end
 
 function PlaytimeHandler:SetupClaimButtons()
@@ -465,6 +447,9 @@ function PlaytimeHandler:OpenWindow()
 
 	-- Show playtime gui
 	self.PlaytimeFrame.Visible = true
+	
+	-- Register with close button handler
+	self:RegisterWithCloseButton(true)
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities then
@@ -513,6 +498,9 @@ function PlaytimeHandler:CloseWindow()
 		self.UI.BottomPanel.Visible = true
 	end
 	
+	-- Register with close button handler
+	self:RegisterWithCloseButton(false)
+	
 	print("✅ PlaytimeHandler: Playtime window closed")
 end
 
@@ -560,6 +548,31 @@ function PlaytimeHandler:Cleanup()
 
 	self._initialized = false
 	print("✅ PlaytimeHandler cleaned up")
+end
+
+-- Register with close button handler
+function PlaytimeHandler:RegisterWithCloseButton(isOpen)
+	local success, CloseButtonHandler = pcall(function()
+		return require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	end)
+	
+	if success and CloseButtonHandler then
+		local instance = CloseButtonHandler.GetInstance()
+		if instance and instance.isInitialized then
+			if isOpen then
+				instance:RegisterFrameOpen("Playtime")
+			else
+				instance:RegisterFrameClosed("Playtime")
+			end
+		end
+	end
+end
+
+-- Close the playtime frame (called by close button handler)
+function PlaytimeHandler:CloseFrame()
+	if self.PlaytimeFrame and self.PlaytimeFrame.Visible then
+		self:CloseWindow()
+	end
 end
 
 return PlaytimeHandler

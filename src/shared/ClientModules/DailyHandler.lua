@@ -155,20 +155,8 @@ function DailyHandler:SetupClaimButton()
 end
 
 function DailyHandler:SetupCloseButton()
-	-- Look for close button in the daily frame
-	local closeButton = self.DailyFrame.TopPanel.BtnClose.Button
-	
-	if not closeButton then
-		warn("DailyHandler: Close button not found - you may need to add a CloseButton to Daily frame")
-		return
-	end
-
-	local connection = closeButton.MouseButton1Click:Connect(function()
-		self:CloseWindow()
-	end)
-
-	table.insert(self.Connections, connection)
-	print("✅ DailyHandler: Close button connected")
+	-- Close button is now handled by CloseButtonHandler
+	-- No need to set up individual close button here
 end
 
 function DailyHandler:OpenWindow(rewards, day, isClaimed)
@@ -187,6 +175,9 @@ function DailyHandler:OpenWindow(rewards, day, isClaimed)
 	self:UpdateDaily(rewards, day, isClaimed)
 
 	self.DailyFrame.Visible = true
+	
+	-- Register with close button handler
+	self:RegisterWithCloseButton(true)
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities then
@@ -279,12 +270,40 @@ function DailyHandler:CloseWindow()
 		self.UI.BottomPanel.Visible = true
 	end
 	
+	-- Register with close button handler
+	self:RegisterWithCloseButton(false)
+	
 	print("✅ DailyHandler: Daily window closed")
 end
 
 --// Public Methods
 function DailyHandler:IsInitialized()
 	return self._initialized
+end
+
+-- Register with close button handler
+function DailyHandler:RegisterWithCloseButton(isOpen)
+	local success, CloseButtonHandler = pcall(function()
+		return require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	end)
+	
+	if success and CloseButtonHandler then
+		local instance = CloseButtonHandler.GetInstance()
+		if instance and instance.isInitialized then
+			if isOpen then
+				instance:RegisterFrameOpen("Daily")
+			else
+				instance:RegisterFrameClosed("Daily")
+			end
+		end
+	end
+end
+
+-- Close the daily frame (called by close button handler)
+function DailyHandler:CloseFrame()
+	if self.DailyFrame and self.DailyFrame.Visible then
+		self:CloseWindow()
+	end
 end
 
 --// Cleanup

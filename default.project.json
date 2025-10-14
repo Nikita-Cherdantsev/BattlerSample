@@ -26,6 +26,9 @@
         },
         "CurrencyHandler": {
           "$path": "src/shared/ClientModules/CurrencyHandler.lua"
+        },
+        "CloseButtonHandler": {
+          "$path": "src/shared/ClientModules/CloseButtonHandler.lua"
         }
       },
       "Modules": {

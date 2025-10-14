@@ -23,7 +23,6 @@ function CurrencyHandler.Init()
 	if self:SetupCurrencyUI() then
 		self:SetupProfileUpdatedHandler()
 		self.isInitialized = true
-		print("✅ CurrencyHandler: Initialized successfully")
 	else
 		warn("❌ CurrencyHandler: Failed to initialize")
 	end
@@ -74,7 +73,6 @@ function CurrencyHandler:SetupCurrencyUI()
 		return false
 	end
 	
-	print("✅ CurrencyHandler: Found currency UI elements")
 	return true
 end
 
@@ -88,7 +86,6 @@ function CurrencyHandler:SetupProfileUpdatedHandler()
 		end
 	end)
 	
-	print("✅ CurrencyHandler: Profile update handler connected")
 end
 
 -- Update currency display
@@ -104,7 +101,6 @@ function CurrencyHandler:UpdateCurrencyDisplay(currencies)
 	self.HardCurrencyLabel.Text = tostring(hardCurrency)
 	self.SoftCurrencyLabel.Text = tostring(softCurrency)
 	
-	print("💰 CurrencyHandler: Updated currencies - Hard:", hardCurrency, "Soft:", softCurrency)
 end
 
 -- Manual currency update (for debugging)
@@ -116,7 +112,6 @@ function CurrencyHandler:UpdateCurrencies(hard, soft)
 	self.HardCurrencyLabel.Text = tostring(hard or 0)
 	self.SoftCurrencyLabel.Text = tostring(soft or 0)
 	
-	print("💰 CurrencyHandler: Manually updated currencies - Hard:", hard, "Soft:", soft)
 end
 
 -- Cleanup
