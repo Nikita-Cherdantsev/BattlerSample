@@ -23,6 +23,9 @@
         },
         "ShopHandler": {
           "$path": "src/shared/ClientModules/ShopHandler.lua"
+        },
+        "CurrencyHandler": {
+          "$path": "src/shared/ClientModules/CurrencyHandler.lua"
         }
       },
       "Modules": {

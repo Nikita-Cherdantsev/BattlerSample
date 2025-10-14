@@ -32,7 +32,7 @@ BoxTypes.DurationSeconds = {
 
 -- Hard currency cost to buy a box from store
 BoxTypes.StoreHardCost = {
-	[BoxTypes.BoxRarity.UNCOMMON] = 7,
+	[BoxTypes.BoxRarity.UNCOMMON] = 40,
 	[BoxTypes.BoxRarity.RARE] = 22,
 	[BoxTypes.BoxRarity.EPIC] = 55,
 	[BoxTypes.BoxRarity.LEGENDARY] = 100

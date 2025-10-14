@@ -453,6 +453,76 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 end
 
+--- Open a shop-purchased lootbox immediately (creates temporary lootbox, opens it, grants rewards)
+function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
+	-- Validate rarity (rarity should already be lowercase from client)
+	local validRarities = {
+		[BoxTypes.BoxRarity.UNCOMMON] = true,
+		[BoxTypes.BoxRarity.RARE] = true,
+		[BoxTypes.BoxRarity.EPIC] = true,
+		[BoxTypes.BoxRarity.LEGENDARY] = true
+	}
+	if not validRarities[rarity] then
+		return { ok = false, error = LootboxService.ErrorCodes.INVALID_RARITY }
+	end
+	
+	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
+		-- Create a temporary lootbox with the specified rarity
+		local lootbox = {
+			id = BoxRoller.GenerateBoxId(),
+			rarity = rarity,
+			state = BoxTypes.BoxState.READY, -- Ready to open immediately
+			seed = BoxRoller.GenerateSeed(),
+			startedAt = serverNow,
+			unlocksAt = serverNow -- Already unlocked
+		}
+		
+		-- Roll rewards using the lootbox's seed
+		local rng = SeededRNG.New(lootbox.seed)
+		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
+		
+		-- Grant rewards directly
+		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
+		if rewards.hardDelta > 0 then
+			profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
+		end
+		
+		-- Grant card copies
+		if rewards.card then
+			local cardId = rewards.card.cardId
+			local copies = rewards.card.copies
+			
+			if profile.collection[cardId] then
+				profile.collection[cardId].count = profile.collection[cardId].count + copies
+				print("🎁 [LootboxService.OpenShopLootbox] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
+			else
+				profile.collection[cardId] = { count = copies, level = 1 }
+				print("🎁 [LootboxService.OpenShopLootbox] NEW CARD unlocked:", cardId, "with", copies, "copies")
+			end
+			
+			-- Debug: Show all cards in collection
+			local collectionCount = 0
+			for _ in pairs(profile.collection) do
+				collectionCount = collectionCount + 1
+			end
+			print("🎁 [LootboxService.OpenShopLootbox] Total unique cards in collection:", collectionCount)
+		end
+		
+		-- Preserve profile invariants
+		profile = preserveProfileInvariants(profile, userId)
+		
+		-- Return the rewards for logging
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = 0 }
+		return profile
+	end)
+	
+	if not success then
+		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	end
+	
+	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+end
+
 --- Speed up unlocking (complete timer and make lootbox ready)
 function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 	-- Validate slot index

@@ -347,6 +347,7 @@ local function HandleRequestSetDeck(player, requestData)
 		SendProfileUpdate(player, {
 			deck = profile.deck,
 			collectionSummary = CreateCollectionSummary(collection),
+			currencies = profile.currencies,
 			updatedAt = os.time()
 		})
 		
@@ -553,7 +554,8 @@ local function HandleRequestLootState(player, requestData)
 	-- Send lootbox state
 	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
 	})
 	
 	LogInfo(player, "Loot state sent successfully")
@@ -698,7 +700,8 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	-- Send success response with loot state
 	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
 	})
 	
 	Logger.debug("lootboxes: op=discard userId=%s pending=true->false result=OK", tostring(player.UserId))
@@ -771,7 +774,8 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	-- Send success response with loot state
 	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
 	})
 	
 	Logger.debug("lootboxes: op=replace userId=%s slot=%d pending=true->false result=OK", tostring(player.UserId), requestData.slotIndex)
@@ -844,7 +848,8 @@ local function HandleRequestStartUnlock(player, requestData)
 	-- Send success response with loot state
 	SendProfileUpdate(player, {
 		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox
+		pendingLootbox = profile.pendingLootbox,
+		currencies = profile.currencies
 	})
 	
 	Logger.debug("lootboxes: op=start userId=%s slot=%d state=Idle->Unlocking result=OK", tostring(player.UserId), requestData.slotIndex)
@@ -1206,11 +1211,20 @@ local function HandleRequestBuyLootbox(player, requestData)
 		serverNow = os.time()
 	}
 	
-	if not result.ok then
+	if result.ok then
+		-- Include rewards and collection summary for successful purchase
+		if result.rewards then
+			payload.rewards = result.rewards
+			local collection = PlayerDataService.GetCollection(player)
+			payload.collectionSummary = CreateCollectionSummary(collection)
+		end
+		LogInfo(player, "Shop lootbox purchase successful")
+	else
 		payload.error = {
 			code = result.error,
 			message = result.error
 		}
+		LogWarning(player, "Shop lootbox purchase failed: %s", tostring(result.error))
 	end
 	
 	SendProfileUpdate(player, payload)

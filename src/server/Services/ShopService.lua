@@ -38,7 +38,6 @@ function ShopService.ProcessReceipt(receiptInfo)
 	
 	-- Check if receipt already processed
 	if processedReceipts[purchaseId] then
-		warn(string.format("[ShopService] Receipt %s already processed for player %d", purchaseId, playerId))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	
@@ -59,7 +58,8 @@ function ShopService.ProcessReceipt(receiptInfo)
 			
 			-- Credit hard currency (base + bonus)
 			local totalHard = pack.hardAmount + (pack.additionalHard or 0)
-			profile.currencies.hard = (profile.currencies.hard or 0) + totalHard
+			local oldHard = profile.currencies.hard or 0
+			profile.currencies.hard = oldHard + totalHard
 			profile.updatedAt = os.time()
 			
 			return profile
@@ -83,7 +83,20 @@ function ShopService.ProcessReceipt(receiptInfo)
 		processedAt = os.time()
 	}
 	
-	Logger.shopPurchase(playerId, pack.id, profile.currencies.hard - totalHard, totalHard, profile.currencies.hard)
+	-- Get the new total from the updated profile
+	local updatedProfile = ProfileManager.GetCachedProfile(playerId)
+	local newTotal = 0
+	
+	if updatedProfile and updatedProfile.currencies and updatedProfile.currencies.hard then
+		newTotal = updatedProfile.currencies.hard
+	else
+		-- Fallback: calculate new total manually
+		newTotal = totalHard -- At least show what was added
+	end
+	
+	print("💰 Pack purchased: " .. pack.id .. " | Added: " .. totalHard .. " hard currency | New total: " .. newTotal)
+	
+	Logger.shopPurchase(playerId, pack.id, newTotal - totalHard, totalHard, newTotal)
 	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
@@ -126,12 +139,16 @@ end
 
 -- Buy lootbox with hard currency
 function ShopService.BuyLootbox(playerId, rarity)
+	print("🔍 [ShopService.BuyLootbox] Received rarity:", rarity, "type:", type(rarity))
+	
 	-- Validate rarity
 	if not BoxTypes.StoreHardCost[rarity] then
+		print("❌ [ShopService.BuyLootbox] Invalid rarity:", rarity, "Available rarities:", BoxTypes.StoreHardCost)
 		return { ok = false, error = ShopService.ErrorCodes.INVALID_REQUEST }
 	end
 	
 	local cost = BoxTypes.StoreHardCost[rarity]
+	print("✅ [ShopService.BuyLootbox] Valid rarity:", rarity, "cost:", cost)
 	
 	-- Load profile
 	local profile = ProfileManager.LoadProfile(playerId)
@@ -144,13 +161,11 @@ function ShopService.BuyLootbox(playerId, rarity)
 		return { ok = false, error = ShopService.ErrorCodes.INSUFFICIENT_HARD }
 	end
 	
-	-- Try to add lootbox (handles capacity/overflow automatically)
-	local addResult = LootboxService.TryAddBox(playerId, rarity, "shop_purchase")
-	if not addResult.ok then
-		if addResult.error == LootboxService.ErrorCodes.BOX_CAPACITY_FULL_PENDING then
-			return { ok = false, error = ShopService.ErrorCodes.LOOTBOX_CAPACITY_FULL }
-		end
-		return { ok = false, error = addResult.error }
+	-- Open lootbox immediately instead of adding to stack
+	-- This provides instant gratification for shop purchases
+	local openResult = LootboxService.OpenShopLootbox(playerId, rarity, os.time())
+	if not openResult.ok then
+		return { ok = false, error = openResult.error }
 	end
 	
 	-- Atomically deduct hard currency and update profile
@@ -176,7 +191,7 @@ function ShopService.BuyLootbox(playerId, rarity)
 	
 	Logger.debug("Player %d bought %s lootbox for %d hard currency", playerId, rarity, cost)
 	
-	return { ok = true, cost = cost }
+	return { ok = true, cost = cost, rewards = openResult.rewards }
 end
 
 -- Initialize MarketplaceService receipt processing

@@ -539,7 +539,7 @@ function ShopHandler:SetupProfileUpdatedHandler()
 					
 					-- Prompt Roblox purchase
 					local success, purchaseError = pcall(function()
-						MarketplaceService:PromptProductPurchase(player, payload.devProductId)
+						MarketplaceService:PromptProductPurchase(Players.LocalPlayer, payload.devProductId)
 					end)
 					
 					if not success then

@@ -19,6 +19,7 @@ local CardInfoHandler = require(ReplicatedStorage.ClientModules.CardInfoHandler)
 local LootboxUIHandler = require(ReplicatedStorage.ClientModules.LootboxUIHandler)
 local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
+local CurrencyHandler = require(ReplicatedStorage.ClientModules.CurrencyHandler)
 
 -- State
 local isInitialized = false
@@ -48,7 +49,8 @@ function MainController:Init()
 		{name = "CardInfoHandler", handler = CardInfoHandler},
 		{name = "LootboxUIHandler", handler = LootboxUIHandler},
 		{name = "PlaytimeHandler", handler = PlaytimeHandler},
-		{name = "ShopHandler", handler = ShopHandler}
+		{name = "ShopHandler", handler = ShopHandler},
+		{name = "CurrencyHandler", handler = CurrencyHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do
