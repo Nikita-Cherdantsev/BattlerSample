@@ -98,6 +98,17 @@ function ShopService.ProcessReceipt(receiptInfo)
 	
 	Logger.shopPurchase(playerId, pack.id, newTotal - totalHard, totalHard, newTotal)
 	
+	-- Send ProfileUpdated event to client to update currency display
+	local Players = game:GetService("Players")
+	local player = Players:GetPlayerByUserId(playerId)
+	if player then
+		local ProfileUpdated = game.ReplicatedStorage.Network:WaitForChild("ProfileUpdated")
+		ProfileUpdated:FireClient(player, {
+			currencies = updatedProfile.currencies,
+			serverNow = os.time()
+		})
+	end
+	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
