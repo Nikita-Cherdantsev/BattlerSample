@@ -5,6 +5,7 @@ local TweenService = game:GetService("TweenService")
 
 --// Modules
 local NetworkClient = require(game.StarterPlayer.StarterPlayerScripts.Controllers.NetworkClient)
+local Manifest = require(ReplicatedStorage.Modules.Assets.Manifest)
 
 --// Module
 local LootboxUIHandler = {}
@@ -44,6 +45,7 @@ function LootboxUIHandler:Init(controller)
 	self.timerConnections = {}
 	self.currentProfile = nil
 	self.lootboxPacks = {}
+	self.LootboxOpening = {}
 	self._updatingStates = false -- Prevent infinite loops
 
 	-- Setup Lootbox UI
@@ -60,7 +62,6 @@ function LootboxUIHandler:SetupLootboxUI()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	
 	-- Wait for GameUI
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
@@ -72,7 +73,6 @@ function LootboxUIHandler:SetupLootboxUI()
 			return
 		end
 	end
-	
 	
 	-- Find the lootbox packs container
 	-- Path: GameUI -> BottomPanel -> Packs -> Outline -> Content
@@ -100,16 +100,29 @@ function LootboxUIHandler:SetupLootboxUI()
 		return
 	end
 	
-	
 	-- Store UI reference
 	self.UI = gameGui
 	self.LootboxContainer = content
+	self.LootboxOpening.Main = gameGui:FindFirstChild("LootboxOpening")
+	
+	-- Store lootbox opening UI references in organized structure
+	self.LootboxOpening.Lootbox = self.LootboxOpening.Main:WaitForChild("Lootbox")
+	self.LootboxOpening.Effect = self.LootboxOpening.Lootbox:WaitForChild("Effect")
+	self.LootboxOpening.Card = self.LootboxOpening.Main:WaitForChild("Card")
+	self.LootboxOpening.FirstEffect = self.LootboxOpening.Effect:WaitForChild("1")
+	self.LootboxOpening.Currencies = self.LootboxOpening.Main:WaitForChild("Currencies")
+	self.LootboxOpening.Currency1 = self.LootboxOpening.Currencies:WaitForChild("Currency1")
+	self.LootboxOpening.Currency2 = self.LootboxOpening.Currencies:WaitForChild("Currency2")
+	self.LootboxOpening.BtnClaim = self.LootboxOpening.Main:WaitForChild("BtnClaim")
 	
 	-- Setup each lootbox pack (Pack1, Pack2, Pack3, Pack4)
 	self:SetupLootboxPacks()
 	
 	-- Setup ProfileUpdated event handler
 	self:SetupProfileUpdatedHandler()
+	
+	-- Setup claim button handler
+	self:SetupClaimButtonHandler()
 	
 	print("✅ LootboxUIHandler: Lootbox UI setup completed")
 end
@@ -477,6 +490,9 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 					print("🎁 [LootboxUIHandler] Card reward:", payload.rewards.card.cardId, "x" .. payload.rewards.card.copies)
 				end
 				print("🎁 [LootboxUIHandler] Total rewards received:", rewardCount, "items")
+				
+				-- Open lootbox UI with rewards (for shop purchases)
+				self:OpenLootbox(payload.rewards)
 			end
 			
 			-- Update UI
@@ -487,6 +503,282 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 	
 	-- Store connection for cleanup
 	table.insert(self.Connections, connection)
+end
+
+function LootboxUIHandler:SetupClaimButtonHandler()
+	-- Setup BtnClaim click handler
+	if self.LootboxOpening.BtnClaim and self.LootboxOpening.BtnClaim:IsA("TextButton") then
+		local connection = self.LootboxOpening.BtnClaim.MouseButton1Click:Connect(function()
+			self:OnClaimButtonClicked()
+		end)
+		table.insert(self.Connections, connection)
+	end
+end
+
+-- Claim button click handler
+function LootboxUIHandler:OnClaimButtonClicked()
+	-- Hide LootboxOpening with TweenUI.FadeOut
+	if self.LootboxOpening.Main then
+		if self.Utilities and self.Utilities.TweenUI then
+			self.Utilities.TweenUI.FadeOut(self.LootboxOpening.Main, 0.3, function()
+				self.LootboxOpening.Main.Visible = false
+			end)
+		else
+			-- Fallback: no animation
+			self.LootboxOpening.Main.Visible = false
+		end
+	end
+end
+
+local fadeInTime = 0.5
+local fadeOutTime = 0.3
+local effectDelay = 0.05
+local cardTweenTime = 1
+local angle = 5
+
+-- Reset lootbox state
+function LootboxUIHandler:ResetLootboxAnimationState(rewards)
+	self.LootboxOpening.Main.Visible = true
+	self.LootboxOpening.Lootbox.Size = UDim2.fromScale(0, 0)
+	self.LootboxOpening.Lootbox.Visible = true
+	
+	self.LootboxOpening.Card.Size = UDim2.fromScale(0, 0)
+	self.LootboxOpening.Card.Visible = false
+	
+	self.LootboxOpening.Currencies.Visible = true
+	self.LootboxOpening.Currency1.Size = UDim2.fromScale(0, 0)
+	self.LootboxOpening.Currency2.Size = UDim2.fromScale(0, 0)
+	self.LootboxOpening.Currency1.Visible = false
+	self.LootboxOpening.Currency2.Visible = false
+	
+	self.LootboxOpening.BtnClaim.Visible = false
+	
+	self.LootboxOpening.FirstEffect.Rotation = 0 
+	self.LootboxOpening.FirstEffect.Visible = true 
+	
+	for i = 2, 9 do
+		local img = self.LootboxOpening.Effect:WaitForChild(tostring(i))
+		if img then
+			img.Visible = false
+		end
+	end
+	
+	-- Configure Card frame based on rewards
+	if rewards and rewards.card then
+		self:ConfigureCardFromRewards(rewards)
+	end
+	
+	-- Configure currencies based on rewards
+	if rewards then
+		self:ConfigureCurrenciesFromRewards(rewards)
+	end
+end
+
+-- Configure Card frame from rewards data
+function LootboxUIHandler:ConfigureCardFromRewards(rewards)
+	if not rewards.card then return end
+	
+	local card = rewards.card
+	local cardId = card.cardId
+	local copies = card.copies
+	
+	-- Get card rarity from CardCatalog
+	local CardCatalog = require(ReplicatedStorage.Modules.Cards.CardCatalog)
+	local cardData = CardCatalog.GetCard(cardId)
+	if not cardData then
+		warn("LootboxUIHandler: Card data not found for cardId:", cardId)
+		return
+	end
+	
+	local rarity = cardData.rarity:gsub("^%l", string.upper)
+	local rarityColor = Manifest.RarityColors[rarity]
+	
+	if not rarityColor then
+		warn("LootboxUIHandler: Rarity color not found for rarity:", rarity)
+		return
+	end
+	
+	-- Configure Card BackgroundColor3 based on rarity
+	self.LootboxOpening.Card.BackgroundColor3 = rarityColor
+	
+	-- Configure ImgHero with asset ID from Manifest
+	local imgHero = self.LootboxOpening.Card.Content:FindFirstChild("ImgHero")
+	if imgHero then
+		local assetId = Manifest.CardImages[cardId]
+		if assetId then
+			imgHero.Image = assetId
+		else
+			warn("LootboxUIHandler: Card image not found for cardId:", cardId)
+		end
+	end
+	
+	-- Configure Progress TxtValue with copies count
+	local progressTxtValue = self.LootboxOpening.Card.Content.Progress:FindFirstChild("TxtValue")
+	if progressTxtValue then
+		progressTxtValue.Text = "x" .. copies
+	end
+	
+	-- Configure Level BackgroundColor3 based on rarity
+	local level = self.LootboxOpening.Card.Content:FindFirstChild("Level")
+	if level then
+		level.BackgroundColor3 = rarityColor
+		
+		-- Configure UICornerOverlay1
+		local uiCornerOverlay1 = level:FindFirstChild("UICornerOverlay1")
+		if uiCornerOverlay1 then
+			uiCornerOverlay1.BackgroundColor3 = rarityColor
+		end
+		
+		-- Configure UICornerOverlay2
+		local uiCornerOverlay2 = level:FindFirstChild("UICornerOverlay2")
+		if uiCornerOverlay2 then
+			uiCornerOverlay2.BackgroundColor3 = rarityColor
+		end
+		
+		-- Configure Level Content TxtValue
+		local levelContent = level:FindFirstChild("Content")
+		if levelContent then
+			local levelTxtValue = levelContent:FindFirstChild("TxtValue")
+			if levelTxtValue then
+				levelTxtValue.Text = "1"
+			end
+		end
+	end
+
+	local attackFrame = self.LootboxOpening.Card.Content:FindFirstChild("Attack")
+	if attackFrame then
+		attackFrame.Visible = true
+		local attackValue = attackFrame:FindFirstChild("Value")
+		if attackValue then
+			attackValue = attackValue:FindFirstChild("TxtValue")
+			if attackValue then
+				attackValue.Text = tostring(cardData.base.atk)
+			end
+		end
+	end
+
+	local healthFrame = self.LootboxOpening.Card.Content:FindFirstChild("Health")
+	if healthFrame then
+		healthFrame.Visible = true
+		local healthValue = healthFrame:FindFirstChild("Value")
+		if healthValue then
+			healthValue = healthValue:FindFirstChild("TxtValue")
+			if healthValue then
+				healthValue.Text = tostring(cardData.base.hp)
+			end
+		end
+	end
+
+	local defenseFrame = self.LootboxOpening.Card.Content:FindFirstChild("Defense")
+	if defenseFrame then
+		defenseFrame.Visible = cardData.base.defence > 0
+		local defenseValue = defenseFrame:FindFirstChild("Value")
+		if defenseValue then
+			defenseValue = defenseValue:FindFirstChild("TxtValue")
+			if defenseValue then
+				defenseValue.Text = tostring(cardData.base.defence)
+			end
+		end
+	end
+end
+
+-- Configure currencies from rewards data
+function LootboxUIHandler:ConfigureCurrenciesFromRewards(rewards)
+	-- Configure Currency1 (hard currency) - hide if hardDelta == 0
+	if rewards.hardDelta == 0 then
+		self.LootboxOpening.Currency1.Visible = false
+	else
+		self.LootboxOpening.Currency1.Visible = true
+		local currency1TxtValue = self.LootboxOpening.Currency1:FindFirstChild("TxtValue")
+		if currency1TxtValue then
+			currency1TxtValue.Text = tostring(rewards.hardDelta)
+		end
+	end
+	
+	-- Configure Currency2 (soft currency) - hide if softDelta == 0
+	if rewards.softDelta == 0 then
+		self.LootboxOpening.Currency2.Visible = false
+	else
+		self.LootboxOpening.Currency2.Visible = true
+		local currency2TxtValue = self.LootboxOpening.Currency2:FindFirstChild("TxtValue")
+		if currency2TxtValue then
+			currency2TxtValue.Text = tostring(rewards.softDelta)
+		end
+	end
+end
+
+function LootboxUIHandler:OpenLootbox(rewards)
+	self:ResetLootboxAnimationState(rewards)
+
+	if self.Utilities and self.Utilities.TweenUI then
+		self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Main, 0.3, function ()
+			LootboxUIHandler:OpenLootboxAnimation(rewards)
+		end)
+	end
+end
+
+-- Main animation
+function LootboxUIHandler:OpenLootboxAnimation(rewards)
+	-- First effect
+	local tweenInfo = TweenInfo.new(
+		0.1,
+		Enum.EasingStyle.Sine,
+		Enum.EasingDirection.InOut,
+		-1, -- endless cycle
+		true -- reverse
+	)
+
+	local effectAngleTween = TweenService:Create(self.LootboxOpening.FirstEffect, tweenInfo, {Rotation = angle})
+	effectAngleTween:Play()
+	
+	if self.Utilities and self.Utilities.TweenUI then
+		self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Lootbox, fadeInTime)
+	end
+	local ballSizeTween = TweenService:Create(self.LootboxOpening.Lootbox, TweenInfo.new(fadeInTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.237, 0.423) })
+	
+	ballSizeTween:Play()
+	ballSizeTween.Completed:Wait()
+	effectAngleTween:Cancel()
+	
+	ballSizeTween = TweenService:Create(self.LootboxOpening.Lootbox, TweenInfo.new(3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.331, 0.589) })
+	ballSizeTween:Play()
+	
+	for i = 2, 9 do
+		local img = self.LootboxOpening.Effect:WaitForChild(tostring(i))
+		if img then
+			img.Visible = true
+		end
+		if i ~= 9 then
+			task.wait(effectDelay)
+		end
+	end
+
+	if self.Utilities and self.Utilities.TweenUI then
+		self.Utilities.TweenUI.FadeOut(self.LootboxOpening.Lootbox, fadeOutTime, function ()
+			self.LootboxOpening.Lootbox.Visible = false
+		end)
+	end
+
+	self.LootboxOpening.Card.Visible = true
+	
+	if self.Utilities and self.Utilities.TweenUI then
+		self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Card, cardTweenTime)
+	end
+	local cardSizeTween = TweenService:Create(self.LootboxOpening.Card, TweenInfo.new(cardTweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.094, 0.166) })
+	
+	cardSizeTween:Play()
+	cardSizeTween.Completed:Wait()
+
+	self.LootboxOpening.Currency1.Visible = rewards.hardDelta > 0
+	self.LootboxOpening.Currency2.Visible = rewards.softDelta > 0
+
+	local hardSizeTween = TweenService:Create(self.LootboxOpening.Currency1, TweenInfo.new(fadeInTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.281, 0.558) })
+	hardSizeTween:Play()
+	
+	local softSizeTween = TweenService:Create(self.LootboxOpening.Currency2, TweenInfo.new(fadeInTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.281, 0.558) })
+	softSizeTween:Play()
+
+	self.LootboxOpening.BtnClaim.Visible = true
 end
 
 -- Public Methods
