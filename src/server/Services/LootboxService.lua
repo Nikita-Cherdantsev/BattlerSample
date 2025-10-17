@@ -481,6 +481,8 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 		local rng = SeededRNG.New(lootbox.seed)
 		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
 		
+		rewards.rarity = lootbox.rarity
+
 		-- Grant rewards directly
 		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
 		if rewards.hardDelta > 0 then

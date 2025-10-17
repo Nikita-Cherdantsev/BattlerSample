@@ -541,36 +541,71 @@ function LootboxUIHandler:ResetLootboxAnimationState(rewards)
 	self.LootboxOpening.Main.Visible = true
 	self.LootboxOpening.Lootbox.Size = UDim2.fromScale(0, 0)
 	self.LootboxOpening.Lootbox.Visible = true
-	
+
 	self.LootboxOpening.Card.Size = UDim2.fromScale(0, 0)
 	self.LootboxOpening.Card.Visible = false
-	
+
 	self.LootboxOpening.Currencies.Visible = true
 	self.LootboxOpening.Currency1.Size = UDim2.fromScale(0, 0)
 	self.LootboxOpening.Currency2.Size = UDim2.fromScale(0, 0)
 	self.LootboxOpening.Currency1.Visible = false
 	self.LootboxOpening.Currency2.Visible = false
-	
+
 	self.LootboxOpening.BtnClaim.Visible = false
-	
+
 	self.LootboxOpening.FirstEffect.Rotation = 0 
 	self.LootboxOpening.FirstEffect.Visible = true 
-	
+
 	for i = 2, 9 do
 		local img = self.LootboxOpening.Effect:WaitForChild(tostring(i))
 		if img then
 			img.Visible = false
 		end
 	end
-	
+
+	-- Configure Lootbox frame based on rewards
+	if rewards and rewards.rarity then
+		self:ConfigureLootboxFromRewards(rewards)
+	end
+
 	-- Configure Card frame based on rewards
 	if rewards and rewards.card then
 		self:ConfigureCardFromRewards(rewards)
 	end
-	
+
 	-- Configure currencies based on rewards
 	if rewards then
 		self:ConfigureCurrenciesFromRewards(rewards)
+	end
+end
+
+-- Configure Lootbox frame from rewards data
+function LootboxUIHandler:ConfigureLootboxFromRewards(rewards)
+	if not rewards.rarity then return end
+
+	local rarityKey = tostring(rewards.rarity):lower()
+	local lootboxAnimData = Manifest.LootboxAnim[rarityKey]
+	if lootboxAnimData then
+		-- Top/Bot
+		local container = self.LootboxOpening.Lootbox:FindFirstChild("Container")
+		if container then
+			local top = container:FindFirstChild("Top")
+			if top and lootboxAnimData.Top then
+				top.Image = lootboxAnimData.Top
+			end
+			local bottom = container:FindFirstChild("Bottom")
+			if bottom and lootboxAnimData.Bottom then
+				bottom.Image = lootboxAnimData.Bottom
+			end
+		end
+		-- Effect
+		local effects = self.LootboxOpening.Effect:GetChildren()
+		for i = 1, #effects do
+			local img = self.LootboxOpening.Effect:FindFirstChild(tostring(i))
+			if img and lootboxAnimData.Effect and lootboxAnimData.Effect[i] then
+				img.Image = lootboxAnimData.Effect[i]
+			end
+		end
 	end
 end
 
@@ -764,7 +799,7 @@ function LootboxUIHandler:OpenLootboxAnimation(rewards)
 	if self.Utilities and self.Utilities.TweenUI then
 		self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Card, cardTweenTime)
 	end
-	local cardSizeTween = TweenService:Create(self.LootboxOpening.Card, TweenInfo.new(cardTweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.094, 0.166) })
+	local cardSizeTween = TweenService:Create(self.LootboxOpening.Card, TweenInfo.new(cardTweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.13, 0.232) })
 	
 	cardSizeTween:Play()
 	cardSizeTween.Completed:Wait()

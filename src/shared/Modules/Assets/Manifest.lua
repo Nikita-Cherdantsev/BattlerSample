@@ -157,10 +157,34 @@ Manifest.Currency = {
 
 -- Lootbox assets
 Manifest.Lootbox = {
-	Uncommon = "rbxassetid://120779810734215",
-	Rare = "rbxassetid://98806708559504",
-	Epic = "rbxassetid://105047250692120",
-	Legendary = "rbxassetid://84532524924272",
+	Uncommon = "rbxassetid://89282766853868",
+	Rare = "rbxassetid://101339929529268",
+	Epic = "rbxassetid://126842532670644",
+	Legendary = "rbxassetid://97529044228503",
+}
+
+-- Lootbox anim assets
+Manifest.LootboxAnim = {
+	uncommon = {
+		Top = "rbxassetid://130178701444824",
+		Bottom = "rbxassetid://134916852758166",
+		Effect = { "rbxassetid://138609239917929", "rbxassetid://138152724119273", "rbxassetid://78217260112507", "rbxassetid://130256116979758", "rbxassetid://78997569604723", "rbxassetid://93793895260312", "rbxassetid://130044734420001", "rbxassetid://125085367368860", "rbxassetid://132486347800696" }
+	},
+	rare = {
+		Top = "rbxassetid://95695991051373",
+		Bottom = "rbxassetid://134088390235259",
+		Effect = { "rbxassetid://133533064489723", "rbxassetid://119284129992824", "rbxassetid://74373958630243", "rbxassetid://130383974043606", "rbxassetid://130383974043606", "rbxassetid://86375500481068", "rbxassetid://122640553631910", "rbxassetid://102040214355842", "rbxassetid://100226062235696" }
+	},
+	epic = {
+		Top = "rbxassetid://78472072581939",
+		Bottom = "rbxassetid://93167227394861",
+		Effect = { "rbxassetid://93042203174235", "rbxassetid://98870717387764", "rbxassetid://136624895138961", "rbxassetid://97030585597763", "rbxassetid://102057980873314", "rbxassetid://77018502694497", "rbxassetid://114723663601795", "rbxassetid://106954828181826", "rbxassetid://105652584432829" }
+	},
+	legendary = {
+		Top = "rbxassetid://83365080815856",
+		Bottom = "rbxassetid://107683379681855",
+		Effect = { "rbxassetid://77153254218282", "rbxassetid://84195107308895", "rbxassetid://76189099664826", "rbxassetid://131683368931977", "rbxassetid://72188300897821", "rbxassetid://83851593069023", "rbxassetid://122540075644721", "rbxassetid://123576293484357", "rbxassetid://133522906356477" }
+	},
 }
 
 -- Pattern assets
