@@ -106,8 +106,8 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Invalid deck"
 	end
 	
-	if #profile.deck ~= 6 then
-		return false, "Deck must contain exactly 6 cards"
+	if #profile.deck > 6 then
+		return false, "Deck cannot contain more than 6 cards"
 	end
 	
 	-- Validate each card in deck

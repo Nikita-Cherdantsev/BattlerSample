@@ -21,8 +21,8 @@ end
 -- Convert deck to grid layout for UI rendering
 -- Returns stable list: { {slot=1,row=1,col=3}, {slot=2,row=2,col=3}, ... }
 function BoardLayout.gridForDeck(deckIds)
-	if not deckIds or #deckIds ~= 6 then
-		error("Deck must have exactly 6 cards")
+	if not deckIds or #deckIds > 6 then
+		error("Deck must have between 0 and 6 cards")
 	end
 	
 	-- Visual mapping for 3×2 grid:

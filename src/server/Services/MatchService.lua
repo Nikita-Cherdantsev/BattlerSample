@@ -347,8 +347,8 @@ local function ValidatePlayerDeck(player)
 		return false, "NO_DECK", "Player has no active deck"
 	end
 	
-	-- Validate deck using shared tooling
-	local isValid, errorMessage = DeckValidator.ValidateDeck(profile.deck)
+	-- Validate deck for battle (must have exactly 6 cards)
+	local isValid, errorMessage = DeckValidator.ValidateDeckForBattle(profile.deck)
 	if not isValid then
 		LogWarning(player, "Deck validation failed: %s", errorMessage)
 		return false, "INVALID_DECK", "Invalid deck: " .. errorMessage

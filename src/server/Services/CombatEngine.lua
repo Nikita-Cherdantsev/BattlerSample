@@ -63,8 +63,8 @@ end
 local function InitializeBoard(deck, playerId, collection)
 	local board = {}
 	
-	-- Validate deck and map to board
-	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
+	-- Validate deck for battle (must have exactly 6 cards)
+	local isValid, errorMessage = DeckValidator.ValidateDeckForBattle(deck)
 	if not isValid then
 		error("Invalid deck for player " .. playerId .. ": " .. errorMessage)
 	end

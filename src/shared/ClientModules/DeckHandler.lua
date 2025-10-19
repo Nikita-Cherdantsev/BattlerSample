@@ -247,11 +247,11 @@ function DeckHandler:UpdateCollectionDisplay()
 		end
 	end
 	
-	-- Get all cards from catalog, sorted by slot number
-	local allCards = CardCatalog.GetCardsSortedBySlot()
+	-- Get all cards from catalog and sort them by ownership and name
+	local sortedCards = self:SortCollectionCards()
 	
 	-- Create collection cards
-	for _, cardData in ipairs(allCards) do
+	for _, cardData in ipairs(sortedCards) do
 		local cardInstance = self:CreateCollectionCard(cardData)
 		if cardInstance then
 			cardInstance.Parent = self.CollectionContainer
@@ -259,6 +259,69 @@ function DeckHandler:UpdateCollectionDisplay()
 	end
 	
 	print("✅ DeckHandler: Collection display updated")
+end
+
+-- Sort collection cards: owned cards first (by name), then unowned cards (by name)
+function DeckHandler:SortCollectionCards()
+	if not self.currentProfile or not self.currentProfile.collection then
+		-- If no profile, return all cards sorted by name
+		local allCards = {}
+		for id, card in pairs(CardCatalog.Cards) do
+			table.insert(allCards, card)
+		end
+		
+		table.sort(allCards, function(a, b)
+			return a.name < b.name
+		end)
+		
+		return allCards
+	end
+	
+	local ownedCards = {}
+	local unownedCards = {}
+	
+	-- Get all cards from catalog
+	for id, card in pairs(CardCatalog.Cards) do
+		-- Check if player owns this card
+		local collectionData = self.currentProfile.collection[id]
+		local isOwned = false
+		
+		if collectionData then
+			-- Check if it's a number (old format) or table (new format)
+			if type(collectionData) == "number" then
+				isOwned = collectionData > 0
+			elseif type(collectionData) == "table" and collectionData.count then
+				isOwned = collectionData.count > 0
+			end
+		end
+		
+		if isOwned then
+			table.insert(ownedCards, card)
+		else
+			table.insert(unownedCards, card)
+		end
+	end
+	
+	-- Sort owned cards by slotNumber
+	table.sort(ownedCards, function(a, b)
+		return a.slotNumber < b.slotNumber
+	end)
+	
+	-- Sort unowned cards by slotNumber
+	table.sort(unownedCards, function(a, b)
+		return a.slotNumber < b.slotNumber
+	end)
+	
+	-- Combine: owned cards first, then unowned cards
+	local sortedCards = {}
+	for _, card in ipairs(ownedCards) do
+		table.insert(sortedCards, card)
+	end
+	for _, card in ipairs(unownedCards) do
+		table.insert(sortedCards, card)
+	end
+	
+	return sortedCards
 end
 
 function DeckHandler:UpdateDeckDisplay()

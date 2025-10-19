@@ -84,8 +84,8 @@ end
 
 -- Request deck update
 function NetworkClient.requestSetDeck(deckIds)
-	if not deckIds or #deckIds ~= 6 then
-		return false, "Invalid deck: must have exactly 6 cards"
+	if not deckIds or #deckIds > 6 then
+		return false, "Invalid deck: must have between 0 and 6 cards"
 	end
 	
 	if debounce(lastSetDeckRequest) then

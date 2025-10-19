@@ -19,6 +19,7 @@ CloseButtonHandler.CloseButtonFrame = nil
 
 -- State tracking
 CloseButtonHandler.openFrames = {} -- Track which frames are currently open
+CloseButtonHandler.frameStack = {} -- Track the order of opened frames (most recent last)
 CloseButtonHandler.isInitialized = false
 
 -- Initialize the close button handler
@@ -106,6 +107,8 @@ end
 function CloseButtonHandler:RegisterFrameOpen(frameName)
 	if not self.openFrames[frameName] then
 		self.openFrames[frameName] = true
+		-- Add to frame stack (most recent at the end)
+		table.insert(self.frameStack, frameName)
 		self:UpdateCloseButtonVisibility()
 	end
 end
@@ -114,6 +117,13 @@ end
 function CloseButtonHandler:RegisterFrameClosed(frameName)
 	if self.openFrames[frameName] then
 		self.openFrames[frameName] = nil
+		-- Remove from frame stack
+		for i = #self.frameStack, 1, -1 do
+			if self.frameStack[i] == frameName then
+				table.remove(self.frameStack, i)
+				break
+			end
+		end
 		self:UpdateCloseButtonVisibility()
 	end
 end
@@ -144,11 +154,10 @@ end
 
 -- Handle close button click
 function CloseButtonHandler:HandleCloseButtonClick()
-	-- Close all open frames
-	for frameName, isOpen in pairs(self.openFrames) do
-		if isOpen then
-			self:CloseFrame(frameName)
-		end
+	-- Close only the most recent frame (last in stack)
+	if #self.frameStack > 0 then
+		local mostRecentFrame = self.frameStack[#self.frameStack]
+		self:CloseFrame(mostRecentFrame)
 	end
 end
 
@@ -172,12 +181,19 @@ function CloseButtonHandler:CloseFrame(frameName)
 		if DeckHandler and DeckHandler.CloseFrame then
 			DeckHandler:CloseFrame()
 		end
+	elseif frameName == "CardInfo" then
+		-- Close CardInfo frame
+		local CardInfoHandler = require(game.ReplicatedStorage.ClientModules.CardInfoHandler)
+		if CardInfoHandler and CardInfoHandler.CloseFrame then
+			CardInfoHandler:CloseFrame()
+		end
 	end
 end
 
 -- Cleanup
 function CloseButtonHandler:Cleanup()
 	self.openFrames = {}
+	self.frameStack = {}
 	self.isInitialized = false
 	_instance = nil
 end

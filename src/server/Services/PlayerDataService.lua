@@ -356,10 +356,13 @@ function PlayerDataService.LevelUpCard(player, cardId)
 	-- Perform atomic level-up via ProfileManager
 	local success = ProfileManager.LevelUpCard(player.UserId, cardId, cost.requiredCount, cost.softAmount)
 	if success then
-		-- Update local cache atomically
-		collectionEntry.count = collectionEntry.count - cost.requiredCount
-		collectionEntry.level = collectionEntry.level + 1
-		profile.currencies.soft = profile.currencies.soft - cost.softAmount
+		-- ProfileManager already updated the profile, just refresh local cache
+		profile = ProfileManager.GetCachedProfile(player.UserId)
+		if not profile then
+			return false, "Failed to refresh profile after level-up"
+		end
+		-- Update the local cache reference
+		playerProfiles[player] = profile
 		
 		-- Check if this card is in the active deck and recompute squad power
 		local isInDeck = false

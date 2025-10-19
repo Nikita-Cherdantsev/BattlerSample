@@ -15,8 +15,8 @@ local DeckVM = {}
 
 -- Build a deck view model
 function DeckVM.build(deckIds, collection)
-	if not deckIds or #deckIds ~= 6 then
-		error("DeckVM.build: deckIds must have exactly 6 cards")
+	if not deckIds or #deckIds > 6 then
+		error("DeckVM.build: deckIds must have between 0 and 6 cards")
 	end
 	
 	collection = collection or {}

@@ -139,12 +139,46 @@ local function IsProfileValid(profile)
 end
 
 local function ValidateDeckAgainstCatalog(deck)
-	-- Use shared DeckValidator (v2: enforces uniqueness, no collection count check)
+	-- Use shared DeckValidator (v2: enforces uniqueness, no collection count check, allows 0-6 cards)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
 	if not isValid then
 		return false, "Deck validation failed: " .. errorMessage
 	end
 	return true
+end
+
+-- Helper function to sort deck by slotNumber and assign to slots 1-6
+local function SortDeckBySlotNumber(deckIds)
+	if not deckIds or #deckIds == 0 then
+		return {}
+	end
+	
+	-- Create array of card data with slotNumber for sorting
+	local cardData = {}
+	for _, cardId in ipairs(deckIds) do
+		local card = CardCatalog.GetCard(cardId)
+		if card and card.slotNumber then
+			table.insert(cardData, {
+				cardId = cardId,
+				slotNumber = card.slotNumber
+			})
+		else
+			warn("ProfileManager: Card missing slotNumber:", cardId)
+		end
+	end
+	
+	-- Sort by slotNumber (ascending)
+	table.sort(cardData, function(a, b)
+		return a.slotNumber < b.slotNumber
+	end)
+	
+	-- Create sorted deck array (slots 1-6 filled in order)
+	local sortedDeck = {}
+	for i = 1, math.min(#cardData, 6) do
+		sortedDeck[i] = cardData[i].cardId
+	end
+	
+	return sortedDeck
 end
 
 -- Compute squad power from deck and collection levels
@@ -346,14 +380,17 @@ function ProfileManager.UpdateDeck(userId, newDeck)
 		return false, "Profile not loaded"
 	end
 	
-	-- Validate deck against catalog (v2: enforces uniqueness, no collection count check)
-	local isValid, errorMessage = ValidateDeckAgainstCatalog(newDeck)
+	-- Sort deck by slotNumber to maintain proper slot assignment
+	local sortedDeck = SortDeckBySlotNumber(newDeck)
+	
+	-- Validate deck against catalog (v2: enforces uniqueness, no collection count check, allows 0-6 cards)
+	local isValid, errorMessage = ValidateDeckAgainstCatalog(sortedDeck)
 	if not isValid then
 		return false, errorMessage
 	end
 	
-	-- Update the deck
-	profile.deck = newDeck
+	-- Update the deck with sorted order
+	profile.deck = sortedDeck
 	
 	-- Compute and update squad power
 	profile.squadPower = ComputeSquadPower(profile)

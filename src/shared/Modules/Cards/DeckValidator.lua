@@ -22,7 +22,7 @@ DeckValidator.BoardSlots = {
 
 -- Validation errors
 DeckValidator.Errors = {
-	INVALID_SIZE = "Deck must contain exactly 6 cards",
+	INVALID_SIZE = "Deck must contain between 0 and 6 cards",
 	UNKNOWN_CARD = "Card ID not found in catalog: %s",
 	INVALID_CARD_ID = "Invalid card ID format: %s",
 	DUPLICATE_CARD = "Duplicate card ID in deck: %s"
@@ -30,8 +30,8 @@ DeckValidator.Errors = {
 
 -- Validate deck composition (v2 rules)
 function DeckValidator.ValidateDeck(deck)
-	-- Check deck size
-	if not deck or #deck ~= DeckValidator.TOTAL_SLOTS then
+	-- Check deck size (allow 0-6 cards for deck management, but require exactly 6 for battles)
+	if not deck or #deck > DeckValidator.TOTAL_SLOTS then
 		return false, DeckValidator.Errors.INVALID_SIZE
 	end
 	
@@ -56,9 +56,20 @@ function DeckValidator.ValidateDeck(deck)
 	return true, nil
 end
 
+-- Validate deck for battles (requires exactly 6 cards)
+function DeckValidator.ValidateDeckForBattle(deck)
+	-- Check deck size (must be exactly 6 for battles)
+	if not deck or #deck ~= DeckValidator.TOTAL_SLOTS then
+		return false, "Deck must contain exactly 6 cards for battles"
+	end
+	
+	-- Use the same validation logic as regular deck validation
+	return DeckValidator.ValidateDeck(deck)
+end
+
 -- Map validated deck to board layout by slotNumber order
 function DeckValidator.MapDeckToBoard(deck)
-	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
+	local isValid, errorMessage = DeckValidator.ValidateDeckForBattle(deck)
 	if not isValid then
 		error("Cannot map invalid deck: " .. errorMessage)
 	end

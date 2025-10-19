@@ -18,6 +18,8 @@ local CardInfoHandler = {}
 --// State
 CardInfoHandler.Connections = {}
 CardInfoHandler._initialized = false
+CardInfoHandler.originalGradientColor = nil -- Store original gradient color
+CardInfoHandler.originalBevelColor = nil -- Store original bevel background color
 
 CardInfoHandler.isAnimating = false
 CardInfoHandler.currentProfile = nil
@@ -102,6 +104,9 @@ function CardInfoHandler:SetupCardInfo()
 	self:SetupCloseButton()
 	self:SetupActionButtons()
 	
+	-- Store original gradient color for level up button
+	self:StoreOriginalGradientColor()
+	
 	-- Setup ProfileUpdated event handler
 	self:SetupProfileUpdatedHandler()
 	
@@ -110,24 +115,29 @@ end
 
 function CardInfoHandler:SetupCloseButton()
 	-- Look for close button in the card info frame
-	-- Path: GameUI.CardInfo.TopPanel.BtnClose.Button
 	local topPanel = self.CardInfoFrame:FindFirstChild("TopPanel")
-	if topPanel then
-		local btnClose = topPanel:FindFirstChild("BtnClose")
-		if btnClose then
-			local closeButton = btnClose:FindFirstChild("Button")
-			if closeButton then
-				local connection = closeButton.MouseButton1Click:Connect(function()
-					self:CloseWindow()
-				end)
-				table.insert(self.Connections, connection)
-				print("✅ CardInfoHandler: Close button connected")
-				return
-			end
-		end
+	if not topPanel then
+		warn("CardInfoHandler: TopPanel not found")
+		return
 	end
 	
-	warn("CardInfoHandler: Close button not found - you may need to add a CloseButton to CardInfo frame")
+	local btnClose = topPanel:FindFirstChild("BtnClose")
+	if not btnClose then
+		warn("CardInfoHandler: BtnClose not found")
+		return
+	end
+	
+	local closeButton = btnClose:FindFirstChild("Button")
+	if not closeButton then
+		warn("CardInfoHandler: Close Button not found")
+		return
+	end
+	
+	local connection = closeButton.MouseButton1Click:Connect(function()
+		self:CloseWindow()
+	end)
+	table.insert(self.Connections, connection)
+	print("✅ CardInfoHandler: Close button connected")
 end
 
 function CardInfoHandler:SetupActionButtons()
@@ -167,6 +177,32 @@ function CardInfoHandler:SetupActionButtons()
 		table.insert(self.Connections, connection)
 		print("✅ CardInfoHandler: Level up button connected")
 	end
+end
+
+function CardInfoHandler:StoreOriginalGradientColor()
+	-- Store the original gradient color and bevel color for the level up button
+	local buttons = self.CardInfoFrame:FindFirstChild("Buttons")
+	if not buttons then
+		return
+	end
+	
+	local btnLevelUp = buttons:FindFirstChild("BtnLevelUp")
+	if btnLevelUp then
+		local bevel = btnLevelUp:FindFirstChild("Bevel")
+		if bevel then
+			local main = bevel:FindFirstChild("Main")
+			if main then
+				local uiGradient = main:FindFirstChild("UIGradient")
+				if uiGradient then
+					-- Store the original gradient color
+					self.originalGradientColor = uiGradient.Color
+				end
+			end
+			-- Store the original bevel background color
+			self.originalBevelColor = bevel.BackgroundColor3
+		end
+	end
+	print("✅ CardInfoHandler: Original gradient and bevel colors stored")
 end
 
 function CardInfoHandler:LoadProfileData()
@@ -251,43 +287,33 @@ end
 function CardInfoHandler:UpdateHeader(cardData, rarityColors, rarityGradientColors)
 	-- Update character name
 	local mainContent = self.CardInfoFrame:FindFirstChild("Main")
-	if mainContent then
-		local content = mainContent:FindFirstChild("Content")
-		if content then
-			local header = content:FindFirstChild("Header")
-			if header then
-				local headerContent = header:FindFirstChild("Content")
-				if headerContent then
-					local textLabel = headerContent:FindFirstChild("Text")
-					if textLabel then
-						local textLabelChild = textLabel:FindFirstChild("TextLabel")
-						if textLabelChild then
-							textLabelChild.Text = cardData.name
-						end
-					end
+	if not mainContent then return end
+	
+	local content = mainContent:FindFirstChild("Content")
+	if not content then return end
+	
+	local header = content:FindFirstChild("Header")
+	if not header then return end
+	
+	local headerContent = header:FindFirstChild("Content")
+	if not headerContent then return end
+	
+	local text = headerContent:FindFirstChild("Text")
+	if text then
+		local textLabelChild = text:FindFirstChild("TextLabel")
+		if textLabelChild then
+			textLabelChild.Text = cardData.name
+		end
+	end
 					
-					-- Update header gradient
-					local uiGradient = headerContent:FindFirstChild("UIGradient")
-					if uiGradient then
-						local rarityKey = cardData.rarity:gsub("^%l", string.upper)
-						uiGradient.Color = ColorSequence.new({
-							ColorSequenceKeypoint.new(0, rarityColors[rarityKey] or Color3.new(1, 1, 1)),
-							ColorSequenceKeypoint.new(1, rarityGradientColors[rarityKey] or Color3.new(0.5, 0.5, 0.5))
-						})
-					end
-				end
-			end
-		end
-		
-		-- Update main frame gradient
-		local uiGradient = mainContent:FindFirstChild("UIGradient")
-		if uiGradient then
-			local rarityKey = cardData.rarity:gsub("^%l", string.upper)
-			uiGradient.Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, rarityColors[rarityKey] or Color3.new(1, 1, 1)),
-				ColorSequenceKeypoint.new(1, rarityGradientColors[rarityKey] or Color3.new(0.5, 0.5, 0.5))
-			})
-		end
+	-- Update header gradient
+	local uiGradient = headerContent:FindFirstChild("UIGradient")
+	if uiGradient then
+		local rarityKey = cardData.rarity:gsub("^%l", string.upper)
+		uiGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, rarityColors[rarityKey] or Color3.new(1, 1, 1)),
+			ColorSequenceKeypoint.new(1, rarityGradientColors[rarityKey] or Color3.new(0.5, 0.5, 0.5))
+		})
 	end
 end
 
@@ -297,11 +323,11 @@ function CardInfoHandler:UpdateLevelSection(cardData, hasCard, cardLevel, cardCo
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local levelSection = content:FindFirstChild("Level")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local levelSection = innerContent:FindFirstChild("Level")
 	if not levelSection then return end
 	
 	-- Update level text
@@ -337,11 +363,11 @@ function CardInfoHandler:UpdateProgressSection(cardData, hasCard, cardLevel, car
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local progressSection = content:FindFirstChild("Progress")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local progressSection = innerContent:FindFirstChild("Progress")
 	if not progressSection then return end
 	
 	local txtValue = progressSection:FindFirstChild("TxtValue")
@@ -365,11 +391,11 @@ function CardInfoHandler:UpdateCardImage(cardData, hasCard)
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local cardSection = content:FindFirstChild("Card")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local cardSection = innerContent:FindFirstChild("Card")
 	if not cardSection then return end
 	
 	-- Update background color based on rarity and ownership
@@ -402,11 +428,11 @@ function CardInfoHandler:UpdateRaritySection(cardData, rarityColors)
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local raritySection = content:FindFirstChild("Rarity")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local raritySection = innerContent:FindFirstChild("Rarity")
 	if not raritySection then return end
 	
 	-- Update rarity background color
@@ -464,11 +490,11 @@ function CardInfoHandler:UpdateParameter(paramName, currentValue, nextValue, can
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local params = content:FindFirstChild("Params")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local params = innerContent:FindFirstChild("Params")
 	if not params then return end
 	
 	local paramSection = params:FindFirstChild(paramName)
@@ -511,11 +537,11 @@ function CardInfoHandler:SetParameterVisibility(paramName, visible)
 	
 	local content = mainContent:FindFirstChild("Content")
 	if not content then return end
-
-	content = content:FindFirstChild("Content")
-	if not content then return end
 	
-	local params = content:FindFirstChild("Params")
+	local innerContent = content:FindFirstChild("Content")
+	if not innerContent then return end
+	
+	local params = innerContent:FindFirstChild("Params")
 	if not params then return end
 	
 	local paramSection = params:FindFirstChild(paramName)
@@ -542,17 +568,24 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 		end
 	end
 	
-	-- Check if can level up
+	-- Check level-up requirements separately
+	local hasEnoughCards = false
+	local hasEnoughSoftCurrency = false
 	local canLevelUp = false
-	if hasCard then
-		local canLevel, reason = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
-		canLevelUp = canLevel
+	
+	if hasCard and cardLevel < 10 then
+		local nextLevel = cardLevel + 1
+		local cost = CardLevels.GetLevelCost(nextLevel)
 		
-		-- Debug: Log level-up status
-		if canLevel then
-			print("✅ CardInfoHandler: Card", cardData.id, "CAN level up - Level:", cardLevel, "Count:", cardCount, "Soft:", self.currentProfile.currencies.soft)
-		else
-			print("❌ CardInfoHandler: Card", cardData.id, "CANNOT level up - Level:", cardLevel, "Count:", cardCount, "Reason:", reason)
+		if cost then
+			-- Check if player has enough card copies
+			hasEnoughCards = cardCount >= cost.requiredCount
+			
+			-- Check if player has enough soft currency
+			hasEnoughSoftCurrency = self.currentProfile.currencies.soft >= cost.softAmount
+			
+			-- Can level up only if both requirements are met
+			canLevelUp = hasEnoughCards and hasEnoughSoftCurrency
 		end
 	end
 	
@@ -571,20 +604,63 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 	-- Update Level Up button
 	local btnLevelUp = buttons:FindFirstChild("BtnLevelUp")
 	if btnLevelUp then
-		btnLevelUp.Visible = canLevelUp
+		-- Show button if player has enough cards (regardless of soft currency)
+		btnLevelUp.Visible = hasEnoughCards
 		
-		-- Update level up cost text
-		local bevel = btnLevelUp:FindFirstChild("Bevel")
-		if bevel then
-			local main = bevel:FindFirstChild("Main")
-			if main then
-				local txtValue = main:FindFirstChild("TxtValue")
-				if txtValue and hasCard then
-					local levelUpCost = CardLevels.GetLevelUpCost(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
-					if levelUpCost then
-						txtValue.Text = tostring(levelUpCost.softAmount)
+		if hasEnoughCards then
+			-- Update level up cost text
+			local bevel = btnLevelUp:FindFirstChild("Bevel")
+			if bevel then
+				local main = bevel:FindFirstChild("Main")
+				if main then
+					local txtValue = main:FindFirstChild("TxtValue")
+					if txtValue then
+						local nextLevel = cardLevel + 1
+						local cost = CardLevels.GetLevelCost(nextLevel)
+						if cost then
+							txtValue.Text = tostring(cost.softAmount)
+						end
 					end
 				end
+				
+				-- Update button state based on soft currency availability
+				local uiGradient = bevel:FindFirstChild("Main"):FindFirstChild("UIGradient")
+				local notEnoughEnergyLabel = bevel:FindFirstChild("NotEnoughEnergyLabel")
+				
+			if hasEnoughSoftCurrency then
+				-- Enough soft currency: Active button with original gradient
+				btnLevelUp.Active = true
+				btnLevelUp.Selectable = true
+				if uiGradient then
+					-- Restore original gradient color
+					if self.originalGradientColor then
+						uiGradient.Color = self.originalGradientColor
+					else
+						-- Fallback to default gradient if original wasn't stored
+						uiGradient.Color = ColorSequence.new{
+							ColorSequenceKeypoint.new(0, Color3.new(0.2, 0.6, 1)), -- Blue
+							ColorSequenceKeypoint.new(1, Color3.new(0.8, 0.9, 1))   -- Light blue/white
+						}
+					end
+				end
+				-- Set Bevel background to active color (140, 58, 0)
+				bevel.BackgroundColor3 = Color3.fromRGB(140, 58, 0)
+				if notEnoughEnergyLabel then
+					notEnoughEnergyLabel.Visible = false
+				end
+			else
+				-- Not enough soft currency: Inactive button with gray gradient
+				btnLevelUp.Active = false
+				btnLevelUp.Selectable = false
+				if uiGradient then
+					uiGradient.Color = ColorSequence.new(Color3.new(0.5, 0.5, 0.5)) -- Gray gradient
+				end
+				-- Set Bevel background to dark gray
+				bevel.BackgroundColor3 = Color3.fromRGB(80, 80, 80) -- Dark gray
+				if notEnoughEnergyLabel then
+					notEnoughEnergyLabel.Visible = true
+				end
+			end
 			end
 		end
 	end
@@ -611,6 +687,42 @@ function CardInfoHandler:IsCardInDeck(cardId)
 		end
 	end
 	return false
+end
+
+-- Helper function to sort deck by slotNumber and assign to slots 1-6
+function CardInfoHandler:SortDeckBySlotNumber(deckIds)
+	if not deckIds or #deckIds == 0 then
+		return {}
+	end
+	
+	local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
+	
+	-- Create array of card data with slotNumber for sorting
+	local cardData = {}
+	for _, cardId in ipairs(deckIds) do
+		local card = CardCatalog.GetCard(cardId)
+		if card and card.slotNumber then
+			table.insert(cardData, {
+				cardId = cardId,
+				slotNumber = card.slotNumber
+			})
+		else
+			warn("CardInfoHandler: Card missing slotNumber:", cardId)
+		end
+	end
+	
+	-- Sort by slotNumber (ascending)
+	table.sort(cardData, function(a, b)
+		return a.slotNumber < b.slotNumber
+	end)
+	
+	-- Create sorted deck array (slots 1-6 filled in order)
+	local sortedDeck = {}
+	for i = 1, math.min(#cardData, 6) do
+		sortedDeck[i] = cardData[i].cardId
+	end
+	
+	return sortedDeck
 end
 
 -- Helper function to add a card to the deck
@@ -642,12 +754,15 @@ function CardInfoHandler:AddCardToDeck(cardId)
 		return false
 	end
 	
-	-- Create new deck with the card added
-	local newDeck = {}
+	-- Create new deck with the card added and sort by slotNumber
+	local tempDeck = {}
 	for i, deckCardId in ipairs(currentDeck) do
-		newDeck[i] = deckCardId
+		tempDeck[i] = deckCardId
 	end
-	newDeck[#newDeck + 1] = cardId
+	tempDeck[#tempDeck + 1] = cardId
+	
+	-- Sort the deck by slotNumber to maintain proper slot assignment
+	local newDeck = self:SortDeckBySlotNumber(tempDeck)
 	
 	-- Validate the new deck using DeckValidator
 	local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
@@ -695,13 +810,16 @@ function CardInfoHandler:RemoveCardFromDeck(cardId)
 	
 	-- Get current deck and remove the card
 	local currentDeck = self.currentProfile.deck or {}
-	local newDeck = {}
+	local tempDeck = {}
 	
 	for i, deckCardId in ipairs(currentDeck) do
 		if deckCardId ~= cardId then
-			newDeck[#newDeck + 1] = deckCardId
+			tempDeck[#tempDeck + 1] = deckCardId
 		end
 	end
+	
+	-- Sort the remaining deck by slotNumber to maintain proper slot assignment
+	local newDeck = self:SortDeckBySlotNumber(tempDeck)
 	
 	-- Note: Deck can have less than 6 cards, so we don't validate size here
 	-- But we still validate the structure
@@ -763,6 +881,15 @@ function CardInfoHandler:OnLevelUpButtonClicked()
 		return
 	end
 	
+	-- Check if button is active (should not be clickable when gray)
+	local buttons = self.CardInfoFrame:FindFirstChild("Buttons")
+	if buttons then
+		local btnLevelUp = buttons:FindFirstChild("BtnLevelUp")
+		if btnLevelUp and not btnLevelUp.Active then
+			warn("CardInfoHandler: Level up button is inactive - cannot level up")
+			return
+		end
+	end
 	
 	-- Get current card data for validation
 	local collectionEntry = self.currentProfile.collection and self.currentProfile.collection[self.currentCardId]
@@ -808,6 +935,13 @@ function CardInfoHandler:OpenWindow()
 		self.isAnimating = false
 	end
 	
+	-- Register with CloseButtonHandler
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameOpen("CardInfo")
+	end
+	
 	print("✅ CardInfoHandler: card info window opened")
 end
 
@@ -829,11 +963,23 @@ function CardInfoHandler:CloseWindow()
 		self.isAnimating = false
 	end
 	
+	-- Unregister from CloseButtonHandler
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameClosed("CardInfo")
+	end
+	
 	-- Clear current card data
 	self.currentCardId = nil
 	self.currentSlotIndex = nil
 	
 	print("✅ CardInfoHandler: card info window closed")
+end
+
+-- CloseFrame method for CloseButtonHandler compatibility
+function CardInfoHandler:CloseFrame()
+	self:CloseWindow()
 end
 
 function CardInfoHandler:SetupProfileUpdatedHandler()
