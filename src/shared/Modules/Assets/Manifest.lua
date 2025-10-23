@@ -103,6 +103,15 @@ Manifest.RarityColorsGradient = {
 	["Legendary"] = Color3.fromHex("BE3D1D"),    
 }
 
+-- Difficulty colors
+Manifest.DifficultyColors = {
+	["easy"] = Color3.fromHex("FFFFFF"),     
+	["normal"] = Color3.fromHex("FFD7D7"),         
+	["hard"] = Color3.fromHex("FFAAAA"),         
+	["nightmare"] = Color3.fromHex("FF7474"), 
+	["hell"] = Color3.fromHex("FF5252"),    
+}
+
 -- Placeholder assets (fallbacks)
 Manifest.Placeholder = {
 	card = "rbxassetid://0",   -- TODO: Add placeholder card image
@@ -157,10 +166,11 @@ Manifest.Currency = {
 
 -- Lootbox assets
 Manifest.Lootbox = {
-	Uncommon = "rbxassetid://89282766853868",
-	Rare = "rbxassetid://101339929529268",
-	Epic = "rbxassetid://126842532670644",
-	Legendary = "rbxassetid://97529044228503",
+	uncommon = "rbxassetid://89282766853868",
+	rare = "rbxassetid://101339929529268",
+	epic = "rbxassetid://126842532670644",
+	legendary = "rbxassetid://97529044228503",
+	onepiece = "rbxassetid://102889022061002",
 }
 
 -- Lootbox anim assets
@@ -184,6 +194,11 @@ Manifest.LootboxAnim = {
 		Top = "rbxassetid://83365080815856",
 		Bottom = "rbxassetid://107683379681855",
 		Effect = { "rbxassetid://77153254218282", "rbxassetid://84195107308895", "rbxassetid://76189099664826", "rbxassetid://131683368931977", "rbxassetid://72188300897821", "rbxassetid://83851593069023", "rbxassetid://122540075644721", "rbxassetid://123576293484357", "rbxassetid://133522906356477" }
+	},
+	onepiece = {
+		Top = "rbxassetid://140304271996250",
+		Bottom = "rbxassetid://122770685979106",
+		Effect = { "rbxassetid://71127879203094", "rbxassetid://128775506748334", "rbxassetid://136387718516229", "rbxassetid://135375027049840", "rbxassetid://77753992317045", "rbxassetid://117664848542301", "rbxassetid://87544241404428", "rbxassetid://81477979577034", "rbxassetid://77530158252992" }
 	},
 }
 

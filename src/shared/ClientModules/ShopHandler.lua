@@ -52,6 +52,7 @@ function ShopHandler:SetupShop()
 	
 	self.UI = gameGui
 	self.ShopFrame = shopFrame
+	self.InputBlocker = shopFrame:FindFirstChild("InputBlocker")
 	
 	shopFrame.Visible = false
 	
@@ -286,6 +287,8 @@ function ShopHandler:SetupLootboxButtons()
 end
 
 function ShopHandler:HandlePackPurchase(packId, button)
+	self:BlockInput(true, packId)
+	
 	button.Active = false
 	
 	self.pendingPurchase = {
@@ -315,6 +318,8 @@ function ShopHandler:HandlePackPurchase(packId, button)
 end
 
 function ShopHandler:HandleLootboxPurchase(rarity, button)
+	self:BlockInput(true, rarity)
+
 	button.Active = false
 
 	self.pendingPurchase = {
@@ -329,6 +334,16 @@ function ShopHandler:HandleLootboxPurchase(rarity, button)
 		button.Active = true
 		return
 	end
+end
+
+function ShopHandler:BlockInput(value, source)
+	if not self.InputBlocker then
+		warn("ShopHandler: No self.InputBlocker!")
+		return
+	end
+
+	self.InputBlocker.Active = value
+	self.InputBlocker.Visible = value
 end
 
 function ShopHandler:ShowError(title, message)
@@ -426,6 +441,7 @@ function ShopHandler:SetupProfileUpdatedHandler()
 				button.Text = ""
 
 				button.Active = true
+				self:BlockInput(false, self.pendingPurchase.lootboxId or self.pendingPurchase.packId)
 				self.pendingPurchase = nil
 			end
 			return
@@ -436,7 +452,6 @@ function ShopHandler:SetupProfileUpdatedHandler()
 			if pending.packId == payload.packId then
 				if payload.error then
 					self:ShowError("Pack Purchase Failed", payload.error.message or payload.error.code)
-					pending.button.Active = true
 				elseif payload.devProductId then
 					local success, purchaseError = pcall(function()
 						MarketplaceService:PromptProductPurchase(Players.LocalPlayer, payload.devProductId)
@@ -444,13 +459,28 @@ function ShopHandler:SetupProfileUpdatedHandler()
 					
 					if not success then
 						self:ShowError("Purchase Failed", "Could not prompt purchase")
-						pending.button.Active = true
 					end
 				else
 					self:ShowError("Purchase Failed", "Invalid server response")
-					pending.button.Active = true
 				end
 				
+				pending.button.Active = true
+				self:BlockInput(false, self.pendingPurchase.packId)
+				self.pendingPurchase = nil
+			end
+		end
+
+		if payload.rewards and payload.rewards.rarity and self.pendingPurchase then
+			local pending = self.pendingPurchase
+			if pending.lootboxId == payload.rewards.rarity then
+				if payload.error then
+					self:ShowError("Lootbox Purchase Failed", payload.error.message or payload.error.code)
+				else
+					self:ShowError("Purchase Failed", "Invalid server response")
+				end
+				
+				pending.button.Active = true
+				self:BlockInput(false, self.pendingPurchase.lootboxId)
 				self.pendingPurchase = nil
 			end
 		end
