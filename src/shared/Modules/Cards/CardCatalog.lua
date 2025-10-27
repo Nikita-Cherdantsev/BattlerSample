@@ -6,7 +6,8 @@ CardCatalog.Rarities = {
 	UNCOMMON = "uncommon",
 	RARE = "rare",
 	EPIC = "epic",
-	LEGENDARY = "legendary"
+	LEGENDARY = "legendary",
+	ONEPIECE = "onepiece"
 }
 
 -- Class/Role definitions (canon set)
@@ -17,7 +18,7 @@ CardCatalog.Classes = {
 }
 
 -- Base card template
-local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth, description, passive)
+local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth, description, passive, specialBox)
 	-- Use provided growth table or create default if none provided
 	if not growth then
 		growth = {}
@@ -43,7 +44,8 @@ local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth
 		growth = growth,
 		slotNumber = slotNumber or 999,  -- Default high value for sorting
 		description = description or "A mysterious card.",
-		passive = passive or nil
+		passive = passive or nil,
+		specialBox = specialBox or nil
 	}
 end
 
@@ -63,7 +65,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 1, defence = 1 },
 		[9] = { atk = 1, hp = 0, defence = 0 },
 		[10] = { atk = 1, hp = 1, defence = 1 }
-	}, 10, ""),
+	}, 10, "", nil, { CardCatalog.Rarities.ONEPIECE }),
 	
 	["card_200"] = CreateCard("card_200", "Roronoa Zoro", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.TANK, {
 		atk = 1,
@@ -79,7 +81,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 1, defence = 1 },
 		[9] = { atk = 1, hp = 1, defence = 0 },
 		[10] = { atk = 0, hp = 1, defence = 1 }
-	}, 20, ""),
+	}, 20, "", nil, { CardCatalog.Rarities.ONEPIECE }),
 	
 	["card_300"] = CreateCard("card_300", "Rock Lee", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
 		atk = 2,
@@ -127,7 +129,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 1, defence = 0 },
 		[9] = { atk = 1, hp = 0, defence = 1 },
 		[10] = { atk = 0, hp = 1, defence = 0 }
-	}, 50, ""),
+	}, 50, "", { CardCatalog.Rarities.ONEPIECE }),
 	
 	["card_600"] = CreateCard("card_600", "Tenten", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
 		atk = 0,
@@ -159,7 +161,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 0, defence = 0 },
 		[9] = { atk = 1, hp = 1, defence = 1 },
 		[10] = { atk = 0, hp = 0, defence = 0 }
-		}, 70, ""),
+		}, 70, "", nil, { CardCatalog.Rarities.ONEPIECE }),
 	
 	["card_800"] = CreateCard("card_800", "Vegeta", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
 		atk = 6,
@@ -223,7 +225,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 1, defence = 0 },
 		[9] = { atk = 1, hp = 0, defence = 0 },
 		[10] = { atk = 0, hp = 1, defence = 0 }
-		}, 110, ""),
+		}, 110, "", { CardCatalog.Rarities.ONEPIECE }),
 
 	["card_1200"] = CreateCard("card_1200", "All Might", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, {
 		atk = 5,
@@ -255,7 +257,7 @@ CardCatalog.Cards = {
 		[8] = { atk = 0, hp = 1, defence = 0 },
 		[9] = { atk = 1, hp = 0, defence = 0 },
 		[10] = { atk = 0, hp = 1, defence = 0 }
-		}, 130, ""),
+		}, 130, "", nil, { CardCatalog.Rarities.ONEPIECE }),
 
 	["card_1400"] = CreateCard("card_1400", "Krillin", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, {
 		atk = 1,
@@ -352,6 +354,13 @@ function CardCatalog.GetCardsByRarity(rarity)
 	for id, card in pairs(CardCatalog.Cards) do
 		if card.rarity == rarity then
 			table.insert(cards, card)
+		end
+		if card.specialBox then 
+			for i = 1, #card.specialBox do
+				if card.specialBox[i] == rarity then
+					table.insert(cards, card)
+				end
+			end
 		end
 	end
 	return cards

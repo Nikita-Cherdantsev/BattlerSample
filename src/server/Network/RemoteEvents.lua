@@ -598,28 +598,8 @@ local function HandleRequestAddBox(player, requestData)
 		return
 	end
 	
-	-- Normalize and validate rarity (case-insensitive)
-	local rarity = string.lower(tostring(requestData.rarity))
-	local validRarities = {"uncommon", "rare", "epic", "legendary"}
-	local isValidRarity = false
-	for _, validRarity in ipairs(validRarities) do
-		if rarity == validRarity then
-			isValidRarity = true
-			break
-		end
-	end
-	
-	if not isValidRarity then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_RARITY",
-				message = "Invalid rarity: " .. tostring(requestData.rarity) .. ". Valid rarities: uncommon, rare, epic, legendary"
-			}
-		})
-		return
-	end
-	
 	-- Call LootboxService
+	local rarity = string.lower(tostring(requestData.rarity))
 	local result = LootboxService.TryAddBox(player.UserId, rarity, requestData.source)
 	
 	-- Get updated profile

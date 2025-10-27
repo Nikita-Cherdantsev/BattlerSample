@@ -397,6 +397,8 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		-- Roll rewards using stored seed
 		local rng = SeededRNG.New(lootbox.seed)
 		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
+
+		rewards.rarity = lootbox.rarity
 		
 		-- Grant rewards
 		profile.currencies.soft = profile.currencies.soft + rewards.softDelta

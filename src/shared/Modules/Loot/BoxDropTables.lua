@@ -95,6 +95,20 @@ BoxDropTables.LEGENDARY = {
 	}
 }
 
+-- Drop table for One Piece boxes
+BoxDropTables.ONEPIECE = {
+	softRange = { min = 350, max = 450 },
+	hardChance = 0.12, -- 12% chance
+	hardRange = { min = 1, max = 77 }, -- Random int 1..77
+	characterRewards = {
+		{
+			rarity = BoxTypes.BoxRarity.ONEPIECE,
+			probability = 1.00, -- 100%
+			copiesRange = { min = 3, max = 6 }
+		}
+	}
+}
+
 -- Get drop table for a specific rarity
 function BoxDropTables.GetTable(rarity)
 	if rarity == BoxTypes.BoxRarity.UNCOMMON then
@@ -105,6 +119,8 @@ function BoxDropTables.GetTable(rarity)
 		return BoxDropTables.EPIC
 	elseif rarity == BoxTypes.BoxRarity.LEGENDARY then
 		return BoxDropTables.LEGENDARY
+	elseif rarity == BoxTypes.BoxRarity.ONEPIECE then
+		return BoxDropTables.ONEPIECE
 	else
 		error("Invalid rarity: " .. tostring(rarity))
 	end

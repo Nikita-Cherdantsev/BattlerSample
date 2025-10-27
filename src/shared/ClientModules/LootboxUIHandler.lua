@@ -35,6 +35,10 @@ function LootboxUIHandler:Init(controller)
 	else
 		warn("LootboxUIHandler: Could not load Utilities module: " .. tostring(utilities))
 		self.Utilities = {
+			BoxTypes = {
+				GetDuration = function() return 0 end,
+				ComputeInstantOpenCost = function() return 0 end
+			},
 			TweenUI = { FadeIn = function() end, FadeOut = function() end },
 			Blur = { Show = function() end, Hide = function() end }
 		}
@@ -115,11 +119,11 @@ function LootboxUIHandler:SetupLootboxUI()
 	self.LootboxOpening.Currency2 = self.LootboxOpening.Currencies:WaitForChild("Currency2")
 	self.LootboxOpening.BtnClaim = self.LootboxOpening.Main:WaitForChild("BtnClaim")
 	
-	-- Setup each lootbox pack (Pack1, Pack2, Pack3, Pack4)
-	self:SetupLootboxPacks()
-	
 	-- Setup ProfileUpdated event handler
 	self:SetupProfileUpdatedHandler()
+
+	-- Setup each lootbox pack (Pack1, Pack2, Pack3, Pack4)
+	self:SetupLootboxPacks()
 	
 	-- Setup claim button handler
 	self:SetupClaimButtonHandler()
@@ -139,9 +143,11 @@ function LootboxUIHandler:SetupLootboxPacks()
 			self.lootboxPacks[i] = {
 				frame = packFrame,
 				slotIndex = i,
+				imgPack = packFrame:FindFirstChild("ImgPack"),
 				btnUnlock = packFrame:FindFirstChild("BtnUnlock"),
 				btnOpen = packFrame:FindFirstChild("BtnOpen"),
 				btnSpeedUp = packFrame:FindFirstChild("BtnSpeedUp"),
+				notEnoughCurrency = packFrame:FindFirstChild("NotEnoughCurrency"),
 				lockedFrame = packFrame:FindFirstChild("Locked"),
 				timerFrame = packFrame:FindFirstChild("Timer"),
 				timerText = nil
@@ -152,6 +158,13 @@ function LootboxUIHandler:SetupLootboxPacks()
 				local background = self.lootboxPacks[i].timerFrame:FindFirstChild("Background")
 				if background then
 					self.lootboxPacks[i].timerText = background:FindFirstChild("TxtValue")
+				end
+			end
+
+			if self.lootboxPacks[i].btnSpeedUp then
+				local price = self.lootboxPacks[i].btnSpeedUp:FindFirstChild("Bevel"):FindFirstChild("Main"):FindFirstChild("TxtValue")
+				if price then
+					self.lootboxPacks[i].priceText = price
 				end
 			end
 			
@@ -239,7 +252,6 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 				warn("LootboxUIHandler: NetworkClient.requestOpenNow not available")
 			end
 		else
-			-- TODO: Show UI message to top up currency
 		end
 	else
 		warn("LootboxUIHandler: Profile or currencies not available")
@@ -247,7 +259,7 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 end
 
 -- Update lootbox UI state
-function LootboxUIHandler:UpdateLootboxStates()
+function LootboxUIHandler:UpdateLootboxStates(error)
 	if not self.currentProfile or not self.currentProfile.lootboxes then
 		return
 	end
@@ -274,7 +286,6 @@ function LootboxUIHandler:UpdateLootboxStates()
 		end
 	end
 	
-	
 	-- Update each pack
 	for packIndex = 1, 4 do
 		local pack = self.lootboxPacks[packIndex]
@@ -290,8 +301,7 @@ function LootboxUIHandler:UpdateLootboxStates()
 				lootbox.state == "Ready" or
 				lootbox.state == "Consumed"
 			)
-			
-			
+
 			if hasLootbox then
 				-- This slot has a real lootbox
 				if lootbox.state == "Unlocking" then
@@ -301,11 +311,11 @@ function LootboxUIHandler:UpdateLootboxStates()
 						self:UpdatePackState(packIndex, "Ready", lootbox)
 					else
 						-- Still unlocking, show SpeedUp state
-						self:UpdatePackState(packIndex, "Unlocking", lootbox)
+						self:UpdatePackState(packIndex, "Unlocking", lootbox, error)
 					end
 				-- If any other lootbox is unlocking, lock only Idle lootboxes
 				elseif isAnyUnlocking and lootbox.state == "Idle" then
-					self:UpdatePackState(packIndex, "Locked", nil)
+					self:UpdatePackState(packIndex, "Locked", lootbox)
 				-- Otherwise, show normal state
 				else
 					self:UpdatePackState(packIndex, lootbox.state, lootbox)
@@ -326,7 +336,7 @@ function LootboxUIHandler:UpdateLootboxStates()
 	self._updatingStates = false
 end
 
-function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
+function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData, error)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
@@ -338,7 +348,13 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 	if pack.btnSpeedUp then pack.btnSpeedUp.Visible = false end
 	if pack.lockedFrame then pack.lockedFrame.Visible = false end
 	if pack.timerFrame then pack.timerFrame.Visible = false end
-	
+	if pack.imgPack then pack.imgPack.Visible = false end
+
+	-- Set lootbox image
+	if pack.imgPack and lootboxData and lootboxData.rarity then
+		pack.imgPack.Image = Manifest.Lootbox[lootboxData.rarity]
+	end
+
 	-- Show appropriate UI based on state
 	if state == "Idle" then
 		-- Show unlock button
@@ -346,7 +362,7 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.btnUnlock.Visible = true
 			pack.btnUnlock.Active = true
 		end
-		
+		pack.imgPack.Visible = true
 	elseif state == "Unlocking" then
 		-- Show speed up button and timer
 		if pack.btnSpeedUp then
@@ -357,23 +373,31 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData)
 			pack.timerFrame.Visible = true
 			self:StartTimer(packIndex, lootboxData)
 		end
-		
+		pack.imgPack.Visible = true
+		if error then
+			if pack.notEnoughCurrency then
+				pack.notEnoughCurrency.Visible = true
+				task.wait(1)
+				pack.notEnoughCurrency.Visible = false
+			end
+		end
 	elseif state == "Ready" then
 		-- Show open button
 		if pack.btnOpen then
 			pack.btnOpen.Visible = true
 			pack.btnOpen.Active = true
 		end
-		
+		pack.imgPack.Visible = true
 	elseif state == "Locked" then
 		-- Show locked frame
 		if pack.lockedFrame then
 			pack.lockedFrame.Visible = true
 		end
-		
+		pack.imgPack.Visible = true
 	elseif state == "Empty" then
 		-- Empty slots show nothing - no buttons, no interaction
 		-- Players can only get lootboxes through the shop or other means
+		pack.imgPack.Visible = false
 	end
 end
 
@@ -413,6 +437,12 @@ function LootboxUIHandler:StartTimer(packIndex, lootboxData)
 		local minutes = math.floor(remainingTime / 60)
 		local seconds = remainingTime % 60
 		pack.timerText.Text = string.format("%02d:%02d", minutes, seconds)
+
+		if pack.priceText then
+			local totalDuration = self.Utilities.BoxTypes.GetDuration(lootboxData.rarity)
+			local instantCost = self.Utilities.BoxTypes.ComputeInstantOpenCost(lootboxData.rarity, remainingTime, totalDuration)
+			pack.priceText.Text = instantCost
+		end
 	end
 	
 	-- Update immediately
@@ -498,6 +528,10 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 			-- Update UI
 			self:UpdateLootboxStates()
 		else
+			if payload.error and payload.error.code == "INSUFFICIENT_HARD" then
+				local showError = true
+				self:UpdateLootboxStates(showError)
+			end
 		end
 	end)
 	

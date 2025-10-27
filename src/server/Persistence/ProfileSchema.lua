@@ -252,7 +252,7 @@ end
 
 -- Validate lootbox rarity
 function ProfileSchema.IsValidLootboxRarity(rarity)
-	return rarity == "uncommon" or rarity == "rare" or rarity == "epic" or rarity == "legendary"
+	return rarity == "uncommon" or rarity == "rare" or rarity == "epic" or rarity == "legendary" or rarity == "onepiece"
 end
 
 -- Validate lootbox state

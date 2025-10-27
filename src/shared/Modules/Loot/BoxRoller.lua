@@ -80,6 +80,7 @@ end
 -- If no cards of that rarity exist, fallback to next lower rarity with cards
 function BoxRoller.SelectCardByRarity(targetRarity, rng)
 	local rarityOrder = {
+		BoxTypes.BoxRarity.ONEPIECE,
 		BoxTypes.BoxRarity.LEGENDARY,
 		BoxTypes.BoxRarity.EPIC,
 		BoxTypes.BoxRarity.RARE,

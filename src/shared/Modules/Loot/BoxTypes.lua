@@ -11,7 +11,8 @@ BoxTypes.BoxRarity = {
 	UNCOMMON = "uncommon",
 	RARE = "rare", 
 	EPIC = "epic",
-	LEGENDARY = "legendary"
+	LEGENDARY = "legendary",
+	ONEPIECE = "onepiece"
 }
 
 -- Box state enum
@@ -27,7 +28,8 @@ BoxTypes.DurationSeconds = {
 	[BoxTypes.BoxRarity.UNCOMMON] = 7 * 60,    -- 7 minutes
 	[BoxTypes.BoxRarity.RARE] = 30 * 60,       -- 30 minutes
 	[BoxTypes.BoxRarity.EPIC] = 120 * 60,     -- 120 minutes
-	[BoxTypes.BoxRarity.LEGENDARY] = 240 * 60  -- 240 minutes
+	[BoxTypes.BoxRarity.LEGENDARY] = 240 * 60,  -- 240 minutes
+	[BoxTypes.BoxRarity.ONEPIECE] = 240 * 60
 }
 
 -- Hard currency cost to buy a box from store
@@ -43,7 +45,8 @@ BoxTypes.InstantOpenBaseCost = {
 	[BoxTypes.BoxRarity.UNCOMMON] = 4,
 	[BoxTypes.BoxRarity.RARE] = 11,
 	[BoxTypes.BoxRarity.EPIC] = 27,
-	[BoxTypes.BoxRarity.LEGENDARY] = 50
+	[BoxTypes.BoxRarity.LEGENDARY] = 50,
+	[BoxTypes.BoxRarity.ONEPIECE] = 50
 }
 
 -- Maximum number of lootbox slots per profile
@@ -90,7 +93,8 @@ function BoxTypes.IsValidRarity(rarity)
 	return rarity == BoxTypes.BoxRarity.UNCOMMON or
 		   rarity == BoxTypes.BoxRarity.RARE or
 		   rarity == BoxTypes.BoxRarity.EPIC or
-		   rarity == BoxTypes.BoxRarity.LEGENDARY
+		   rarity == BoxTypes.BoxRarity.LEGENDARY or
+		   rarity == BoxTypes.BoxRarity.ONEPIECE
 end
 
 -- Helper function to validate state
