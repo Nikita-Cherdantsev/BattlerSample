@@ -153,12 +153,12 @@ Manifest.ButtonColors = {
 -- Currency assets
 Manifest.Currency = {
 	Soft = {
-		Big = "rbxassetid://89868675992699",
+		Big = "rbxassetid://76622281243322",
 		Small = "rbxassetid://89868675992699",
 		Default = "rbxassetid://89868675992699",
 	},
 	Hard = {
-		Big = "rbxassetid://119227133814721",
+		Big = "rbxassetid://73044862234328",
 		Small = "rbxassetid://119227133814721",
 		Default = "rbxassetid://119227133814721",
 	}

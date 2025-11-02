@@ -216,6 +216,9 @@
         },
         "ShopService": {
           "$path": "src/server/Services/ShopService.lua"
+        },
+        "PlaytimeService": {
+          "$path": "src/server/Services/PlaytimeService.lua"
         }
       }
     },

@@ -221,6 +221,14 @@ local function MigrateProfileIfNeeded(profile)
 			profile.playerId = tostring(profile.playerId)
 			-- Also migrate card IDs for v2 profiles with old card IDs
 			profile = ProfileManager.MigrateCardIds(profile)
+			-- Initialize playtime if missing (for existing v2 profiles)
+			if not profile.playtime then
+				profile.playtime = {
+					totalTime = 0,
+					lastSyncTime = os.time(),
+					claimedRewards = {}
+				}
+			end
 			return profile
 		end
 	end
@@ -287,6 +295,15 @@ function ProfileManager.LoadProfile(userId)
 		
 		-- Validate loaded profile
 		if profile and IsProfileValid(profile) then
+			-- Initialize playtime if missing (for existing profiles without playtime data)
+			if not profile.playtime then
+				profile.playtime = {
+					totalTime = 0,
+					lastSyncTime = os.time(),
+					claimedRewards = {}
+				}
+			end
+			
 			-- Compute squad power if not set
 			if profile.squadPower == 0 then
 				profile.squadPower = ComputeSquadPower(profile)

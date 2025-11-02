@@ -15,21 +15,39 @@ PlaytimeHandler.Connections = {}
 PlaytimeHandler._initialized = false
 
 PlaytimeHandler.isAnimating = false
-PlaytimeHandler.isTracking = false
-PlaytimeHandler.startTime = 0
-PlaytimeHandler.totalPlaytime = 0
-PlaytimeHandler.lastSaveTime = 0
+PlaytimeHandler.isWindowOpen = false
+PlaytimeHandler.totalPlaytime = 0  -- Server time in seconds
+PlaytimeHandler.lastServerSync = 0  -- Last server sync time (os.time())
 PlaytimeHandler.rewardsConfig = {}
-PlaytimeHandler.claimedRewards = {}
+PlaytimeHandler.claimedRewards = {}  -- Array of claimed reward indices
+PlaytimeHandler.claimedRewardsSet = {}  -- Set for fast lookup
+PlaytimeHandler.thresholds = {}
+PlaytimeHandler.NetworkClient = nil
+PlaytimeHandler.updateTimer = nil  -- Timer for automatic updates
+PlaytimeHandler.syncTask = nil  -- Task for periodic sync
 
 --// Constants
-local REWARD_THRESHOLDS = {3, 6, 9, 12, 15, 18, 22} -- minutes
-local SAVE_INTERVAL = 30 -- seconds
+local SYNC_INTERVAL = 5  -- Sync with server every 5 seconds
 
 --// Initialization
 function PlaytimeHandler:Init(controller)
 	self.Controller = controller
 	self.ClientState = controller:GetClientState()
+	
+	-- Get NetworkClient
+	local success, NetworkClient = pcall(function()
+		local StarterPlayer = game:GetService("StarterPlayer")
+		local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
+		local Controllers = StarterPlayerScripts:WaitForChild("Controllers")
+		return require(Controllers:WaitForChild("NetworkClient"))
+	end)
+	
+	if success and NetworkClient then
+		self.NetworkClient = NetworkClient
+	else
+		warn("PlaytimeHandler: Could not load NetworkClient: " .. tostring(NetworkClient))
+		return false
+	end
 	
 	-- Safe require of Utilities to avoid loading errors
 	local success, utilities = pcall(function()
@@ -48,12 +66,15 @@ function PlaytimeHandler:Init(controller)
 
 	-- Initialize state
 	self.Connections = {}
-	self.isTracking = false
-	self.startTime = 0
 	self.totalPlaytime = 0
-	self.lastSaveTime = 0
+	self.lastServerSync = 0
 	self.rewardsConfig = {}
 	self.claimedRewards = {}
+	self.claimedRewardsSet = {}
+	self.thresholds = {}
+	self.isWindowOpen = false
+	self.updateTimer = nil
+	self.syncTask = nil
 
 	-- Setup playtime functionality
 	self:SetupPlaytime()
@@ -108,12 +129,6 @@ function PlaytimeHandler:SetupPlaytime()
 	self:SetupOpenButton()
 	self:SetupCloseButton()
 	self:SetupClaimButtons()
-	
-	-- Load saved playtime data
-	self:LoadPlaytimeData()
-	
-	-- Start time tracking
-	self:StartTimeTracking()
 	
 	-- Setup ProfileUpdated handler
 	self:SetupProfileUpdatedHandler()
@@ -188,87 +203,23 @@ function PlaytimeHandler:SetupClaimButtons()
 	end
 end
 
-function PlaytimeHandler:LoadPlaytimeData()
-	-- Load playtime data from client state
-	if self.ClientState and self.ClientState.GetState then
-		local state = self.ClientState:GetState()
-		if state and state.playtime then
-			self.totalPlaytime = state.playtime.totalTime or 0
-			self.claimedRewards = state.playtime.claimedRewards or {}
-		end
-	end
-end
-
-function PlaytimeHandler:SavePlaytimeData()
-	-- Save playtime data to client state
-	if self.ClientState and self.ClientState.SetState then
-		local state = self.ClientState:GetState() or {}
-		state.playtime = {
-			totalTime = self.totalPlaytime,
-			claimedRewards = self.claimedRewards
-		}
-		self.ClientState:SetState(state)
-	end
-end
-
-function PlaytimeHandler:StartTimeTracking()
-	if self.isTracking then return end
-	
-	self.isTracking = true
-	self.startTime = tick()
-	self.lastSaveTime = self.startTime
-	
-	-- Connect to RunService for continuous tracking
-	local connection = RunService.Heartbeat:Connect(function()
-		local currentTime = tick()
-		local sessionTime = currentTime - self.startTime
-		self.totalPlaytime = self.totalPlaytime + sessionTime
-		self.startTime = currentTime
-		
-		-- Save periodically
-		if currentTime - self.lastSaveTime >= SAVE_INTERVAL then
-			self:SavePlaytimeData()
-			self.lastSaveTime = currentTime
-		end
-		
-		-- Update UI if window is open
-		if self.PlaytimeFrame and self.PlaytimeFrame.Visible then
-			self:UpdatePlaytimeDisplay()
-		end
-	end)
-	
-	table.insert(self.Connections, connection)
-	print("✅ PlaytimeHandler: Time tracking started")
-end
-
-function PlaytimeHandler:StopTimeTracking()
-	if not self.isTracking then return end
-	
-	-- Save final time
-	local currentTime = tick()
-	local sessionTime = currentTime - self.startTime
-	self.totalPlaytime = self.totalPlaytime + sessionTime
-	self:SavePlaytimeData()
-	
-	self.isTracking = false
-	print("✅ PlaytimeHandler: Time tracking stopped")
+-- Get current playtime in seconds (server time + elapsed since last sync)
+function PlaytimeHandler:GetCurrentPlaytime()
+	local currentLocalTime = os.time()
+	local elapsedSinceSync = currentLocalTime - self.lastServerSync
+	return self.totalPlaytime + elapsedSinceSync
 end
 
 function PlaytimeHandler:GetCurrentPlaytimeMinutes()
-	return math.floor(self.totalPlaytime / 60)
+	return math.floor(self:GetCurrentPlaytime() / 60)
 end
 
 function PlaytimeHandler:IsRewardClaimed(rewardIndex)
-	for _, claimedIndex in ipairs(self.claimedRewards) do
-		if claimedIndex == rewardIndex then
-			return true
-		end
-	end
-	return false
+	return self.claimedRewardsSet[rewardIndex] == true
 end
 
 function PlaytimeHandler:IsRewardAvailable(rewardIndex)
-	local threshold = REWARD_THRESHOLDS[rewardIndex]
+	local threshold = self.thresholds[rewardIndex]
 	if not threshold then return false end
 	
 	local currentMinutes = self:GetCurrentPlaytimeMinutes()
@@ -280,54 +231,22 @@ function PlaytimeHandler:ClaimReward(rewardIndex)
 		return
 	end
 	
-	
-	-- Add to claimed rewards
-	table.insert(self.claimedRewards, rewardIndex)
-	
-	-- Save data
-	self:SavePlaytimeData()
-	
-	-- Update UI
-	self:UpdateRewardDisplay(rewardIndex)
-	
-	-- TODO: Send to server for validation and actual reward granting
-	-- NetworkClient.requestClaimPlaytimeReward(rewardIndex)
-	
-	print("✅ PlaytimeHandler: Reward " .. rewardIndex .. " claimed")
+	-- Send to server for validation and actual reward granting
+	if self.NetworkClient then
+		self.NetworkClient.requestClaimPlaytimeReward(rewardIndex)
+	else
+		warn("PlaytimeHandler: NetworkClient not available")
+	end
 end
 
-function PlaytimeHandler:LoadRewardsConfig()
-	-- TODO: Load rewards configuration from server
-	-- For now, use mock data
-	self.rewardsConfig = {
-		[1] = { -- 3 minutes
-			{type = "Currency", name = "Soft", amount = 90}
-		},
-		[2] = { -- 6 minutes
-            {type = "Currency", name = "Soft", amount = 120}
-		},
-		[3] = { -- 9 minutes
-			{type = "Currency", name = "Soft", amount = 150},
-			{type = "Currency", name = "Hard", amount = 20}
-		},
-		[4] = { -- 12 minutes
-			{type = "Currency", name = "Soft", amount = 195},
-			{type = "Lootbox", name = "Uncommon", amount = 1}
-		},
-		[5] = { -- 15 minutes
-			{type = "Currency", name = "Soft", amount = 225},
-		},
-		[6] = { -- 18 minutes
-			{type = "Currency", name = "Soft", amount = 300},
-			{type = "Currency", name = "Hard", amount = 30},
-			{type = "Lootbox", name = "Rare", amount = 1}
-		},
-		[7] = { -- 22 minutes
-			{type = "Currency", name = "Soft", amount = 375}
-		}
-	}
-	
-	print("✅ PlaytimeHandler: Rewards config loaded")
+function PlaytimeHandler:LoadRewardsConfig(rewardsConfig)
+	if rewardsConfig then
+		self.rewardsConfig = rewardsConfig.rewards or {}
+		self.thresholds = rewardsConfig.thresholds or {}
+		print("✅ PlaytimeHandler: Rewards config loaded from server")
+	else
+		warn("PlaytimeHandler: No rewards config provided")
+	end
 end
 
 function PlaytimeHandler:UpdatePlaytimeDisplay()
@@ -335,7 +254,7 @@ function PlaytimeHandler:UpdatePlaytimeDisplay()
 	local listFrame = self.PlaytimeFrame:FindFirstChild("List")
 	if not listFrame then return end
 	
-	local currentMinutes = self:GetCurrentPlaytimeMinutes()
+	local currentPlaytimeSeconds = self:GetCurrentPlaytime()
 	
 	-- Update each reward's time display
 	for i = 1, 7 do
@@ -344,8 +263,20 @@ function PlaytimeHandler:UpdatePlaytimeDisplay()
 			local content = rewardFrame:FindFirstChild("Content")
 			if content then
 				local txtTime = content:FindFirstChild("TxtTime")
-				if txtTime then
-					txtTime.Text = currentMinutes .. " min"
+				if txtTime and not self:IsRewardClaimed(i) then
+					local threshold = self.thresholds[i]
+					if threshold then
+						-- Calculate remaining time in seconds
+						local remainingTotalSeconds = math.max(0, (threshold * 60) - math.floor(currentPlaytimeSeconds))
+						if remainingTotalSeconds > 0 then
+							local remainingMinutes = math.floor(remainingTotalSeconds / 60)
+							local remainingSeconds = remainingTotalSeconds % 60
+							-- Format as MM:SS
+							txtTime.Text = string.format("%02d:%02d", remainingMinutes, remainingSeconds)
+						else
+							txtTime.Text = "00:00"
+						end
+					end
 				end
 			end
 		end
@@ -371,25 +302,32 @@ function PlaytimeHandler:UpdateRewardDisplay(rewardIndex)
 			if text then
 				local textLabel = text:FindFirstChild("TextLabel")
 				if textLabel then
-					textLabel.Text = REWARD_THRESHOLDS[rewardIndex] .. " min"
+					local threshold = self.thresholds[rewardIndex]
+					if threshold then
+						textLabel.Text = threshold .. " min"
+					end
 				end
 			end
 		end
 	end
 	
-	-- Update claim button visibility
+	-- Update claim button and timer visibility
 	local btnClaim = content:FindFirstChild("BtnClaim")
 	local imgClaimed = content:FindFirstChild("ImgClaimed")
+	local txtTime = content:FindFirstChild("TxtTime")
 	
 	if self:IsRewardClaimed(rewardIndex) then
 		if btnClaim then btnClaim.Visible = false end
 		if imgClaimed then imgClaimed.Visible = true end
+		if txtTime then txtTime.Visible = false end
 	elseif self:IsRewardAvailable(rewardIndex) then
 		if btnClaim then btnClaim.Visible = true end
 		if imgClaimed then imgClaimed.Visible = false end
+		if txtTime then txtTime.Visible = false end
 	else
 		if btnClaim then btnClaim.Visible = false end
 		if imgClaimed then imgClaimed.Visible = false end
+		if txtTime then txtTime.Visible = true end
 	end
 	
 	-- Update rewards display
@@ -403,7 +341,7 @@ function PlaytimeHandler:UpdateRewardDisplay(rewardIndex)
 				-- Update reward image
 				local imgReward = rewardFrame:FindFirstChild("ImgReward")
 				if imgReward then
-					local assetId = Resolver.getRewardAsset(reward.type, reward.name)
+					local assetId = Resolver.getRewardAsset(reward.type, reward.name, "Big")
 					imgReward.Image = assetId
 				end
 				
@@ -428,9 +366,9 @@ function PlaytimeHandler:OpenWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
 
-	-- Load rewards config if not loaded
-	if not next(self.rewardsConfig) then
-		self:LoadRewardsConfig()
+	-- Request playtime data from server
+	if self.NetworkClient then
+		self.NetworkClient.requestPlaytimeData()
 	end
 
 	-- Hide HUD panels if they exist
@@ -441,12 +379,9 @@ function PlaytimeHandler:OpenWindow()
 		self.UI.BottomPanel.Visible = false
 	end
 
-	-- Update all displays
-	self:UpdatePlaytimeDisplay()
-	self:UpdateAllRewardsDisplay()
-
 	-- Show playtime gui
 	self.PlaytimeFrame.Visible = true
+	self.isWindowOpen = true
 	
 	-- Register with close button handler
 	self:RegisterWithCloseButton(true)
@@ -466,12 +401,18 @@ function PlaytimeHandler:OpenWindow()
 		self.isAnimating = false
 	end
 	
+	-- Start automatic updates
+	self:StartAutoUpdates()
+	
 	print("✅ PlaytimeHandler: Playtime window opened")
 end
 
 function PlaytimeHandler:CloseWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
+
+	-- Stop automatic updates
+	self:StopAutoUpdates()
 
 	-- Hide playtime gui
 	if self.Utilities then
@@ -489,6 +430,8 @@ function PlaytimeHandler:CloseWindow()
 		self.PlaytimeFrame.Visible = false
 		self.isAnimating = false
 	end
+
+	self.isWindowOpen = false
 
 	-- Show HUD panels
 	if self.UI.LeftPanel then
@@ -509,14 +452,106 @@ function PlaytimeHandler:SetupProfileUpdatedHandler()
 	local ProfileUpdated = game.ReplicatedStorage.Network:WaitForChild("ProfileUpdated")
 	
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
-		-- Check if this is a playtime reward response
-		if payload.playtimeReward then
-			-- TODO: Handle server response for playtime rewards
+		-- Handle playtime data updates
+		if payload.playtime then
+			self:HandlePlaytimeUpdate(payload.playtime)
 		end
 	end)
 	
 	-- Store connection for cleanup
 	table.insert(self.Connections, connection)
+end
+
+function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
+	-- Update total playtime and sync time
+	if playtimeData.totalTime then
+		local oldTotalTime = self.totalPlaytime
+		self.totalPlaytime = playtimeData.totalTime
+		self.lastServerSync = os.time()
+		
+		-- Check if new rewards became available
+		if self.isWindowOpen then
+			self:CheckAndUpdateAvailableRewards(oldTotalTime, self.totalPlaytime)
+		end
+	end
+	
+	-- Update claimed rewards
+	if playtimeData.claimedRewards then
+		self.claimedRewards = playtimeData.claimedRewards
+		-- Rebuild Set for fast lookup
+		self.claimedRewardsSet = {}
+		for _, rewardIndex in ipairs(self.claimedRewards) do
+			self.claimedRewardsSet[rewardIndex] = true
+		end
+	end
+	
+	-- Update rewards config if provided
+	if playtimeData.rewardsConfig then
+		self:LoadRewardsConfig(playtimeData.rewardsConfig)
+	end
+	
+	-- Update UI if window is open
+	if self.isWindowOpen then
+		self:UpdateAllRewardsDisplay()
+	end
+end
+
+function PlaytimeHandler:CheckAndUpdateAvailableRewards(oldTime, newTime)
+	local oldMinutes = math.floor(oldTime / 60)
+	local newMinutes = math.floor(newTime / 60)
+	
+	-- Check if any threshold was crossed
+	for i = 1, 7 do
+		local threshold = self.thresholds[i]
+		if threshold then
+			local wasAvailable = oldMinutes >= threshold
+			local isAvailable = newMinutes >= threshold
+			
+			if not wasAvailable and isAvailable and not self:IsRewardClaimed(i) then
+				-- New reward became available, update UI
+				self:UpdateRewardDisplay(i)
+			end
+		end
+	end
+end
+
+function PlaytimeHandler:StartAutoUpdates()
+	if self.updateTimer then
+		return  -- Already running
+	end
+	
+	-- Update UI periodically
+	self.updateTimer = RunService.Heartbeat:Connect(function()
+		if self.isWindowOpen then
+			self:UpdatePlaytimeDisplay()
+		end
+	end)
+	
+	-- Sync with server periodically
+	if self.syncTask then
+		task.cancel(self.syncTask)
+	end
+	
+	self.syncTask = task.spawn(function()
+		while self.isWindowOpen do
+			task.wait(SYNC_INTERVAL)
+			if self.isWindowOpen and self.NetworkClient then
+				self.NetworkClient.requestPlaytimeData()
+			end
+		end
+	end)
+end
+
+function PlaytimeHandler:StopAutoUpdates()
+	if self.updateTimer then
+		self.updateTimer:Disconnect()
+		self.updateTimer = nil
+	end
+	
+	if self.syncTask then
+		task.cancel(self.syncTask)
+		self.syncTask = nil
+	end
 end
 
 --// Public Methods
@@ -528,20 +563,17 @@ function PlaytimeHandler:GetTotalPlaytime()
 	return self.totalPlaytime
 end
 
-function PlaytimeHandler:GetCurrentPlaytimeMinutes()
-	return math.floor(self.totalPlaytime / 60)
-end
-
 --// Cleanup
 function PlaytimeHandler:Cleanup()
-
-	-- Stop time tracking
-	self:StopTimeTracking()
+	-- Stop automatic updates
+	self:StopAutoUpdates()
 
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do
 		if connection then
-			connection:Disconnect()
+			if connection.Disconnect then
+				connection:Disconnect()
+			end
 		end
 	end
 	self.Connections = {}

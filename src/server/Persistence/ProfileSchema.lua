@@ -40,7 +40,14 @@ ProfileSchema.Profile = {
 	lootboxes = {},
 	
 	-- Pending lootbox (when capacity is full)
-	pendingLootbox = nil
+	pendingLootbox = nil,
+	
+	-- Playtime data
+	playtime = {
+		totalTime = 0,           
+		lastSyncTime = 0,         
+		claimedRewards = {}       
+	}
 }
 
 -- Lootbox entry structure
@@ -219,6 +226,30 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Too many unlocking lootboxes (max 1)"
 	end
 	
+	-- Check playtime data
+	if not profile.playtime or type(profile.playtime) ~= "table" then
+		return false, "Invalid playtime data"
+	end
+	
+	if type(profile.playtime.totalTime) ~= "number" or profile.playtime.totalTime < 0 then
+		return false, "Invalid playtime totalTime"
+	end
+	
+	if type(profile.playtime.lastSyncTime) ~= "number" or profile.playtime.lastSyncTime < 0 then
+		return false, "Invalid playtime lastSyncTime"
+	end
+	
+	if not profile.playtime.claimedRewards or type(profile.playtime.claimedRewards) ~= "table" then
+		return false, "Invalid playtime claimedRewards"
+	end
+	
+	-- Validate claimedRewards array
+	for i, rewardIndex in ipairs(profile.playtime.claimedRewards) do
+		if type(rewardIndex) ~= "number" or rewardIndex < 1 or rewardIndex > 7 then
+			return false, "Invalid claimedReward index at position " .. i
+		end
+	end
+	
 	-- Check pending lootbox
 	if profile.pendingLootbox ~= nil then
 		if type(profile.pendingLootbox) ~= "table" then
@@ -291,7 +322,12 @@ function ProfileSchema.CreateProfile(playerId)
 		favoriteLastSeen = nil,
 		tutorialStep = 0,
 		squadPower = 0,  -- Will be computed when deck is set
-		lootboxes = {}
+		lootboxes = {},
+		playtime = {
+			totalTime = 0,
+			lastSyncTime = now,
+			claimedRewards = {}
+		}
 	}
 	
 	return profile
@@ -313,7 +349,12 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 		favoriteLastSeen = nil,
 		tutorialStep = 0,
 		squadPower = 0,
-		lootboxes = {}
+		lootboxes = {},
+		playtime = {
+			totalTime = 0,
+			lastSyncTime = os.time(),
+			claimedRewards = {}
+		}
 	}
 	
 	-- Migrate collection from v1 format to v2 format

@@ -75,11 +75,11 @@ function ClientState.applyProfileUpdate(payload)
 		return
 	end
 	
-		-- Clear any previous errors and loading flags on success
-		ClientState.setLastError(nil)
-		state.isSavingDeck = false
-		state.isLeveling = false
-		state.isLootOpInFlight = false
+	-- Clear any previous errors and loading flags on success
+	ClientState.setLastError(nil)
+	state.isSavingDeck = false
+	state.isLeveling = false
+	state.isLootOpInFlight = false
 	
 	-- Update server time
 	if payload.serverNow then
@@ -87,7 +87,7 @@ function ClientState.applyProfileUpdate(payload)
 	end
 	
 	-- Update profile data (merge with existing if available)
-	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies then
+	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies or payload.playtime then
 		-- Create or update profile
 		if not state.profile then
 			state.profile = {
@@ -102,7 +102,12 @@ function ClientState.applyProfileUpdate(payload)
 				favoriteLastSeen = 0,
 				tutorialStep = 0,
 				squadPower = 0,
-				lootboxes = {}
+				lootboxes = {},
+				playtime = {
+					totalTime = 0,
+					lastSyncTime = 0,
+					claimedRewards = {}
+				}
 			}
 		end
 		
@@ -145,6 +150,11 @@ function ClientState.applyProfileUpdate(payload)
 		-- Update currencies
 		if payload.currencies then
 			state.profile.currencies = payload.currencies
+		end
+
+		-- Update playtime
+		if payload.playtime then
+			state.profile.playtime = payload.playtime
 		end
 		
 		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d", #state.profile.deck, state.profile.squadPower, #state.profile.lootboxes)

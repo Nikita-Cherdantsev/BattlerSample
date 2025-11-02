@@ -10,6 +10,7 @@ local PlayerDataService = require(game.ServerScriptService:WaitForChild("Service
 local MatchService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local ShopService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ShopService"))
 local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
+local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
@@ -32,6 +33,8 @@ local RequestCompleteUnlock = nil
 local RequestGetShopPacks = nil
 local RequestStartPackPurchase = nil
 local RequestBuyLootbox = nil
+local RequestPlaytimeData = nil
+local RequestClaimPlaytimeReward = nil
 
 -- Rate limiting configuration (explicit, module-scoped)
 local RATE_LIMITS = {
@@ -100,6 +103,14 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestClearLoot = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestPlaytimeData = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestClaimPlaytimeReward = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	}
@@ -213,6 +224,16 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestBuyLootbox = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestPlaytimeData = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestClaimPlaytimeReward = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -1159,6 +1180,120 @@ local function HandleRequestStartPackPurchase(player, requestData)
 	end
 end
 
+local function HandleRequestPlaytimeData(player, requestData)
+	LogInfo(player, "Processing playtime data request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestPlaytimeData")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Get playtime data
+	local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
+	if not playtimeData then
+		SendProfileUpdate(player, {
+			error = {
+				code = "PROFILE_LOAD_FAILED",
+				message = "Failed to load playtime data"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Send playtime data
+	SendProfileUpdate(player, {
+		playtime = {
+			totalTime = playtimeData.totalTime,
+			claimedRewards = playtimeData.claimedRewards,
+			rewardsConfig = playtimeData.rewardsConfig
+		},
+		serverNow = os.time()
+	})
+	
+	LogInfo(player, "Playtime data sent successfully")
+end
+
+local function HandleRequestClaimPlaytimeReward(player, requestData)
+	LogInfo(player, "Processing claim playtime reward request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimPlaytimeReward")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate request
+	if not requestData or type(requestData.rewardIndex) ~= "number" then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing or invalid rewardIndex"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Claim reward
+	local result = PlaytimeService.ClaimPlaytimeReward(player.UserId, requestData.rewardIndex)
+	
+	-- Get updated profile
+	local profile = PlayerDataService.GetProfile(player)
+	local payload = {
+		currencies = profile and profile.currencies or {},
+		lootboxes = profile and profile.lootboxes or {},
+		pendingLootbox = profile and profile.pendingLootbox or nil,
+		serverNow = os.time()
+	}
+	
+	if result.ok then
+		-- Include rewards and collection summary if lootbox was opened
+		if result.rewards then
+			payload.rewards = result.rewards
+			local collection = PlayerDataService.GetCollection(player)
+			if collection then
+				payload.collectionSummary = CreateCollectionSummary(collection)
+			end
+		end
+		
+		-- Include updated playtime data
+		local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
+		if playtimeData then
+			payload.playtime = {
+				totalTime = playtimeData.totalTime,
+				claimedRewards = playtimeData.claimedRewards,
+				rewardsConfig = playtimeData.rewardsConfig
+			}
+		end
+		
+		LogInfo(player, "Playtime reward %d claimed successfully", requestData.rewardIndex)
+	else
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+		LogWarning(player, "Claim playtime reward failed: %s", tostring(result.error))
+	end
+	
+	SendProfileUpdate(player, payload)
+end
+
 local function HandleRequestBuyLootbox(player, requestData)
 	LogInfo(player, "Processing buy lootbox request")
 	
@@ -1236,6 +1371,8 @@ RemoteEvents.RequestCompleteUnlock = RequestCompleteUnlock
 RemoteEvents.RequestGetShopPacks = RequestGetShopPacks
 RemoteEvents.RequestStartPackPurchase = RequestStartPackPurchase
 RemoteEvents.RequestBuyLootbox = RequestBuyLootbox
+RemoteEvents.RequestPlaytimeData = RequestPlaytimeData
+RemoteEvents.RequestClaimPlaytimeReward = RequestClaimPlaytimeReward
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -1319,6 +1456,14 @@ function RemoteEvents.Init()
 	RequestBuyLootbox.Name = "RequestBuyLootbox"
 	RequestBuyLootbox.Parent = NetworkFolder
 	
+	RequestPlaytimeData = Instance.new("RemoteEvent")
+	RequestPlaytimeData.Name = "RequestPlaytimeData"
+	RequestPlaytimeData.Parent = NetworkFolder
+	
+	RequestClaimPlaytimeReward = Instance.new("RemoteEvent")
+	RequestClaimPlaytimeReward.Name = "RequestClaimPlaytimeReward"
+	RequestClaimPlaytimeReward.Parent = NetworkFolder
+	
 	-- Validate rate limit configuration
 	local function ValidateRateLimitConfig()
 		print("🔒 Rate Limiter Configuration:")
@@ -1337,7 +1482,9 @@ function RemoteEvents.Init()
 			{name = "RequestCompleteUnlock", instance = RequestCompleteUnlock},
 			{name = "RequestGetShopPacks", instance = RequestGetShopPacks},
 			{name = "RequestStartPackPurchase", instance = RequestStartPackPurchase},
-			{name = "RequestBuyLootbox", instance = RequestBuyLootbox}
+			{name = "RequestBuyLootbox", instance = RequestBuyLootbox},
+			{name = "RequestPlaytimeData", instance = RequestPlaytimeData},
+			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward}
 		}
 		
 		for _, event in ipairs(remoteEvents) do
@@ -1369,6 +1516,11 @@ function RemoteEvents.Init()
 	RequestGetShopPacks.OnServerEvent:Connect(HandleRequestGetShopPacks)
 	RequestStartPackPurchase.OnServerEvent:Connect(HandleRequestStartPackPurchase)
 	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)
+	RequestPlaytimeData.OnServerEvent:Connect(HandleRequestPlaytimeData)
+	RequestClaimPlaytimeReward.OnServerEvent:Connect(HandleRequestClaimPlaytimeReward)
+	
+	-- Initialize PlaytimeService
+	PlaytimeService.Init()
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)
