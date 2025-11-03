@@ -1688,7 +1688,8 @@ function RemoteEvents.Init()
 			{name = "RequestStartPackPurchase", instance = RequestStartPackPurchase},
 			{name = "RequestBuyLootbox", instance = RequestBuyLootbox},
 			{name = "RequestPlaytimeData", instance = RequestPlaytimeData},
-			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward}
+			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward},
+			{name = "RequestClaimBattleReward", instance = RequestClaimBattleReward}
 		}
 		
 		for _, event in ipairs(remoteEvents) do
@@ -1722,10 +1723,10 @@ function RemoteEvents.Init()
 	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)
 	RequestPlaytimeData.OnServerEvent:Connect(HandleRequestPlaytimeData)
 	RequestClaimPlaytimeReward.OnServerEvent:Connect(HandleRequestClaimPlaytimeReward)
+	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()
-	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)

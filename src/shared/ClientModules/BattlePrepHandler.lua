@@ -154,70 +154,103 @@ function BattlePrepHandler:SetupBattlePrep()
 	print("✅ BattlePrepHandler: Battle preparation UI setup completed")
 end
 
+-- Helper function to setup interaction for a part
+local function SetupPartInteractionHelper(part, partName, partType, handler)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	
+	-- Check if ProximityPrompt already exists
+	local existingPrompt = part:FindFirstChildOfClass("ProximityPrompt")
+	if not existingPrompt then
+		-- Create new ProximityPrompt
+		local proximityPrompt = Instance.new("ProximityPrompt")
+		proximityPrompt.ActionText = "Start Battle"
+		proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
+		proximityPrompt.MaxActivationDistance = 10
+		proximityPrompt.Parent = part
+		print("✅ Created ProximityPrompt for", partType, "part:", partName)
+	else
+		print("ℹ️ ProximityPrompt already exists for", partType, "part:", partName)
+	end
+	
+	-- Get the prompt (existing or newly created)
+	local proximityPrompt = part:FindFirstChildOfClass("ProximityPrompt")
+	if proximityPrompt then
+		-- Connect interaction
+		local connection = proximityPrompt.Triggered:Connect(function()
+			handler.currentPartName = part.Name
+			handler:OpenBattlePrep()
+		end)
+		
+		table.insert(handler.Connections, connection)
+		print("✅ BattlePrepHandler:", partType, "part interaction setup for", part.Name, "at", part:GetFullName())
+		return true
+	else
+		warn("⚠️ Failed to get ProximityPrompt for", partType, "part:", part.Name)
+		return false
+	end
+end
+
 function BattlePrepHandler:SetupPartInteraction()
 	-- Find all parts with NPCMode or BossMode prefix
 	local workspace = game:GetService("Workspace")
 	
-	-- Search recursively through all descendants (handles parts inside Models)
+	-- Track which parts we've already set up (by full path) to avoid duplicates
+	local setupParts = {}
+	
+	-- Function to setup a single part if it matches our criteria
+	local function SetupPartIfMatches(part)
+		if not part or not (part:IsA("BasePart") or part:IsA("MeshPart") or part:IsA("Part")) then
+			return false
+		end
+		
+		local fullPath = part:GetFullName()
+		
+		-- Skip if already set up
+		if setupParts[fullPath] then
+			return false
+		end
+		
+		local partType = nil
+		if part.Name:match("^NPCMode") then
+			partType = "NPC"
+		elseif part.Name:match("^BossMode") then
+			partType = "Boss"
+		end
+		
+		if partType then
+			if SetupPartInteractionHelper(part, part.Name, partType, self) then
+				setupParts[fullPath] = true
+				return true
+			end
+		end
+		
+		return false
+	end
+	
+	-- Search all existing descendants in Workspace
 	local allDescendants = workspace:GetDescendants()
+	local foundCount = 0
 	
-	-- Find NPC mode parts (NPCMode prefix)
-	for _, part in pairs(allDescendants) do
-		if part:IsA("BasePart") and part.Name:match("^NPCMode") then
-			-- Check if ProximityPrompt already exists
-			local existingPrompt = part:FindFirstChildOfClass("ProximityPrompt")
-			if not existingPrompt then
-				-- Create new ProximityPrompt
-				local proximityPrompt = Instance.new("ProximityPrompt")
-				proximityPrompt.ActionText = "Start Battle"
-				proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
-				proximityPrompt.MaxActivationDistance = 10
-				proximityPrompt.Parent = part
-			end
-			
-			-- Get the prompt (existing or newly created)
-			local proximityPrompt = part:FindFirstChildOfClass("ProximityPrompt")
-			if proximityPrompt then
-				-- Connect interaction
-				local connection = proximityPrompt.Triggered:Connect(function()
-					self.currentPartName = part.Name
-					self:OpenBattlePrep()
-				end)
-				
-				table.insert(self.Connections, connection)
-				print("✅ BattlePrepHandler: NPC part interaction setup for", part.Name, "at", part:GetFullName())
-			end
+	for _, descendant in pairs(allDescendants) do
+		if SetupPartIfMatches(descendant) then
+			foundCount = foundCount + 1
 		end
 	end
 	
-	-- Find Boss mode parts (BossMode prefix)
-	for _, part in pairs(allDescendants) do
-		if part:IsA("BasePart") and part.Name:match("^BossMode") then
-			-- Check if ProximityPrompt already exists
-			local existingPrompt = part:FindFirstChildOfClass("ProximityPrompt")
-			if not existingPrompt then
-				-- Create new ProximityPrompt
-				local proximityPrompt = Instance.new("ProximityPrompt")
-				proximityPrompt.ActionText = "Start Battle"
-				proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
-				proximityPrompt.MaxActivationDistance = 10
-				proximityPrompt.Parent = part
-			end
-			
-			-- Get the prompt (existing or newly created)
-			local proximityPrompt = part:FindFirstChildOfClass("ProximityPrompt")
-			if proximityPrompt then
-				-- Connect interaction
-				local connection = proximityPrompt.Triggered:Connect(function()
-					self.currentPartName = part.Name
-					self:OpenBattlePrep()
-				end)
-				
-				table.insert(self.Connections, connection)
-				print("✅ BattlePrepHandler: Boss part interaction setup for", part.Name, "at", part:GetFullName())
-			end
+	print(string.format("✅ BattlePrepHandler: Found %d NPC/Boss parts in existing Workspace", foundCount))
+	
+	-- Listen for new descendants being added (catches dynamically loaded models)
+	local connection = workspace.DescendantAdded:Connect(function(descendant)
+		if SetupPartIfMatches(descendant) then
+			print(string.format("✅ BattlePrepHandler: Found new %s part: %s", 
+				descendant.Name:match("^NPCMode") and "NPC" or "Boss", descendant:GetFullName()))
 		end
-	end
+	end)
+	
+	table.insert(self.Connections, connection)
+	print("✅ BattlePrepHandler: Listening for new NPC/Boss parts being added to Workspace")
 	
 	-- Fallback: support old "Part" name for backward compatibility
 	local testPart = workspace:FindFirstChild("Part")
