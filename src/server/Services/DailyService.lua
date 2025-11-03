@@ -89,71 +89,49 @@ function DailyService.GetDailyData(userId)
 	local lastLoginDay = daily.lastLogin
 	
 	-- Check if it's a new day and update streak if needed
+	-- Logic matches the provided code: canClaimBonus equivalent
 	local streak = daily.streak
 	local lastLogin = daily.lastLogin
 	
-	-- If last login was today, streak is valid
-	-- If last login was yesterday, increment streak
-	-- If last login was more than 1 day ago, reset streak
+	-- Calculate days since last login
+	local daysSinceLastLogin = 0
 	if lastLoginDay > 0 then
-		local daysSinceLastLogin = math.floor((currentDay - lastLoginDay) / 86400)
-		if daysSinceLastLogin == 0 then
-			-- Same day, streak is valid
-		elseif daysSinceLastLogin == 1 then
-			-- Yesterday, streak should increment (but we don't modify here, only in ClaimDailyReward)
-		else
-			-- More than 1 day ago, streak should reset
-			streak = 0
-		end
+		daysSinceLastLogin = math.floor((currentDay - lastLoginDay) / 86400)
 	end
 	
-	-- Determine current reward day
-	-- The current day should be based on what reward was last claimed, not on what's next
-	-- If streak is 7, it means we just completed day 7, so current day is still 7 (until next day)
-	-- If streak is 1-6, it means we're on that day
-	-- If streak is 0 and lastLogin is today, it means we haven't claimed yet today
-	local currentRewardDay = 1
-	
 	-- Check if reward for current day is already claimed
+	-- According to provided code: daysSince == 0 means already claimed today
 	local isClaimed = false
-	if not IsDifferentDay(lastLoginDay, currentDay) and lastLoginDay > 0 then
-		-- If last login was today, check if we've already claimed
-		-- We consider the reward claimed if lastLogin was set today and streak indicates we already claimed
-		-- Note: streak can be 1-7 (day number) or 7 (just completed day 7)
-		-- If streak is 0 and lastLogin is today, it means first login today (not claimed yet)
-		-- If streak > 0 and lastLogin is today, it means we already claimed today's reward
-		isClaimed = (streak > 0)
-		
-		-- If reward is claimed today, current day is the day we claimed (streak value)
-		-- If streak is 7, we're on day 7
-		-- If streak is 1-6, we're on that day
-		if isClaimed then
-			if streak == 7 then
-				currentRewardDay = 7
-			elseif streak >= 1 and streak <= 6 then
-				currentRewardDay = streak
-			end
+	if daysSinceLastLogin == 0 and lastLoginDay > 0 then
+		-- Same day as last login - already claimed today
+		isClaimed = true
+	end
+	
+	-- Determine current reward day based on streak
+	-- If claimed today, show the day we're on (streak value)
+	-- If not claimed, show the next day to claim (streak + 1, wrapping from 7 to 1)
+	local currentRewardDay = 1
+	if isClaimed then
+		-- Already claimed today - show current day (streak value)
+		if streak >= 1 and streak <= 7 then
+			currentRewardDay = streak
 		else
-			-- Not claimed yet today - show the day we should claim
-			-- If streak is 0, it's day 1
-			-- If streak is 1-6, next day is streak + 1
-			if streak == 0 then
-				currentRewardDay = 1
-			elseif streak >= 1 and streak <= 6 then
-				currentRewardDay = streak + 1
-			elseif streak == 7 then
-				-- After completing day 7, next day is day 1
-				currentRewardDay = 1
-			end
+			currentRewardDay = 1
 		end
 	else
-		-- Different day or first login - determine next reward day
-		if streak == 7 then
-			-- After completing day 7, next day is day 1
+		-- Not claimed yet - show next day to claim
+		if streak == 0 then
+			-- First time or reset - day 1
 			currentRewardDay = 1
-		elseif streak >= 0 and streak < 7 then
-			-- Normal progression: day = streak + 1
+		elseif streak >= 1 and streak < 7 then
+			-- Normal progression: next day
 			currentRewardDay = streak + 1
+		elseif streak == 7 then
+			-- After completing day 7, wrap to day 1
+			currentRewardDay = 1
+		else
+			-- Safety fallback
+			currentRewardDay = 1
 		end
 	end
 	
@@ -203,43 +181,40 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		local daily = profile.daily
 		local lastLoginDay = daily.lastLogin
 		
-		-- Calculate expected streak based on last login
-		local expectedStreak = daily.streak
-		local wasDay7 = (daily.streak == 7)
-		
+		-- Check if reward is already claimed today (equivalent to canClaimBonus check)
+		-- According to provided code: daysSince == 0 means already claimed today
 		if lastLoginDay > 0 then
 			local daysSinceLastLogin = math.floor((currentDay - lastLoginDay) / 86400)
-			if daysSinceLastLogin == 1 then
-				-- Yesterday - increment streak, but if it was day 7, reset to 0
-				if wasDay7 then
-					expectedStreak = 0 -- Reset to 0 after completing day 7
-				else
-					expectedStreak = daily.streak + 1
-				end
-			elseif daysSinceLastLogin > 1 then
-				-- More than 1 day ago - reset streak
-				expectedStreak = 0
+			if daysSinceLastLogin == 0 then
+				-- Same day - already claimed today, cannot claim again
+				profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.REWARD_ALREADY_CLAIMED }
+				return profile
 			end
-			-- daysSinceLastLogin == 0 means same day (already logged in today)
-		else
-			-- First time login
-			expectedStreak = 0
 		end
 		
-		-- Normalize streak (0-6, cycles after 7)
-		-- Note: streak of 7 is only temporary, gets reset to 0 after claiming day 7
-		if expectedStreak > 7 then
-			expectedStreak = 0 -- Safety check
+		-- Calculate new streak based on last login
+		-- Logic matches provided code: if daysMissed > 1, reset streak to 0
+		local streak = daily.streak
+		local daysMissed = 0
+		if lastLoginDay > 0 then
+			daysMissed = math.floor((currentDay - lastLoginDay) / 86400)
 		end
 		
-		-- Check if reward is already claimed today
-		if not IsDifferentDay(lastLoginDay, currentDay) and daily.streak > 0 then
-			profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.REWARD_ALREADY_CLAIMED }
-			return profile
+		-- Reset streak if more than 1 day missed
+		if daysMissed > 1 then
+			streak = 0 -- reset
 		end
 		
-		-- Calculate expected reward day (streak + 1)
-		local expectedRewardDay = expectedStreak + 1
+		-- Increment streak (matches provided code: streak = streak + 1)
+		streak = streak + 1
+		
+		-- Wrap streak if more than 7 (matches provided code: if streak > 7 then streak = 1)
+		if streak > 7 then
+			streak = 1
+		end
+		
+		-- Calculate expected reward day (should match the streak we're about to set)
+		local expectedRewardDay = streak
 		
 		-- Check if the requested reward index matches expected day
 		if rewardIndex ~= expectedRewardDay then
@@ -268,14 +243,8 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 			end
 		end
 		
-		-- Update streak and lastLogin
-		-- After claiming day 7, set streak to 7 (will be used to detect it was day 7 in next claim)
-		-- For days 1-6, set streak to the day number
-		if expectedRewardDay == 7 then
-			daily.streak = 7 -- Mark that we completed day 7
-		else
-			daily.streak = expectedRewardDay
-		end
+		-- Update streak and lastLogin (matches provided code)
+		daily.streak = streak
 		daily.lastLogin = currentDay
 		
 		profile._dailyResult = { ok = true, rewardIndex = rewardIndex, lootboxes = lootboxesToGrant, streak = daily.streak }
@@ -324,10 +293,11 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 end
 
 -- Track player login (call when player joins)
+-- Note: This only initializes daily data if missing. 
+-- lastLogin is updated only when claiming rewards, not on login.
+-- This matches the provided code where lastLogin is only set on claim.
 function DailyService.TrackPlayerLogin(userId)
-	local currentDay = GetCurrentDayTimestamp()
-	
-	-- Update lastLogin timestamp (but don't modify streak here, only in ClaimDailyReward)
+	-- Initialize daily data if missing (but don't modify lastLogin or streak)
 	local success, _ = ProfileManager.UpdateProfile(userId, function(profile)
 		if not profile.daily then
 			profile.daily = {
@@ -335,28 +305,8 @@ function DailyService.TrackPlayerLogin(userId)
 				lastLogin = 0
 			}
 		end
-		
-		-- Only update lastLogin if it's a different day (to avoid overwriting if already updated)
-		if IsDifferentDay(profile.daily.lastLogin, currentDay) then
-			-- Check if streak should be reset or incremented
-			local daysSinceLastLogin = 0
-			if profile.daily.lastLogin > 0 then
-				daysSinceLastLogin = math.floor((currentDay - profile.daily.lastLogin) / 86400)
-			end
-			
-			if daysSinceLastLogin > 1 then
-				-- More than 1 day ago - reset streak
-				profile.daily.streak = 0
-			elseif daysSinceLastLogin == 1 then
-				-- Yesterday - streak will be incremented when claiming
-				-- Don't modify streak here
-			end
-			-- If daysSinceLastLogin == 0, it's the same day, don't update
-			
-			-- Update lastLogin to current day
-			profile.daily.lastLogin = currentDay
-		end
-		
+		-- Don't update lastLogin here - it should only be updated when claiming rewards
+		-- This ensures that isClaimed logic works correctly
 		return profile
 	end)
 	

@@ -27,7 +27,7 @@ DailyHandler.lastAutoOpenDay = 0  -- Track which day we last auto-opened for
 DailyHandler.pendingClaim = false  -- Flag to track if we're waiting for claim response
 
 --// Constants
-local SYNC_INTERVAL = 30  -- Sync with server every 30 seconds when window is open
+local SYNC_INTERVAL = 60  -- Sync with server every 30 seconds when window is open
 
 --// Initialization
 function DailyHandler:Init(controller)
@@ -479,7 +479,7 @@ function DailyHandler:HandleDailyUpdate(dailyData)
 		if prevIsClaimed == false and self.isClaimed == true and self.isWindowOpen then
 			-- Delay auto-close slightly to let user see the reward confirmation
 			task.spawn(function()
-				task.wait(1.5) -- Give time to see the UI update
+				task.wait(0.1) -- Give time to see the UI update
 				-- Double-check conditions before closing
 				if self.isWindowOpen and self.isClaimed then
 					print("📅 DailyHandler: Auto-closing daily window after successful reward claim")
