@@ -1,6 +1,5 @@
 --// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -25,6 +24,7 @@ PlaytimeHandler.thresholds = {}
 PlaytimeHandler.NetworkClient = nil
 PlaytimeHandler.updateTimer = nil  -- Timer for automatic updates
 PlaytimeHandler.syncTask = nil  -- Task for periodic sync
+PlaytimeHandler.pendingClaim = nil  -- Track which reward index we're waiting for
 
 --// Constants
 local SYNC_INTERVAL = 5  -- Sync with server every 5 seconds
@@ -75,6 +75,7 @@ function PlaytimeHandler:Init(controller)
 	self.isWindowOpen = false
 	self.updateTimer = nil
 	self.syncTask = nil
+	self.pendingClaim = nil
 
 	-- Setup playtime functionality
 	self:SetupPlaytime()
@@ -90,11 +91,6 @@ function PlaytimeHandler:SetupPlaytime()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 	
-	
-	-- Debug: Print all children in PlayerGui
-	for _, child in pairs(playerGui:GetChildren()) do
-	end
-	
 	-- Wait for Roblox to automatically clone GameUI from StarterGui
 	local gameGui = playerGui:WaitForChild("GameUI", 5) -- Initial wait
 	
@@ -107,20 +103,17 @@ function PlaytimeHandler:SetupPlaytime()
 		end
 	end
 	
-	
 	-- Check if Playtime frame exists
 	local playtimeFrame = gameGui:FindFirstChild("Playtime")
 	if not playtimeFrame then
 		warn("PlaytimeHandler: Playtime frame not found in " .. gameGui.Name .. " - Playtime UI not available")
-		for _, child in pairs(gameGui:GetChildren()) do
-		end
 		return
 	end
-	
 	
 	-- Store UI reference for later use
 	self.UI = gameGui
 	self.PlaytimeFrame = playtimeFrame
+	self.InputBlocker = playtimeFrame:FindFirstChild("InputBlocker")
 	
 	-- Hide playtime initially
 	playtimeFrame.Visible = false
@@ -146,13 +139,11 @@ function PlaytimeHandler:SetupOpenButton()
 		return
 	end
 	
-	
 	local playtimeButton = leftPanel:FindFirstChild("BtnPlaytime")
 	if not playtimeButton then
 		warn("PlaytimeHandler: Button not found in Playtime frame")
 		return
 	end
-	
 	
 	-- Test if the button has the right events
 	if playtimeButton:IsA("TextButton") then
@@ -231,11 +222,17 @@ function PlaytimeHandler:ClaimReward(rewardIndex)
 		return
 	end
 	
+	-- Block input while processing
+	self:BlockInput(true, "claim")
+	self.pendingClaim = rewardIndex
+	
 	-- Send to server for validation and actual reward granting
 	if self.NetworkClient then
 		self.NetworkClient.requestClaimPlaytimeReward(rewardIndex)
 	else
 		warn("PlaytimeHandler: NetworkClient not available")
+		self:BlockInput(false, "claim")
+		self.pendingClaim = nil
 	end
 end
 
@@ -452,9 +449,25 @@ function PlaytimeHandler:SetupProfileUpdatedHandler()
 	local ProfileUpdated = game.ReplicatedStorage.Network:WaitForChild("ProfileUpdated")
 	
 	local connection = ProfileUpdated.OnClientEvent:Connect(function(payload)
+		-- Handle errors
+		if payload.error then
+			warn("PlaytimeHandler: Received error from server: " .. tostring(payload.error.message))
+			-- Unblock input on error if we were waiting for claim response
+			if self.pendingClaim then
+				self:BlockInput(false, "claim")
+				self.pendingClaim = nil
+			end
+			return
+		end
+		
 		-- Handle playtime data updates
 		if payload.playtime then
 			self:HandlePlaytimeUpdate(payload.playtime)
+			-- Unblock input after successful update if we were waiting for claim response
+			if self.pendingClaim then
+				self:BlockInput(false, "claim")
+				self.pendingClaim = nil
+			end
 		end
 	end)
 	
@@ -580,6 +593,16 @@ function PlaytimeHandler:Cleanup()
 
 	self._initialized = false
 	print("✅ PlaytimeHandler cleaned up")
+end
+
+function PlaytimeHandler:BlockInput(value, source)
+	if not self.InputBlocker then
+		-- InputBlocker is optional, don't warn if missing
+		return
+	end
+
+	self.InputBlocker.Active = value
+	self.InputBlocker.Visible = value
 end
 
 -- Register with close button handler
