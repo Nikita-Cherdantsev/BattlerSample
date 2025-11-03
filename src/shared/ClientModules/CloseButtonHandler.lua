@@ -20,6 +20,7 @@ CloseButtonHandler.CloseButtonFrame = nil
 -- State tracking
 CloseButtonHandler.openFrames = {} -- Track which frames are currently open
 CloseButtonHandler.frameStack = {} -- Track the order of opened frames (most recent last)
+CloseButtonHandler.closeButtonBlocked = false -- Flag to block close button (e.g., when Daily reward is available)
 CloseButtonHandler.isInitialized = false
 
 -- Initialize the close button handler
@@ -130,6 +131,12 @@ end
 
 -- Update close button visibility based on open frames
 function CloseButtonHandler:UpdateCloseButtonVisibility()
+	-- If close button is blocked (e.g., Daily reward available), don't show it
+	if self.closeButtonBlocked then
+		self:SetCloseButtonVisible(false)
+		return
+	end
+	
 	local hasOpenFrames = false
 	for frameName, isOpen in pairs(self.openFrames) do
 		if isOpen then
@@ -139,6 +146,18 @@ function CloseButtonHandler:UpdateCloseButtonVisibility()
 	end
 	
 	self:SetCloseButtonVisible(hasOpenFrames)
+end
+
+-- Block close button (e.g., when Daily reward is available)
+function CloseButtonHandler:BlockCloseButton()
+	self.closeButtonBlocked = true
+	self:UpdateCloseButtonVisibility()
+end
+
+-- Unblock close button
+function CloseButtonHandler:UnblockCloseButton()
+	self.closeButtonBlocked = false
+	self:UpdateCloseButtonVisibility()
 end
 
 -- Get list of open frame names

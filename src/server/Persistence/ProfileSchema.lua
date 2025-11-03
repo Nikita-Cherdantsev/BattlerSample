@@ -52,6 +52,12 @@ ProfileSchema.Profile = {
 		totalTime = 0,           
 		lastSyncTime = 0,         
 		claimedRewards = {}       
+	},
+	
+	-- Daily bonus data
+	daily = {
+		streak = 0,              -- Consecutive login days (0-7, resets if missed a day)
+		lastLogin = 0            -- Unix timestamp of last login date
 	}
 }
 
@@ -283,6 +289,19 @@ function ProfileSchema.ValidateProfile(profile)
 		end
 	end
 	
+	-- Check daily data
+	if not profile.daily or type(profile.daily) ~= "table" then
+		return false, "Invalid daily data"
+	end
+	
+	if type(profile.daily.streak) ~= "number" or profile.daily.streak < 0 or profile.daily.streak > 7 then
+		return false, "Invalid daily streak"
+	end
+	
+	if type(profile.daily.lastLogin) ~= "number" or profile.daily.lastLogin < 0 then
+		return false, "Invalid daily lastLogin"
+	end
+	
 	-- Check pending lootbox
 	if profile.pendingLootbox ~= nil then
 		if type(profile.pendingLootbox) ~= "table" then
@@ -360,6 +379,10 @@ function ProfileSchema.CreateProfile(playerId)
 			totalTime = 0,
 			lastSyncTime = now,
 			claimedRewards = {}
+		},
+		daily = {
+			streak = 0,
+			lastLogin = 0
 		}
 	}
 	
@@ -387,6 +410,10 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 			totalTime = 0,
 			lastSyncTime = os.time(),
 			claimedRewards = {}
+		},
+		daily = {
+			streak = 0,
+			lastLogin = 0
 		}
 	}
 	

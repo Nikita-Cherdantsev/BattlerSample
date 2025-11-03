@@ -11,6 +11,7 @@ local MatchService = require(game.ServerScriptService:WaitForChild("Services"):W
 local ShopService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ShopService"))
 local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
 local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
+local DailyService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("DailyService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
@@ -35,6 +36,8 @@ local RequestStartPackPurchase = nil
 local RequestBuyLootbox = nil
 local RequestPlaytimeData = nil
 local RequestClaimPlaytimeReward = nil
+local RequestDailyData = nil
+local RequestClaimDailyReward = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
 
@@ -113,6 +116,14 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestClaimPlaytimeReward = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestDailyData = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestClaimDailyReward = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	},
@@ -240,6 +251,16 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestClaimPlaytimeReward = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestDailyData = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestClaimDailyReward = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -445,8 +466,11 @@ local function HandleRequestProfile(player, requestData)
 	local collection = PlayerDataService.GetCollection(player)
 	local loginInfo = CreateLoginInfo(player)
 	
-	-- Send profile snapshot (including lootboxes and currencies)
-	SendProfileUpdate(player, {
+	-- Get daily data for initial profile load
+	local dailyData = DailyService.GetDailyData(player.UserId)
+	
+	-- Prepare payload
+	local payload = {
 		deck = profile.deck,
 		collectionSummary = CreateCollectionSummary(collection),
 		loginInfo = loginInfo,
@@ -455,7 +479,21 @@ local function HandleRequestProfile(player, requestData)
 		currencies = profile.currencies or { soft = 0, hard = 0 },
 		squadPower = profile.squadPower,
 		updatedAt = os.time()
-	})
+	}
+	
+	-- Include daily data if available
+	if dailyData then
+		payload.daily = {
+			streak = dailyData.streak,
+			lastLogin = dailyData.lastLogin,
+			currentDay = dailyData.currentDay,
+			isClaimed = dailyData.isClaimed,
+			rewardsConfig = dailyData.rewardsConfig
+		}
+	end
+	
+	-- Send profile snapshot (including lootboxes, currencies, and daily data)
+	SendProfileUpdate(player, payload)
 	
 	LogInfo(player, "Profile sent successfully")
 end
@@ -1335,6 +1373,124 @@ local function HandleRequestClaimPlaytimeReward(player, requestData)
 	SendProfileUpdate(player, payload)
 end
 
+local function HandleRequestDailyData(player, requestData)
+	LogInfo(player, "Processing daily data request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestDailyData")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Get daily data
+	local dailyData = DailyService.GetDailyData(player.UserId)
+	if not dailyData then
+		SendProfileUpdate(player, {
+			error = {
+				code = "PROFILE_LOAD_FAILED",
+				message = "Failed to load daily data"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Send daily data
+	SendProfileUpdate(player, {
+		daily = {
+			streak = dailyData.streak,
+			lastLogin = dailyData.lastLogin,
+			currentDay = dailyData.currentDay,
+			isClaimed = dailyData.isClaimed,
+			rewardsConfig = dailyData.rewardsConfig
+		},
+		serverNow = os.time()
+	})
+	
+	LogInfo(player, "Daily data sent successfully")
+end
+
+local function HandleRequestClaimDailyReward(player, requestData)
+	LogInfo(player, "Processing claim daily reward request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimDailyReward")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate request
+	if not requestData or type(requestData.rewardIndex) ~= "number" then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing or invalid rewardIndex"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Claim reward
+	local result = DailyService.ClaimDailyReward(player.UserId, requestData.rewardIndex)
+	
+	-- Get updated profile
+	local profile = PlayerDataService.GetProfile(player)
+	local payload = {
+		currencies = profile and profile.currencies or {},
+		lootboxes = profile and profile.lootboxes or {},
+		pendingLootbox = profile and profile.pendingLootbox or nil,
+		serverNow = os.time()
+	}
+	
+	if result.ok then
+		-- Include rewards and collection summary if lootbox was opened
+		if result.rewards then
+			payload.rewards = result.rewards
+			local collection = PlayerDataService.GetCollection(player)
+			if collection then
+				payload.collectionSummary = CreateCollectionSummary(collection)
+			end
+		end
+		
+		-- Include updated daily data
+		local dailyData = DailyService.GetDailyData(player.UserId)
+		if dailyData then
+			payload.daily = {
+				streak = dailyData.streak,
+				lastLogin = dailyData.lastLogin,
+				currentDay = dailyData.currentDay,
+				isClaimed = dailyData.isClaimed,
+				rewardsConfig = dailyData.rewardsConfig
+			}
+		end
+		
+		LogInfo(player, "Daily reward %d claimed successfully", requestData.rewardIndex)
+	else
+		payload.error = {
+			code = result.error,
+			message = result.error
+		}
+		LogWarning(player, "Claim daily reward failed: %s", tostring(result.error))
+	end
+	
+	SendProfileUpdate(player, payload)
+end
+
 local function HandleRequestBuyLootbox(player, requestData)
 	LogInfo(player, "Processing buy lootbox request")
 	
@@ -1565,6 +1721,8 @@ RemoteEvents.RequestStartPackPurchase = RequestStartPackPurchase
 RemoteEvents.RequestBuyLootbox = RequestBuyLootbox
 RemoteEvents.RequestPlaytimeData = RequestPlaytimeData
 RemoteEvents.RequestClaimPlaytimeReward = RequestClaimPlaytimeReward
+RemoteEvents.RequestDailyData = RequestDailyData
+RemoteEvents.RequestClaimDailyReward = RequestClaimDailyReward
 RemoteEvents.RequestNPCDeck = RequestNPCDeck
 RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
 
@@ -1658,6 +1816,14 @@ function RemoteEvents.Init()
 	RequestClaimPlaytimeReward.Name = "RequestClaimPlaytimeReward"
 	RequestClaimPlaytimeReward.Parent = NetworkFolder
 	
+	RequestDailyData = Instance.new("RemoteEvent")
+	RequestDailyData.Name = "RequestDailyData"
+	RequestDailyData.Parent = NetworkFolder
+	
+	RequestClaimDailyReward = Instance.new("RemoteEvent")
+	RequestClaimDailyReward.Name = "RequestClaimDailyReward"
+	RequestClaimDailyReward.Parent = NetworkFolder
+	
 	-- NPC Deck RemoteFunction
 	RequestNPCDeck = Instance.new("RemoteFunction")
 	RequestNPCDeck.Name = "RequestNPCDeck"
@@ -1689,6 +1855,8 @@ function RemoteEvents.Init()
 			{name = "RequestBuyLootbox", instance = RequestBuyLootbox},
 			{name = "RequestPlaytimeData", instance = RequestPlaytimeData},
 			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward},
+			{name = "RequestDailyData", instance = RequestDailyData},
+			{name = "RequestClaimDailyReward", instance = RequestClaimDailyReward},
 			{name = "RequestClaimBattleReward", instance = RequestClaimBattleReward}
 		}
 		
@@ -1723,10 +1891,22 @@ function RemoteEvents.Init()
 	RequestBuyLootbox.OnServerEvent:Connect(HandleRequestBuyLootbox)
 	RequestPlaytimeData.OnServerEvent:Connect(HandleRequestPlaytimeData)
 	RequestClaimPlaytimeReward.OnServerEvent:Connect(HandleRequestClaimPlaytimeReward)
+	RequestDailyData.OnServerEvent:Connect(HandleRequestDailyData)
+	RequestClaimDailyReward.OnServerEvent:Connect(HandleRequestClaimDailyReward)
 	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()
+	
+	-- Track player login for daily rewards
+	Players.PlayerAdded:Connect(function(player)
+		DailyService.TrackPlayerLogin(player.UserId)
+	end)
+	
+	-- Handle players already in game
+	for _, player in ipairs(Players:GetPlayers()) do
+		DailyService.TrackPlayerLogin(player.UserId)
+	end
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)

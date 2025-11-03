@@ -304,6 +304,14 @@ function ProfileManager.LoadProfile(userId)
 				}
 			end
 			
+			-- Initialize daily if missing (for existing profiles without daily data)
+			if not profile.daily then
+				profile.daily = {
+					streak = 0,
+					lastLogin = 0
+				}
+			end
+			
 			-- Compute squad power if not set
 			if profile.squadPower == 0 then
 				profile.squadPower = ComputeSquadPower(profile)

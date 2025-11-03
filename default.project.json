@@ -234,6 +234,9 @@
         },
         "PlaytimeService": {
           "$path": "src/server/Services/PlaytimeService.lua"
+        },
+        "DailyService": {
+          "$path": "src/server/Services/DailyService.lua"
         }
       }
     },

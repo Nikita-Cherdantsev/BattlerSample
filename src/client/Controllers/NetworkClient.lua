@@ -38,6 +38,8 @@ local RequestStartPackPurchase = Network:WaitForChild("RequestStartPackPurchase"
 local RequestBuyLootbox = Network:WaitForChild("RequestBuyLootbox")
 local RequestPlaytimeData = Network:WaitForChild("RequestPlaytimeData")
 local RequestClaimPlaytimeReward = Network:WaitForChild("RequestClaimPlaytimeReward")
+local RequestDailyData = Network:WaitForChild("RequestDailyData")
+local RequestClaimDailyReward = Network:WaitForChild("RequestClaimDailyReward")
 local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward")
 
 -- State
@@ -57,6 +59,8 @@ local lastStartPackPurchaseRequest = 0
 local lastBuyLootboxRequest = 0
 local lastPlaytimeDataRequest = 0
 local lastClaimPlaytimeRewardRequest = 0
+local lastDailyDataRequest = 0
+local lastClaimDailyRewardRequest = 0
 local DEBOUNCE_MS = 300
 
 -- Utility functions
@@ -444,6 +448,37 @@ function NetworkClient.requestClaimPlaytimeReward(rewardIndex)
 	return true
 end
 
+-- Daily methods
+function NetworkClient.requestDailyData()
+	if debounce(lastDailyDataRequest) then
+		log("Debouncing daily data request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastDailyDataRequest = tick() * 1000
+	log("Requesting daily data")
+	RequestDailyData:FireServer({})
+	
+	return true
+end
+
+function NetworkClient.requestClaimDailyReward(rewardIndex)
+	if not rewardIndex or type(rewardIndex) ~= "number" or rewardIndex < 1 or rewardIndex > 7 then
+		return false, "Invalid reward index"
+	end
+	
+	if debounce(lastClaimDailyRewardRequest) then
+		log("Debouncing claim daily reward request")
+		return false, "Request too frequent, please wait"
+	end
+	
+	lastClaimDailyRewardRequest = tick() * 1000
+	log("Requesting claim daily reward: %d", rewardIndex)
+	RequestClaimDailyReward:FireServer({rewardIndex = rewardIndex})
+	
+	return true
+end
+
 -- Check if any request is currently in flight
 function NetworkClient.isBusy()
 	local now = tick() * 1000
@@ -463,7 +498,9 @@ function NetworkClient.isBusy()
 		   (now - lastStartPackPurchaseRequest < recentThreshold) or
 		   (now - lastBuyLootboxRequest < recentThreshold) or
 		   (now - lastPlaytimeDataRequest < recentThreshold) or
-		   (now - lastClaimPlaytimeRewardRequest < recentThreshold)
+		   (now - lastClaimPlaytimeRewardRequest < recentThreshold) or
+		   (now - lastDailyDataRequest < recentThreshold) or
+		   (now - lastClaimDailyRewardRequest < recentThreshold)
 end
 
 -- Reinitialize NetworkClient (for mock toggle)
@@ -487,6 +524,8 @@ function NetworkClient.reinitialize()
 	lastBuyLootboxRequest = 0
 	lastPlaytimeDataRequest = 0
 	lastClaimPlaytimeRewardRequest = 0
+	lastDailyDataRequest = 0
+	lastClaimDailyRewardRequest = 0
 	
 	log("NetworkClient reinitialized")
 end
