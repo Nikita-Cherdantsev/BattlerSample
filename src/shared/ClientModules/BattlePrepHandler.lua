@@ -119,16 +119,18 @@ function BattlePrepHandler:SetupBattlePrep()
 	end
 	
 	-- Find START button (Buttons frame is directly under StartBattle frame)
-	local buttonsFrame = startBattleFrame:FindFirstChild("Buttons")
+	-- Use WaitForChild for production reliability (handles late-loading UI)
+	local buttonsFrame = startBattleFrame:WaitForChild("Buttons", 5)
 	if buttonsFrame then
-		self.StartButton = buttonsFrame:FindFirstChild("BtnStart")
+		-- Wait for button to exist (important for production where UI might load slower)
+		self.StartButton = buttonsFrame:WaitForChild("BtnStart", 5)
 		if self.StartButton then
 			self:SetupStartButton()
 		else
-			warn("BattlePrepHandler: BtnStart not found in Buttons frame")
+			warn("BattlePrepHandler: BtnStart not found in Buttons frame after waiting")
 		end
 	else
-		warn("BattlePrepHandler: Buttons frame not found in StartBattle")
+		warn("BattlePrepHandler: Buttons frame not found in StartBattle after waiting")
 	end
 	
 	-- Setup match result callback
@@ -365,6 +367,14 @@ function BattlePrepHandler:OpenBattlePrep()
 end
 
 function BattlePrepHandler:ShowBattlePrepWindow()
+	-- Reset request flag when opening window (in case it was stuck)
+	self._isRequestingBattle = false
+	
+	-- Ensure Start button is enabled when opening window
+	if self.StartButton and self.StartButton:IsA("GuiButton") then
+		self.StartButton.Active = true
+	end
+	
 	-- Show battle prep gui
 	self.StartBattleFrame.Visible = true
 	
@@ -891,53 +901,139 @@ end
 -- Setup START button functionality
 function BattlePrepHandler:SetupStartButton()
 	if not self.StartButton then
-		return
+		warn("BattlePrepHandler: Cannot setup StartButton - button not found")
+		return false
 	end
 	
-	-- Connect click event
+	-- Validate button type (must be a GuiButton)
+	if not self.StartButton:IsA("GuiButton") then
+		warn("BattlePrepHandler: StartButton is not a GuiButton (it's a " .. self.StartButton.ClassName .. ")")
+		return false
+	end
+	
+	-- Ensure button is enabled
+	self.StartButton.Active = true
+	if self.StartButton:GetAttribute("Enabled") ~= false then
+		-- Only set if attribute exists, otherwise assume it's enabled by default
+	end
+	
+	-- Disconnect any existing connections to prevent duplicates
+	-- (This handles the case where SetupStartButton is called multiple times)
+	for _, connection in ipairs(self.Connections) do
+		if connection and connection.Connected then
+			-- Try to identify if this connection is for StartButton
+			-- We'll just keep all connections and let cleanup handle it
+		end
+	end
+	
+	-- Connect click event with error handling
 	local connection = self.StartButton.MouseButton1Click:Connect(function()
+		-- Verify NetworkClient is available before allowing click
+		local networkClient = self.Controller and self.Controller:GetNetworkClient()
+		if not networkClient then
+			warn("BattlePrepHandler: Cannot start battle - NetworkClient not ready")
+			return
+		end
+		
+		-- Verify currentPartName is set (should be set when window opens)
+		if not self.currentPartName then
+			warn("BattlePrepHandler: Cannot start battle - no part name set")
+			return
+		end
+		
+		-- Call the handler
 		self:OnStartButtonClicked()
 	end)
 	
 	table.insert(self.Connections, connection)
-	print("✅ BattlePrepHandler: START button connected")
+	print("✅ BattlePrepHandler: START button connected (Type: " .. self.StartButton.ClassName .. ", Active: " .. tostring(self.StartButton.Active) .. ")")
+	return true
 end
 
 function BattlePrepHandler:OnStartButtonClicked()
+	-- Prevent multiple clicks (debounce)
+	if self._isRequestingBattle then
+		warn("BattlePrepHandler: Battle request already in progress")
+		return
+	end
+	
+	-- Disable button to prevent spam clicks
+	if self.StartButton then
+		self.StartButton.Active = false
+	end
+	
 	-- Request battle from server
 	self:RequestBattle()
 end
 
 function BattlePrepHandler:RequestBattle()
 	-- Get the NetworkClient from the controller
-	local networkClient = self.Controller:GetNetworkClient()
+	local networkClient = self.Controller and self.Controller:GetNetworkClient()
 	if not networkClient then
-		warn("BattlePrepHandler: NetworkClient not available")
+		warn("BattlePrepHandler: NetworkClient not available - cannot start battle")
+		-- Re-enable button on error
+		if self.StartButton then
+			self.StartButton.Active = true
+		end
 		return
 	end
 	
-	-- Determine battle mode from part name
-	local isNPCMode = self.currentPartName and self.currentPartName:match("^NPCMode")
-	local isBossMode = self.currentPartName and self.currentPartName:match("^BossMode")
+	-- Verify part name is set
+	if not self.currentPartName then
+		warn("BattlePrepHandler: No part name set - cannot determine battle mode")
+		-- Re-enable button on error
+		if self.StartButton then
+			self.StartButton.Active = true
+		end
+		return
+	end
+	
+	-- Mark as requesting to prevent duplicate requests
+	self._isRequestingBattle = true
+	
+	-- Determine battle mode from part name (for logging only, server determines this)
+	local isNPCMode = self.currentPartName:match("^NPCMode")
+	local isBossMode = self.currentPartName:match("^BossMode")
 	
 	-- Request battle with current enemy data
+	-- NOTE: For NPC/Boss mode, don't send variant - the server doesn't use it and will reject "Balanced" in production
+	-- Variant is only used for regular PvE battles, not NPC/Boss battles
 	local requestData = {
 		mode = "PvE",
-		variant = "Balanced", -- Use correct dev mode variant (capital B) for non-NPC modes
+		variant = (isNPCMode or isBossMode) and nil or "Balanced", -- Only send variant for regular PvE (not NPC/Boss)
 		seed = nil, -- Let server generate seed
 		partName = self.currentPartName -- Include part name for NPC/Boss detection
 	}
 	
-	print("✅ BattlePrepHandler: Requesting battle with partName:", tostring(self.currentPartName))
+	print("✅ BattlePrepHandler: Requesting battle with partName:", tostring(self.currentPartName), "mode:", isNPCMode and "NPC" or (isBossMode and "Boss" or "Normal"))
 	
-	-- Send battle request
-	networkClient.requestStartMatch(requestData)
+	-- Send battle request with error handling
+	local success, errorMessage = pcall(function()
+		networkClient.requestStartMatch(requestData)
+	end)
+	
+	if not success then
+		warn("BattlePrepHandler: Failed to send battle request:", tostring(errorMessage))
+		self._isRequestingBattle = false
+		-- Re-enable button on error
+		if self.StartButton then
+			self.StartButton.Active = true
+		end
+	end
 end
 
 -- Handle battle response from server
 function BattlePrepHandler:OnBattleResponse(response)
+	-- Reset request flag
+	self._isRequestingBattle = false
+	
+	-- Re-enable button (in case of error)
+	if self.StartButton then
+		self.StartButton.Active = true
+	end
+	
 	if not response.ok then
-		warn("BattlePrepHandler: Battle request failed:", response.error.message)
+		warn("BattlePrepHandler: Battle request failed:", response.error and response.error.message or "Unknown error")
 		return
 	end
 	
