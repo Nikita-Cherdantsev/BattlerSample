@@ -27,7 +27,7 @@ BattleHandler.cardHealthValues = {} -- Store current health values for each card
 local ANIMATION_DURATION = 0.5
 local CARD_SCALE_INCREASE = 1.1 -- 10% size increase
 local ATTACK_MOVE_DISTANCE = 100 -- Distance to move toward center
-local TWEEN_DURATION = 0.8 -- Duration for each animation phase (slower animations)
+local TWEEN_DURATION = 0.4 -- Duration for each animation phase
 
 --// Initialization
 function BattleHandler:Init(controller)
