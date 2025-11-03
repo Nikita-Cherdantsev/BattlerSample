@@ -1000,12 +1000,16 @@ function BattlePrepHandler:RequestBattle()
 	-- Variant is only used for regular PvE battles, not NPC/Boss battles
 	local requestData = {
 		mode = "PvE",
-		variant = (isNPCMode or isBossMode) and nil or "Balanced", -- Only send variant for regular PvE (not NPC/Boss)
 		seed = nil, -- Let server generate seed
 		partName = self.currentPartName -- Include part name for NPC/Boss detection
 	}
 	
-	print("✅ BattlePrepHandler: Requesting battle with partName:", tostring(self.currentPartName), "mode:", isNPCMode and "NPC" or (isBossMode and "Boss" or "Normal"))
+	-- Only add variant for regular PvE battles (not NPC/Boss)
+	if not isNPCMode and not isBossMode then
+		requestData.variant = "Balanced"
+	end
+	
+	print("✅ BattlePrepHandler: Requesting battle with partName:", tostring(self.currentPartName), "mode:", isNPCMode and "NPC" or (isBossMode and "Boss" or "Normal"), "variant:", tostring(requestData.variant))
 	
 	-- Send battle request with error handling
 	local success, errorMessage = pcall(function()
