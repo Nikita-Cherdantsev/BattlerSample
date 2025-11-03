@@ -157,7 +157,13 @@ function CardVM.getLevelCost(cardId, currentLevel)
 		return nil -- Already at max level
 	end
 	
-	return CardLevels.GetLevelCost(nextLevel)
+	-- Get card rarity from catalog
+	local card = CardCatalog.GetCard(cardId)
+	if not card then
+		return nil
+	end
+	
+	return CardLevels.GetLevelCost(nextLevel, card.rarity)
 end
 
 -- Check if card can be leveled up
@@ -168,7 +174,14 @@ function CardVM.canLevelUp(cardId, currentLevel, currentCount, softCurrency)
 	
 	-- Import CardLevels for validation
 	local CardLevels = Utilities.CardLevels
-	return CardLevels.CanLevelUp(cardId, currentLevel, currentCount, softCurrency)
+	
+	-- Get card rarity from catalog
+	local card = CardCatalog.GetCard(cardId)
+	if not card then
+		return false, "Card not found in catalog"
+	end
+	
+	return CardLevels.CanLevelUp(cardId, currentLevel, currentCount, softCurrency, card.rarity)
 end
 
 -- Build list of upgradeable cards from profile state

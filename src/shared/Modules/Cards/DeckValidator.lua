@@ -56,11 +56,14 @@ function DeckValidator.ValidateDeck(deck)
 	return true, nil
 end
 
--- Validate deck for battles (requires exactly 6 cards)
+-- Validate deck for battles (requires 1-6 cards)
 function DeckValidator.ValidateDeckForBattle(deck)
-	-- Check deck size (must be exactly 6 for battles)
-	if not deck or #deck ~= DeckValidator.TOTAL_SLOTS then
-		return false, "Deck must contain exactly 6 cards for battles"
+	-- Check deck size (must have at least 1 card, max 6 for battles)
+	if not deck or #deck == 0 then
+		return false, "Deck must contain at least 1 card for battles"
+	end
+	if #deck > DeckValidator.TOTAL_SLOTS then
+		return false, "Deck must contain at most 6 cards for battles"
 	end
 	
 	-- Use the same validation logic as regular deck validation

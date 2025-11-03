@@ -221,7 +221,19 @@ function DeckHandler:SetupCardContainers()
 end
 
 function DeckHandler:LoadProfileData()
-	-- Load profile data from client state
+	-- Always refresh profile data from client state to ensure we have the latest data
+	-- This is important when the player logs back in after changing their deck
+	if self.ClientState and self.ClientState.getProfile then
+		local profile = self.ClientState:getProfile()
+		if profile then
+			-- Create a copy to avoid reference issues, or use the profile directly
+			-- Since ClientState manages the profile, we can use it directly
+			self.currentProfile = profile
+			return true
+		end
+	end
+	
+	-- Fallback: Try GetState method (for backward compatibility)
 	if self.ClientState and self.ClientState.GetState then
 		local state = self.ClientState:GetState()
 		if state and state.profile then
@@ -501,7 +513,7 @@ function DeckHandler:UpdateCardAppearance(cardInstance, cardData, hasCard, cardL
 						imgMax.Visible = true
 					else
 						-- Check if can level up
-						local canLevelUp, _ = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
+						local canLevelUp, _ = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft, cardData.rarity)
 						imgLevelUp.Visible = canLevelUp
 						imgMax.Visible = false
 					end
@@ -521,7 +533,7 @@ function DeckHandler:UpdateCardAppearance(cardInstance, cardData, hasCard, cardL
 				-- Update progress text
 				local progressText = progressFrame:FindFirstChild("TxtValue")
 				if progressText then
-					local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1)
+					local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1, cardData.rarity)
 					if nextLevelCost then
 						progressText.Text = cardCount .. " / " .. nextLevelCost.requiredCount
 					else
@@ -681,13 +693,12 @@ function DeckHandler:OpenWindow()
 	end
 	self.isAnimating = true
 
-	-- Load profile data if not available
-	if not self.currentProfile then
-		if not self:LoadProfileData() then
-			-- Profile not available yet, wait for ProfileUpdated event
-			self.isAnimating = false
-			return
-		end
+	-- Always reload profile data from ClientState to ensure we have the latest deck
+	-- This fixes the issue where deck changes weren't visible after logging back in
+	if not self:LoadProfileData() then
+		-- Profile not available yet, wait for ProfileUpdated event
+		self.isAnimating = false
+		return
 	end
 
 	-- Hide HUD panels if they exist

@@ -63,7 +63,7 @@ end
 local function InitializeBoard(deck, playerId, collection)
 	local board = {}
 	
-	-- Validate deck for battle (must have exactly 6 cards)
+	-- Validate deck for battle (must have 1-6 cards)
 	local isValid, errorMessage = DeckValidator.ValidateDeckForBattle(deck)
 	if not isValid then
 		error("Invalid deck for player " .. playerId .. ": " .. errorMessage)
@@ -75,6 +75,7 @@ local function InitializeBoard(deck, playerId, collection)
 	for slotIndex, slotData in pairs(boardMapping) do
 		local cardEntry = collection and collection[slotData.cardId]
 		local level = cardEntry and cardEntry.level or 1
+		
 		board[slotIndex] = CreateUnitFromCard(slotData.cardId, slotIndex, playerId, level)
 	end
 	
@@ -121,36 +122,20 @@ local function CalculateTurnOrder(boardA, boardB)
 	return allUnits
 end
 
--- Find target using same-index targeting (v2 combat rules)
+-- Find target: first available slot starting from slot 1
 local function FindTarget(attacker, boardA, boardB)
 	local targetBoard = (attacker.playerId == "A") and boardB or boardA
 	
-	-- Primary target: same slot index on enemy board
-	local sameSlotUnit = targetBoard[attacker.slotIndex]
-	if sameSlotUnit and sameSlotUnit.state == CombatTypes.UnitState.ALIVE then
-		return sameSlotUnit
-	end
-	
-	-- Find nearest living enemy by absolute index distance
-	local nearestUnit = nil
-	local nearestDistance = math.huge
-	
-	for slotIndex, unit in pairs(targetBoard) do
-		if unit.state == CombatTypes.UnitState.ALIVE then
-			local distance = math.abs(slotIndex - attacker.slotIndex)
-			if distance < nearestDistance then
-				nearestDistance = distance
-				nearestUnit = unit
-			elseif distance == nearestDistance then
-				-- Tie-breaker: prefer lower slot index
-				if slotIndex < nearestUnit.slotIndex then
-					nearestUnit = unit
-				end
-			end
+	-- Find first available living enemy starting from slot 1
+	for slotIndex = 1, 6 do
+		local unit = targetBoard[slotIndex]
+		if unit and unit.state == CombatTypes.UnitState.ALIVE then
+			return unit
 		end
 	end
 	
-	return nearestUnit
+	-- No targets available
+	return nil
 end
 
 local function ApplyPassiveEffects(unit, effectType, context)
@@ -163,7 +148,7 @@ local function ApplyPassiveEffects(unit, effectType, context)
 	return context
 end
 
--- Calculate damage with 50% defence soak model (v2 combat rules)
+-- Calculate base damage with effects (defense is handled in ApplyDamageWithDefence)
 local function CalculateDamage(attacker, defender)
 	-- Apply pre-attack effects
 	local attackContext = {
@@ -173,17 +158,18 @@ local function CalculateDamage(attacker, defender)
 	}
 	attackContext = ApplyPassiveEffects(attacker, "pre_attack", attackContext)
 	
-	-- Calculate final damage using defence soak model
-	local finalDamage = CombatUtils.CalculateDamage(attackContext.damage, defender.stats.defence)
+	-- Return base damage after pre-attack effects (defense will be handled separately)
+	local baseDamage = attackContext.damage
 	
 	-- Apply on-hit effects
 	local hitContext = {
-		damage = finalDamage,
+		damage = baseDamage,
 		attacker = attacker,
 		defender = defender
 	}
 	hitContext = ApplyPassiveEffects(attacker, "on_hit", hitContext)
 	
+	-- Return the final base damage (defense will be applied in ApplyDamageWithDefence)
 	return hitContext.damage
 end
 
@@ -233,6 +219,7 @@ local function ExecuteAttack(attacker, defender, battleState)
 	
 	-- Apply on-death effects if defender died
 	if defender.state == CombatTypes.UnitState.DEAD then
+		LogInfo("KO: %s slot %d (%s) defeated", defender.playerId, defender.slotIndex, defender.cardId)
 		local deathContext = {
 			killer = attacker,
 			victim = defender
@@ -240,10 +227,10 @@ local function ExecuteAttack(attacker, defender, battleState)
 		ApplyPassiveEffects(attacker, "on_death", deathContext)
 	end
 	
-	LogInfo("Attack: %s slot %d → %s slot %d, HP damage: %d, armor reduced: %d, defender HP: %d, defender armor: %d, KO: %s", 
-		attacker.playerId, attacker.slotIndex, 
-		defender.playerId, defender.slotIndex, 
-		damageResult.damageToHp, damageResult.defenceReduced, defender.stats.health, defender.stats.defence, tostring(logEntry.defenderKO))
+	-- LogInfo("Attack: %s slot %d → %s slot %d, HP damage: %d, armor reduced: %d, defender HP: %d, defender armor: %d, KO: %s", 
+	--	attacker.playerId, attacker.slotIndex, 
+	--	defender.playerId, defender.slotIndex, 
+	--	damageResult.damageToHp, damageResult.defenceReduced, defender.stats.health, defender.stats.defence, tostring(logEntry.defenderKO))
 	
 	return true
 end
@@ -302,7 +289,7 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 	-- Battle loop
 	while battleState.round < MAX_ROUNDS do
 		battleState.round = battleState.round + 1
-		LogInfo("Starting round %d", battleState.round)
+		-- LogInfo("Starting round %d", battleState.round)
 		
 		-- Add round marker to log
 		table.insert(battleState.battleLog, {
@@ -321,11 +308,16 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 			-- Skip if unit is dead
 			if unit.state ~= CombatTypes.UnitState.ALIVE then
 				-- Skip to next iteration
+			elseif unit.stats.attack <= 0 then
+				-- Skip units with zero or negative attack (they can't deal damage)
+				LogInfo("Skip: %s slot %d (%s) - zero attack", unit.playerId, unit.slotIndex, unit.cardId)
+				-- Skip to next iteration
 			else
 				-- Find target
 				local target = FindTarget(unit, battleState.boardA, battleState.boardB)
 				if not target then
 					-- No valid targets, skip turn
+					LogInfo("Skip: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
 					-- Skip to next iteration
 				else
 					-- Execute attack
@@ -367,7 +359,7 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 		battleLog = battleState.battleLog
 	}
 	
-	LogInfo("Battle complete. Winner: %s, Rounds: %d", result.winner, result.rounds)
+	-- LogInfo("Battle complete. Winner: %s, Rounds: %d", result.winner, result.rounds)
 	
 	return result
 end

@@ -47,36 +47,57 @@ end
 local function TestCardLevels()
 	print("\n=== Testing Card Levels ===")
 	
-	-- Test level cost retrieval
-	local level2Cost = CardLevels.GetLevelCost(2)
-	if level2Cost then
-		print("✅ Level 2 cost:", level2Cost.requiredCount, "copies,", level2Cost.softAmount, "currency")
+	-- Test level cost retrieval for different rarities
+	local uncommonLevel2Cost = CardLevels.GetLevelCost(2, "uncommon")
+	local rareLevel2Cost = CardLevels.GetLevelCost(2, "rare")
+	local epicLevel2Cost = CardLevels.GetLevelCost(2, "epic")
+	local legendaryLevel2Cost = CardLevels.GetLevelCost(2, "legendary")
+	
+	if uncommonLevel2Cost and rareLevel2Cost and epicLevel2Cost and legendaryLevel2Cost then
+		print("✅ Level 2 costs by rarity:")
+		print("  Uncommon:", uncommonLevel2Cost.requiredCount, "copies,", uncommonLevel2Cost.softAmount, "currency")
+		print("  Rare:", rareLevel2Cost.requiredCount, "copies,", rareLevel2Cost.softAmount, "currency")
+		print("  Epic:", epicLevel2Cost.requiredCount, "copies,", epicLevel2Cost.softAmount, "currency")
+		print("  Legendary:", legendaryLevel2Cost.requiredCount, "copies,", legendaryLevel2Cost.softAmount, "currency")
 		testResults.cardLevels = true
 	else
-		print("❌ Failed to get level 2 cost")
+		print("❌ Failed to get level 2 costs by rarity")
 		testResults.cardLevels = false
 	end
 	
-	-- Test level up validation
-	local canLevelUp, errorMessage = CardLevels.CanLevelUp("card_100", 1, 10, 12000)
-	if canLevelUp then
-		print("✅ Can level up card_100 from 1 to 2")
+	-- Test level up validation for different rarities
+	local canLevelUpUncommon, errorMessage1 = CardLevels.CanLevelUp("card_100", 1, 2, 96, "uncommon")
+	local canLevelUpRare, errorMessage2 = CardLevels.CanLevelUp("card_200", 1, 4, 150, "rare")
+	
+	if canLevelUpUncommon then
+		print("✅ Can level up uncommon card from 1 to 2")
 	else
-		print("❌ Cannot level up:", errorMessage)
+		print("❌ Cannot level up uncommon:", errorMessage1)
 		testResults.cardLevels = false
 	end
 	
-	-- Test max level
-	local maxLevelCost = CardLevels.GetLevelCost(CardLevels.MAX_LEVEL)
-	if maxLevelCost then
-		print("✅ Max level cost:", maxLevelCost.requiredCount, "copies,", maxLevelCost.softAmount, "currency")
+	if canLevelUpRare then
+		print("✅ Can level up rare card from 1 to 2")
 	else
-		print("❌ Failed to get max level cost")
+		print("❌ Cannot level up rare:", errorMessage2)
+		testResults.cardLevels = false
+	end
+	
+	-- Test max level for different rarities
+	local maxLevelUncommon = CardLevels.GetLevelCost(CardLevels.MAX_LEVEL, "uncommon")
+	local maxLevelLegendary = CardLevels.GetLevelCost(CardLevels.MAX_LEVEL, "legendary")
+	
+	if maxLevelUncommon and maxLevelLegendary then
+		print("✅ Max level costs by rarity:")
+		print("  Uncommon:", maxLevelUncommon.requiredCount, "copies,", maxLevelUncommon.softAmount, "currency")
+		print("  Legendary:", maxLevelLegendary.requiredCount, "copies,", maxLevelLegendary.softAmount, "currency")
+	else
+		print("❌ Failed to get max level costs by rarity")
 		testResults.cardLevels = false
 	end
 	
 	-- Test invalid level (beyond max)
-	local invalidCost = CardLevels.GetLevelCost(11)
+	local invalidCost = CardLevels.GetLevelCost(11, "uncommon")
 	if not invalidCost then
 		print("✅ Invalid level correctly rejected")
 	else
@@ -193,7 +214,7 @@ local function TestPerCardGrowth()
 	end
 	
 	-- Test level-up rejection at max level
-	local canLevelUp, errorMessage = CardLevels.CanLevelUp(cardId, 10, 1000, 1000000)
+	local canLevelUp, errorMessage = CardLevels.CanLevelUp(cardId, 10, 1000, 1000000, "uncommon")
 	if not canLevelUp and errorMessage == "Already at maximum level" then
 		print("✅ Level-up correctly rejected at max level")
 	else
@@ -202,9 +223,9 @@ local function TestPerCardGrowth()
 	end
 	
 	-- Test placeholder costs for levels 8-10
-	local cost8 = CardLevels.GetLevelCost(8)
-	local cost9 = CardLevels.GetLevelCost(9)
-	local cost10 = CardLevels.GetLevelCost(10)
+	local cost8 = CardLevels.GetLevelCost(8, "uncommon")
+	local cost9 = CardLevels.GetLevelCost(9, "uncommon")
+	local cost10 = CardLevels.GetLevelCost(10, "uncommon")
 	
 	if cost8 and cost9 and cost10 then
 		print("✅ Placeholder costs exist for levels 8-10")

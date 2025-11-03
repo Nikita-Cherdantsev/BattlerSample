@@ -25,37 +25,28 @@ function CombatUtils.CalculateDamage(baseDamage, targetDefence)
 	end
 end
 
--- Apply damage with pure armor pool model
+-- Apply damage with permanent defense model
+-- Defense is permanent and never decreases
+-- Formula: damageToHp = max(0, damage - defense)
 -- Returns: { damageToHp, defenceReduced }
 function CombatUtils.ApplyDamageWithDefence(unit, damage)
 	if not unit or not damage or damage <= 0 then
 		return { damageToHp = 0, defenceReduced = 0 }
 	end
 	
-	local damageToHp = 0
-	local defenceReduced = 0
+	local currentDefence = unit.stats.defence or 0
 	
-	-- If unit has defence, apply armor pool model
-	if unit.stats.defence and unit.stats.defence > 0 then
-		if damage <= unit.stats.defence then
-			-- Full absorb: damage <= defence
-			defenceReduced = damage
-			unit.stats.defence = unit.stats.defence - defenceReduced
-			damageToHp = 0
-		else
-			-- Partial absorb: damage > defence
-			defenceReduced = unit.stats.defence
-			unit.stats.defence = 0
-			damageToHp = damage - defenceReduced
-		end
-	else
-		-- No defence, apply full damage to hp
-		damageToHp = damage
-	end
+	-- Calculate damage to HP after permanent defense reduction
+	-- Formula: damageToHp = max(0, damage - defense)
+	-- Defense is permanent and never decreases
+	local damageToHp = math.max(0, damage - currentDefence)
+	local defenceReduced = math.min(damage, currentDefence)
 	
-	-- Apply damage to hp
-	local actualDamage = math.min(unit.stats.health, damageToHp)
-	unit.stats.health = unit.stats.health - actualDamage
+	-- Apply damage to hp (health cannot go below 0)
+	-- Formula: newHealth = max(0, health - damageToHp)
+	local newHealth = math.max(0, unit.stats.health - damageToHp)
+	local actualDamage = unit.stats.health - newHealth
+	unit.stats.health = newHealth
 	
 	-- Check if unit died
 	if unit.stats.health <= 0 then

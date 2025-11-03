@@ -29,6 +29,15 @@
         },
         "CloseButtonHandler": {
           "$path": "src/shared/ClientModules/CloseButtonHandler.lua"
+        },
+        "BattlePrepHandler": {
+          "$path": "src/shared/ClientModules/BattlePrepHandler.lua"
+        },
+        "BattleHandler": {
+          "$path": "src/shared/ClientModules/BattleHandler.lua"
+        },
+        "RewardsHandler": {
+          "$path": "src/shared/ClientModules/RewardsHandler.lua"
         }
       },
       "Modules": {
@@ -100,6 +109,12 @@
           "$className": "Folder",
           "ShopPacksCatalog": {
             "$path": "src/shared/Modules/Shop/ShopPacksCatalog.lua"
+          }
+        },
+        "Boss": {
+          "$className": "Folder",
+          "BossDecks": {
+            "$path": "src/shared/Modules/Boss/BossDecks.lua"
           }
         },
         "Utilities": {

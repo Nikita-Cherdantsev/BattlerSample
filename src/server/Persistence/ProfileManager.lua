@@ -365,15 +365,23 @@ function ProfileManager.SaveProfile(userId, profile)
 	
 	-- Save to DataStore
 	local success, result = pcall(function()
-		return DataStoreWrapper.UpdateAsync(ProfileManager.DATASTORE_NAME, profileKey, function()
+		return DataStoreWrapper.UpdateAsync(ProfileManager.DATASTORE_NAME, profileKey, function(currentData)
+			-- Return the new profile (replaces whatever was there before)
 			return profile
 		end)
 	end)
 	
-	if success then
-		-- Update cache
+	if success and result then
+		-- Update cache only if the save actually succeeded
+		-- Note: UpdateAsync returns nil when queued for later, so we check for result
 		profileCache[profileKey] = profile
 		print("✅ Saved profile for user:", userId)
+		return true
+	elseif success then
+		-- UpdateAsync was queued (returned nil due to budget), still update cache
+		-- The write will happen later via ProcessPendingWrites
+		profileCache[profileKey] = profile
+		warn("⚠️ Profile save queued for later (budget) for user:", userId)
 		return true
 	else
 		warn("❌ Failed to save profile for user:", userId, "Error:", result)

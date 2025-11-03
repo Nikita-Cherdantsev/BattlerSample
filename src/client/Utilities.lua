@@ -93,8 +93,12 @@ Utilities.CardCatalog = {
 -- Client-side deck validation
 Utilities.DeckValidator = {
 	ValidateDeck = function(deckIds)
-		if not deckIds or #deckIds ~= 6 then
-			return false, "Deck must contain exactly 6 cards"
+		-- Allow decks with 1-6 cards
+		if not deckIds or #deckIds == 0 then
+			return false, "Deck must contain at least 1 card"
+		end
+		if #deckIds > 6 then
+			return false, "Deck must contain at most 6 cards"
 		end
 		
 		-- Check for duplicates

@@ -107,6 +107,11 @@ function LootboxUIHandler:SetupLootboxUI()
 	-- Store UI reference
 	self.UI = gameGui
 	self.LootboxContainer = content
+	self.packContainers = {} -- Support multiple containers (BottomPanel, PackSelector, etc.)
+	self.packContainers["BottomPanel"] = {
+		container = content,
+		packs = {}
+	}
 	self.LootboxOpening.Main = gameGui:FindFirstChild("LootboxOpening")
 	
 	-- Store lootbox opening UI references in organized structure
@@ -132,15 +137,60 @@ function LootboxUIHandler:SetupLootboxUI()
 end
 
 function LootboxUIHandler:SetupLootboxPacks()
+	-- Setup BottomPanel packs
+	local success = self:SetupPacksForContainer("BottomPanel", self.LootboxContainer)
+	if not success then
+		warn("LootboxUIHandler: Failed to setup BottomPanel packs")
+		return
+	end
+	
+	-- Keep backward compatibility - set lootboxPacks to BottomPanel packs
+	-- This creates a reference so old code using self.lootboxPacks still works
+	self.lootboxPacks = self.packContainers["BottomPanel"].packs
+	
+	-- Verify packs were created
+	if not self.lootboxPacks then
+		warn("LootboxUIHandler: BottomPanel packs not found after setup")
+		return
+	end
+	
+	-- Now set up button handlers for BottomPanel (after lootboxPacks is set)
+	for i = 1, 4 do
+		local pack = self.lootboxPacks[i]
+		if pack then
+			if pack.btnUnlock or pack.btnOpen or pack.btnSpeedUp then
+				self:SetupPackButtons(i)
+			else
+				warn("LootboxUIHandler: Pack" .. i .. " found but buttons are nil")
+			end
+		else
+			warn("LootboxUIHandler: Pack" .. i .. " not found")
+		end
+	end
+end
+
+-- Setup packs for a specific container (reusable for BottomPanel, PackSelector, etc.)
+function LootboxUIHandler:SetupPacksForContainer(containerName, container)
+	if not containerName or not container then
+		return false
+	end
+	
+	-- Initialize container entry if not exists
+	if not self.packContainers[containerName] then
+		self.packContainers[containerName] = {
+			container = container,
+			packs = {}
+		}
+	end
+	
 	-- Setup Pack1, Pack2, Pack3, Pack4
 	for i = 1, 4 do
 		local packName = "Pack" .. i
-		local packFrame = self.LootboxContainer:FindFirstChild(packName)
+		local packFrame = container:FindFirstChild(packName)
 		
 		if packFrame then
-			
 			-- Store pack reference (slot index matches pack number 1-4)
-			self.lootboxPacks[i] = {
+			self.packContainers[containerName].packs[i] = {
 				frame = packFrame,
 				slotIndex = i,
 				imgPack = packFrame:FindFirstChild("ImgPack"),
@@ -150,30 +200,39 @@ function LootboxUIHandler:SetupLootboxPacks()
 				notEnoughCurrency = packFrame:FindFirstChild("NotEnoughCurrency"),
 				lockedFrame = packFrame:FindFirstChild("Locked"),
 				timerFrame = packFrame:FindFirstChild("Timer"),
-				timerText = nil
+				timerText = nil,
+				priceText = nil,
+				timerConnection = nil
 			}
 			
+			local pack = self.packContainers[containerName].packs[i]
+			
 			-- Find timer text
-			if self.lootboxPacks[i].timerFrame then
-				local background = self.lootboxPacks[i].timerFrame:FindFirstChild("Background")
+			if pack.timerFrame then
+				local background = pack.timerFrame:FindFirstChild("Background")
 				if background then
-					self.lootboxPacks[i].timerText = background:FindFirstChild("TxtValue")
+					pack.timerText = background:FindFirstChild("TxtValue")
 				end
 			end
 
-			if self.lootboxPacks[i].btnSpeedUp then
-				local price = self.lootboxPacks[i].btnSpeedUp:FindFirstChild("Bevel"):FindFirstChild("Main"):FindFirstChild("TxtValue")
-				if price then
-					self.lootboxPacks[i].priceText = price
+			if pack.btnSpeedUp then
+				local bevel = pack.btnSpeedUp:FindFirstChild("Bevel")
+				if bevel then
+					local main = bevel:FindFirstChild("Main")
+					if main then
+						pack.priceText = main:FindFirstChild("TxtValue")
+					end
 				end
 			end
 			
-			-- Setup button click handlers
-			self:SetupPackButtons(i)
+			-- Setup button click handlers (only for BottomPanel to avoid duplicate handlers)
+			-- Note: We'll set up buttons after all packs are initialized so lootboxPacks is set
 		else
-			warn("LootboxUIHandler: " .. packName .. " not found")
+			warn("LootboxUIHandler: " .. packName .. " not found in " .. containerName)
 		end
 	end
+	
+	return true
 end
 
 function LootboxUIHandler:SetupPackButtons(packIndex)
@@ -258,8 +317,8 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 	end
 end
 
--- Update lootbox UI state
-function LootboxUIHandler:UpdateLootboxStates(error)
+-- Update lootbox UI state for a specific container (or all if containerName is nil)
+function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 	if not self.currentProfile or not self.currentProfile.lootboxes then
 		return
 	end
@@ -286,43 +345,59 @@ function LootboxUIHandler:UpdateLootboxStates(error)
 		end
 	end
 	
-	-- Update each pack
-	for packIndex = 1, 4 do
-		local pack = self.lootboxPacks[packIndex]
-		if pack then
-			local slotIndex = pack.slotIndex
-			local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
-			
-			-- Check if this slot actually has a lootbox
-			-- A lootbox exists if it has a valid state
-			local hasLootbox = lootbox and lootbox.state and (
-				lootbox.state == "Idle" or
-				lootbox.state == "Unlocking" or
-				lootbox.state == "Ready" or
-				lootbox.state == "Consumed"
-			)
+	-- Determine which containers to update
+	local containersToUpdate = {}
+	if containerName then
+		-- Update specific container
+		if self.packContainers[containerName] then
+			containersToUpdate[containerName] = self.packContainers[containerName].packs
+		end
+	else
+		-- Update all containers
+		for name, containerData in pairs(self.packContainers) do
+			containersToUpdate[name] = containerData.packs
+		end
+	end
+	
+	-- Update each container's packs
+	for containerName, packs in pairs(containersToUpdate) do
+		for packIndex = 1, 4 do
+			local pack = packs[packIndex]
+			if pack then
+				local slotIndex = pack.slotIndex
+				local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
+				
+				-- Check if this slot actually has a lootbox
+				-- A lootbox exists if it has a valid state
+				local hasLootbox = lootbox and lootbox.state and (
+					lootbox.state == "Idle" or
+					lootbox.state == "Unlocking" or
+					lootbox.state == "Ready" or
+					lootbox.state == "Consumed"
+				)
 
-			if hasLootbox then
-				-- This slot has a real lootbox
-				if lootbox.state == "Unlocking" then
-					-- Check if timer has completed
-					if lootbox.unlocksAt and lootbox.unlocksAt <= os.time() then
-						-- Timer completed, lootbox is ready to open
-						self:UpdatePackState(packIndex, "Ready", lootbox)
+				if hasLootbox then
+					-- This slot has a real lootbox
+					if lootbox.state == "Unlocking" then
+						-- Check if timer has completed
+						if lootbox.unlocksAt and lootbox.unlocksAt <= os.time() then
+							-- Timer completed, lootbox is ready to open
+							self:UpdatePackStateForContainer(containerName, packIndex, "Ready", lootbox)
+						else
+							-- Still unlocking, show SpeedUp state
+							self:UpdatePackStateForContainer(containerName, packIndex, "Unlocking", lootbox, error)
+						end
+					-- If any other lootbox is unlocking, lock only Idle lootboxes
+					elseif isAnyUnlocking and lootbox.state == "Idle" then
+						self:UpdatePackStateForContainer(containerName, packIndex, "Locked", lootbox)
+					-- Otherwise, show normal state
 					else
-						-- Still unlocking, show SpeedUp state
-						self:UpdatePackState(packIndex, "Unlocking", lootbox, error)
+						self:UpdatePackStateForContainer(containerName, packIndex, lootbox.state, lootbox)
 					end
-				-- If any other lootbox is unlocking, lock only Idle lootboxes
-				elseif isAnyUnlocking and lootbox.state == "Idle" then
-					self:UpdatePackState(packIndex, "Locked", lootbox)
-				-- Otherwise, show normal state
 				else
-					self:UpdatePackState(packIndex, lootbox.state, lootbox)
+					-- No lootbox in this slot - always show empty state
+					self:UpdatePackStateForContainer(containerName, packIndex, "Empty", nil)
 				end
-			else
-				-- No lootbox in this slot - always show empty state
-				self:UpdatePackState(packIndex, "Empty", nil)
 			end
 		end
 	end
@@ -336,12 +411,22 @@ function LootboxUIHandler:UpdateLootboxStates(error)
 	self._updatingStates = false
 end
 
+-- Update pack state (wrapper for backward compatibility - delegates to BottomPanel)
 function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData, error)
-	local pack = self.lootboxPacks[packIndex]
+	self:UpdatePackStateForContainer("BottomPanel", packIndex, state, lootboxData, error)
+end
+
+-- Note: There should NOT be another UpdatePackState function after UpdatePackStateForContainer
+
+-- Update pack state for a specific container
+function LootboxUIHandler:UpdatePackStateForContainer(containerName, packIndex, state, lootboxData, error)
+	local containerData = self.packContainers[containerName]
+	if not containerData then return end
+	
+	local pack = containerData.packs[packIndex]
 	if not pack then return end
 	
-	-- Update pack state
-	
+	-- Use the original UpdatePackState logic but with the pack from the specified container
 	-- Hide all buttons and frames first
 	if pack.btnUnlock then pack.btnUnlock.Visible = false end
 	if pack.btnOpen then pack.btnOpen.Visible = false end
@@ -349,6 +434,18 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData, error)
 	if pack.lockedFrame then pack.lockedFrame.Visible = false end
 	if pack.timerFrame then pack.timerFrame.Visible = false end
 	if pack.imgPack then pack.imgPack.Visible = false end
+
+	-- Stop timer for this pack in this container
+	if containerName == "BottomPanel" then
+		-- Only stop timers for BottomPanel (where we manage them)
+		self:StopTimer(packIndex)
+	else
+		-- Stop container-specific timer
+		if pack.timerConnection then
+			pack.timerConnection:Disconnect()
+			pack.timerConnection = nil
+		end
+	end
 
 	-- Set lootbox image
 	if pack.imgPack and lootboxData and lootboxData.rarity then
@@ -371,7 +468,11 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData, error)
 		end
 		if pack.timerFrame then
 			pack.timerFrame.Visible = true
-			self:StartTimer(packIndex, lootboxData)
+			if containerName == "BottomPanel" then
+				self:StartTimer(packIndex, lootboxData)
+			else
+				self:StartTimerForContainer(containerName, packIndex, lootboxData)
+			end
 		end
 		pack.imgPack.Visible = true
 		if error then
@@ -389,17 +490,70 @@ function LootboxUIHandler:UpdatePackState(packIndex, state, lootboxData, error)
 		end
 		pack.imgPack.Visible = true
 	elseif state == "Locked" then
-		-- Show locked frame
+		-- Show locked frame (but keep lootbox image visible)
 		if pack.lockedFrame then
 			pack.lockedFrame.Visible = true
 		end
 		pack.imgPack.Visible = true
 	elseif state == "Empty" then
-		-- Empty slots show nothing - no buttons, no interaction
-		-- Players can only get lootboxes through the shop or other means
-		pack.imgPack.Visible = false
+		-- Empty slot - all hidden (default state)
 	end
 end
+
+-- Start timer for a specific container's pack
+function LootboxUIHandler:StartTimerForContainer(containerName, packIndex, lootboxData)
+	local containerData = self.packContainers[containerName]
+	if not containerData then return end
+	
+	local pack = containerData.packs[packIndex]
+	if not pack or not pack.timerText or not lootboxData then return end
+
+	-- Stop existing timer for this pack
+	if pack.timerConnection then
+		pack.timerConnection:Disconnect()
+		pack.timerConnection = nil
+	end
+
+	local function updateTimer()
+		if not lootboxData.unlocksAt then return end
+		
+		local currentTime = os.time()
+		local remainingTime = math.max(0, lootboxData.unlocksAt - currentTime)
+
+		if remainingTime <= 0 then
+			-- Timer completed
+			if pack.timerConnection then
+				pack.timerConnection:Disconnect()
+				pack.timerConnection = nil
+			end
+			-- Update state to Ready
+			self:UpdatePackStateForContainer(containerName, packIndex, "Ready", lootboxData)
+			return
+		end
+
+		-- Format time as MM:SS
+		local minutes = math.floor(remainingTime / 60)
+		local seconds = remainingTime % 60
+		pack.timerText.Text = string.format("%02d:%02d", minutes, seconds)
+
+		if pack.priceText then
+			local totalDuration = self.Utilities.BoxTypes.GetDuration(lootboxData.rarity)
+			local instantCost = self.Utilities.BoxTypes.ComputeInstantOpenCost(lootboxData.rarity, remainingTime, totalDuration)
+			pack.priceText.Text = instantCost
+		end
+	end
+
+	-- Update immediately
+	updateTimer()
+
+	-- Update every second
+	local RunService = game:GetService("RunService")
+	pack.timerConnection = RunService.Heartbeat:Connect(function()
+		updateTimer()
+	end)
+end
+
+-- Duplicate UpdatePackState removed - already defined above as wrapper to UpdatePackStateForContainer
 
 -- Timer management
 function LootboxUIHandler:StartTimer(packIndex, lootboxData)
@@ -506,6 +660,12 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 			
 			-- Show rewards if any
 			if payload.rewards then
+				print("🎁 [LootboxUIHandler] ProfileUpdated received rewards payload:", 
+					"softDelta=" .. tostring(payload.rewards.softDelta or 0),
+					"hardDelta=" .. tostring(payload.rewards.hardDelta or 0),
+					"card=" .. (payload.rewards.card and payload.rewards.card.cardId or "none"),
+					"rarity=" .. tostring(payload.rewards.rarity or "none"))
+				
 				local rewardCount = 0
 				if payload.rewards.softDelta and payload.rewards.softDelta > 0 then
 					rewardCount = rewardCount + 1
@@ -521,12 +681,23 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 				end
 				print("🎁 [LootboxUIHandler] Total rewards received:", rewardCount, "items")
 				
-				-- Open lootbox UI with rewards (for shop purchases)
+				-- Open lootbox UI with rewards (for shop purchases and speed-up)
+				print("🎁 [LootboxUIHandler] Calling OpenLootbox with rewards...")
 				self:OpenLootbox(payload.rewards)
+				
+				-- Delay UI update until after animation completes
+				-- The UpdateLootboxStates will be called when the lootbox animation completes
+				-- or we'll update it after a short delay to ensure animation has started
+				task.spawn(function()
+					-- Wait a bit for animation to start
+					task.wait(0.5)
+					-- Update UI after animation is playing (lootbox will be removed from profile)
+					self:UpdateLootboxStates()
+				end)
+			else
+				-- Update UI immediately if no rewards (normal state update)
+				self:UpdateLootboxStates()
 			end
-			
-			-- Update UI
-			self:UpdateLootboxStates()
 		else
 			if payload.error and payload.error.code == "INSUFFICIENT_HARD" then
 				local showError = true

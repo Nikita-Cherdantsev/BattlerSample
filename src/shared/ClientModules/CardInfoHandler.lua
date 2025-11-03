@@ -206,7 +206,17 @@ function CardInfoHandler:StoreOriginalGradientColor()
 end
 
 function CardInfoHandler:LoadProfileData()
-	-- Load profile data from client state
+	-- Always refresh profile data from client state to ensure we have the latest data
+	-- This is critical for deck operations to use the current deck state
+	if self.ClientState and self.ClientState.getProfile then
+		local profile = self.ClientState:getProfile()
+		if profile then
+			self.currentProfile = profile
+			return true
+		end
+	end
+	
+	-- Fallback: Try GetState method (for backward compatibility)
 	if self.ClientState and self.ClientState.GetState then
 		local state = self.ClientState:GetState()
 		if state and state.profile then
@@ -221,12 +231,11 @@ function CardInfoHandler:LoadProfileData()
 end
 
 function CardInfoHandler:ShowCardInfo(cardId, slotIndex)
-	-- Load profile data if not available
-	if not self.currentProfile then
-		if not self:LoadProfileData() then
-			-- Profile not available yet, wait for ProfileUpdated event
-			return
-		end
+	-- Always reload profile data from ClientState to ensure we have the latest deck
+	-- This fixes the issue where deck changes weren't reflected in card operations
+	if not self:LoadProfileData() then
+		-- Profile not available yet, wait for ProfileUpdated event
+		return
 	end
 	
 	self.currentCardId = cardId
@@ -346,7 +355,7 @@ function CardInfoHandler:UpdateLevelSection(cardData, hasCard, cardLevel, cardCo
 			imgMax.Visible = true
 		else
 			-- Check if can level up
-			local canLevelUp, _ = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft)
+			local canLevelUp, _ = CardLevels.CanLevelUp(cardData.id, cardLevel, cardCount, self.currentProfile.currencies.soft, cardData.rarity)
 			imgLevelUp.Visible = canLevelUp
 			imgMax.Visible = false
 		end
@@ -375,7 +384,7 @@ function CardInfoHandler:UpdateProgressSection(cardData, hasCard, cardLevel, car
 		if cardLevel >= 10 then
 			txtValue.Text = "Max level"
 		else
-			local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1)
+			local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1, cardData.rarity)
 			if nextLevelCost then
 				txtValue.Text = "To level up:\n" .. cardCount .. " / " .. nextLevelCost.requiredCount
 			else
@@ -466,7 +475,7 @@ function CardInfoHandler:UpdateParameters(cardData, hasCard, cardLevel, rarityCo
 	end
 	
 	local currentStats = CardStats.ComputeStats(cardData.id, cardLevel)
-	local nextLevelStats = CardLevels.CanLevelUp(cardData.id, cardLevel, self.currentProfile.collection[cardData.id].count, self.currentProfile.currencies.soft)
+	local nextLevelStats = CardLevels.CanLevelUp(cardData.id, cardLevel, self.currentProfile.collection[cardData.id].count, self.currentProfile.currencies.soft, cardData.rarity)
 	
 	if nextLevelStats then
 		nextLevelStats = CardStats.ComputeStats(cardData.id, cardLevel + 1)
@@ -575,7 +584,7 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 	
 	if hasCard and cardLevel < 10 then
 		local nextLevel = cardLevel + 1
-		local cost = CardLevels.GetLevelCost(nextLevel)
+		local cost = CardLevels.GetLevelCost(nextLevel, cardData.rarity)
 		
 		if cost then
 			-- Check if player has enough card copies
@@ -616,7 +625,7 @@ function CardInfoHandler:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
 					local txtValue = main:FindFirstChild("TxtValue")
 					if txtValue then
 						local nextLevel = cardLevel + 1
-						local cost = CardLevels.GetLevelCost(nextLevel)
+						local cost = CardLevels.GetLevelCost(nextLevel, cardData.rarity)
 						if cost then
 							txtValue.Text = tostring(cost.softAmount)
 						end
@@ -727,7 +736,8 @@ end
 
 -- Helper function to add a card to the deck
 function CardInfoHandler:AddCardToDeck(cardId)
-	if not self.currentProfile then
+	-- Always refresh profile before deck operations to ensure we have the latest deck state
+	if not self:LoadProfileData() or not self.currentProfile then
 		warn("CardInfoHandler: No profile available for deck operations")
 		return false
 	end
@@ -797,7 +807,8 @@ end
 
 -- Helper function to remove a card from the deck
 function CardInfoHandler:RemoveCardFromDeck(cardId)
-	if not self.currentProfile then
+	-- Always refresh profile before deck operations to ensure we have the latest deck state
+	if not self:LoadProfileData() or not self.currentProfile then
 		warn("CardInfoHandler: No profile available for deck operations")
 		return false
 	end
@@ -901,8 +912,15 @@ function CardInfoHandler:OnLevelUpButtonClicked()
 	local cardLevel = collectionEntry.level or 0
 	local cardCount = collectionEntry.count or 0
 	
+	-- Get card data from catalog
+	local cardData = self.Utilities.CardCatalog.GetCard(self.currentCardId)
+	if not cardData then
+		warn("CardInfoHandler: Card not found in catalog:", self.currentCardId)
+		return
+	end
+	
 	-- Check if level up is possible
-	local canLevelUp, reason = CardLevels.CanLevelUp(self.currentCardId, cardLevel, cardCount, self.currentProfile.currencies.soft)
+	local canLevelUp, reason = CardLevels.CanLevelUp(self.currentCardId, cardLevel, cardCount, self.currentProfile.currencies.soft, cardData.rarity)
 	if not canLevelUp then
 		warn("CardInfoHandler: Cannot level up card:", reason)
 		return

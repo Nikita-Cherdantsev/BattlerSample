@@ -38,6 +38,7 @@ local RequestStartPackPurchase = Network:WaitForChild("RequestStartPackPurchase"
 local RequestBuyLootbox = Network:WaitForChild("RequestBuyLootbox")
 local RequestPlaytimeData = Network:WaitForChild("RequestPlaytimeData")
 local RequestClaimPlaytimeReward = Network:WaitForChild("RequestClaimPlaytimeReward")
+local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward")
 
 -- State
 local lastServerNow = 0
@@ -110,12 +111,32 @@ function NetworkClient.requestStartMatch(opts)
 	local requestData = {
 		mode = opts.mode or "PvE",
 		seed = opts.seed,
-		variant = opts.variant
+		variant = opts.variant,
+		partName = opts.partName -- Include part name for NPC/Boss mode detection
 	}
 	
-	log("Requesting match start: mode=%s", requestData.mode)
+	log("Requesting match start: mode=%s, partName=%s", requestData.mode, tostring(requestData.partName))
 	RequestStartMatch:FireServer(requestData)
 end
+
+-- Set match result callback
+function NetworkClient.setMatchResultCallback(callback)
+	NetworkClient.onMatchResult = callback
+end
+
+-- Listen for match results
+RequestStartMatch.OnClientEvent:Connect(function(response)
+	log("Received match result: ok=%s", tostring(response.ok))
+	print("🔍 NetworkClient: Match result received:", response)
+	
+	-- Notify BattlePrepHandler of the response
+	if NetworkClient.onMatchResult then
+		print("🔍 NetworkClient: Calling match result callback")
+		NetworkClient.onMatchResult(response)
+	else
+		warn("NetworkClient: No match result callback set")
+	end
+end)
 
 -- Request card level-up
 function NetworkClient.requestLevelUpCard(cardId)
@@ -310,6 +331,18 @@ function NetworkClient.requestOpenNow(slotIndex)
 	lastOpenNowRequest = tick() * 1000
 	log("Requesting open now: slot %d", slotIndex)
 	RequestOpenNow:FireServer({slotIndex = slotIndex})
+	
+	return true
+end
+
+-- Request claim battle reward
+function NetworkClient.requestClaimBattleReward(requestData)
+	if not requestData or not requestData.rewardType then
+		return false, "Invalid request data"
+	end
+	
+	log("Requesting claim battle reward: type=%s", requestData.rewardType)
+	RequestClaimBattleReward:FireServer(requestData)
 	
 	return true
 end

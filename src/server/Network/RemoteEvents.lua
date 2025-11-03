@@ -35,6 +35,8 @@ local RequestStartPackPurchase = nil
 local RequestBuyLootbox = nil
 local RequestPlaytimeData = nil
 local RequestClaimPlaytimeReward = nil
+local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
+local RequestClaimBattleReward = nil
 
 -- Rate limiting configuration (explicit, module-scoped)
 local RATE_LIMITS = {
@@ -111,6 +113,10 @@ local RATE_LIMITS = {
 		maxPerMinute = 10
 	},
 	RequestClaimPlaytimeReward = {
+		cooldownSec = 1,
+		maxPerMinute = 10
+	},
+	RequestClaimBattleReward = {
 		cooldownSec = 1,
 		maxPerMinute = 10
 	}
@@ -237,6 +243,11 @@ local function InitializeRateLimit(player)
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
+			},
+			RequestClaimBattleReward = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
 			}
 		}
 	end
@@ -244,6 +255,16 @@ end
 
 local function CheckRateLimit(player, requestType)
 	InitializeRateLimit(player)
+	
+	-- Ensure the specific request type is initialized (for new request types added later)
+	if not playerRateLimits[player][requestType] then
+		playerRateLimits[player][requestType] = {
+			lastRequest = 0,
+			requestCount = 0,
+			resetTime = os.time() + 60
+		}
+	end
+	
 	local rateLimit = playerRateLimits[player][requestType]
 	
 	-- Get configuration with safe fallback
@@ -369,6 +390,7 @@ local function HandleRequestSetDeck(player, requestData)
 			deck = profile.deck,
 			collectionSummary = CreateCollectionSummary(collection),
 			currencies = profile.currencies,
+			squadPower = profile.squadPower,
 			updatedAt = os.time()
 		})
 		
@@ -431,6 +453,7 @@ local function HandleRequestProfile(player, requestData)
 		lootboxes = profile.lootboxes or {},
 		pendingLootbox = profile.pendingLootbox,
 		currencies = profile.currencies or { soft = 0, hard = 0 },
+		squadPower = profile.squadPower,
 		updatedAt = os.time()
 	})
 	
@@ -456,11 +479,12 @@ local function HandleRequestStartMatch(player, requestData)
 		return
 	end
 	
-	-- Extract seed and variant from request data (optional)
+	-- Extract seed, variant, and partName from request data (optional)
 	local matchRequestData = {
 		mode = requestData and requestData.mode or "PvE",
 		seed = requestData and requestData.seed or nil,
-		variant = requestData and requestData.variant or nil
+		variant = requestData and requestData.variant or nil,
+		partName = requestData and requestData.partName or nil
 	}
 	
 	-- Execute match via MatchService
@@ -920,15 +944,32 @@ local function HandleRequestSpeedUp(player, requestData)
 		return
 	end
 	
-	-- Send success response with loot state and currencies
-	SendProfileUpdate(player, {
+	-- Send success response with loot state, currencies, rewards, and collection summary
+	local payload = {
 		lootboxes = profile.lootboxes,
 		pendingLootbox = profile.pendingLootbox,
 		currencies = profile.currencies
-	})
+	}
 	
-	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Ready result=OK", tostring(player.UserId), requestData.slotIndex)
-	LogInfo(player, "Speed up completed successfully")
+	if result.rewards then
+		-- Include rewards and collection summary
+		payload.rewards = result.rewards
+		local collection = PlayerDataService.GetCollection(player)
+		payload.collectionSummary = CreateCollectionSummary(collection)
+		LogInfo(player, "SpeedUp: Sending rewards - softDelta=%d, hardDelta=%d, card=%s", 
+			result.rewards.softDelta or 0, 
+			result.rewards.hardDelta or 0,
+			result.rewards.card and result.rewards.card.cardId or "none")
+	else
+		LogWarning(player, "SpeedUp: No rewards in result! This should not happen.")
+	end
+	
+	LogInfo(player, "SpeedUp: Lootboxes after speed-up: %d boxes", #profile.lootboxes)
+	
+	SendProfileUpdate(player, payload)
+	
+	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Opened result=OK", tostring(player.UserId), requestData.slotIndex)
+	LogInfo(player, "Speed up and open completed successfully")
 end
 
 local function HandleRequestOpenNow(player, requestData)
@@ -1351,6 +1392,157 @@ local function HandleRequestBuyLootbox(player, requestData)
 	end
 end
 
+local function HandleRequestClaimBattleReward(player, requestData)
+	LogInfo(player, "Processing claim battle reward request")
+	
+	-- Rate limiting
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimBattleReward")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = {
+				code = "RATE_LIMITED",
+				message = errorMessage
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Validate payload
+	if not requestData or not requestData.rewardType then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Missing rewardType field"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Get updated profile
+	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+	if not profile then
+		SendProfileUpdate(player, {
+			error = {
+				code = "INTERNAL",
+				message = "Failed to load profile"
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	local payload = {
+		currencies = profile.currencies,
+		lootboxes = profile.lootboxes,
+		pendingLootbox = profile.pendingLootbox,
+		serverNow = os.time()
+	}
+	
+	if requestData.rewardType == "soft" then
+		-- Grant soft currency
+		local amount = requestData.amount or 0
+		if amount <= 0 then
+			SendProfileUpdate(player, {
+				error = {
+					code = "INVALID_REQUEST",
+					message = "Invalid soft currency amount"
+				},
+				serverNow = os.time()
+			})
+			return
+		end
+		
+		-- Use ProfileManager to add currency
+		local success, errorMsg = ProfileManager.AddCurrency(player.UserId, "soft", amount)
+		if success then
+			-- Reload profile to get updated currencies
+			profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+			if profile then
+				payload.currencies = profile.currencies
+			end
+			LogInfo(player, "Soft currency reward granted: %d", amount)
+		else
+			SendProfileUpdate(player, {
+				error = {
+					code = "INTERNAL",
+					message = errorMsg or "Failed to grant soft currency"
+				},
+				serverNow = os.time()
+			})
+			return
+		end
+	elseif requestData.rewardType == "lootbox" then
+		-- Grant lootbox
+		local rarity = requestData.rarity
+		if not rarity then
+			SendProfileUpdate(player, {
+				error = {
+					code = "INVALID_REQUEST",
+					message = "Missing rarity for lootbox reward"
+				},
+				serverNow = os.time()
+			})
+			return
+		end
+		
+		-- Check if player has free slot
+		local lootboxCount = 0
+		for i = 1, 4 do
+			if profile.lootboxes[i] then
+				lootboxCount = lootboxCount + 1
+			end
+		end
+		
+		if lootboxCount >= 4 then
+			-- No free slot - this shouldn't happen if client checked, but handle it
+			SendProfileUpdate(player, {
+				error = {
+					code = "NO_FREE_SLOT",
+					message = "No free lootbox slot available"
+				},
+				serverNow = os.time()
+			})
+			return
+		end
+		
+		-- Add lootbox using LootboxService
+		local result = LootboxService.TryAddBox(player.UserId, rarity, "battle_reward")
+		if result.ok then
+			-- Reload profile to get updated lootboxes
+			profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
+			if profile then
+				payload.lootboxes = profile.lootboxes
+				payload.pendingLootbox = profile.pendingLootbox
+			end
+			LogInfo(player, "Lootbox reward granted: %s", rarity)
+		else
+			SendProfileUpdate(player, {
+				error = {
+					code = result.error or "INTERNAL",
+					message = "Failed to grant lootbox reward"
+				},
+				serverNow = os.time()
+			})
+			return
+		end
+	else
+		SendProfileUpdate(player, {
+			error = {
+				code = "INVALID_REQUEST",
+				message = "Invalid reward type: " .. tostring(requestData.rewardType)
+			},
+			serverNow = os.time()
+		})
+		return
+	end
+	
+	-- Send success response
+	SendProfileUpdate(player, payload)
+	LogInfo(player, "Battle reward claimed successfully")
+end
+
 -- Connection code moved to Init() function
 
 -- Public API for other server modules
@@ -1373,6 +1565,8 @@ RemoteEvents.RequestStartPackPurchase = RequestStartPackPurchase
 RemoteEvents.RequestBuyLootbox = RequestBuyLootbox
 RemoteEvents.RequestPlaytimeData = RequestPlaytimeData
 RemoteEvents.RequestClaimPlaytimeReward = RequestClaimPlaytimeReward
+RemoteEvents.RequestNPCDeck = RequestNPCDeck
+RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -1464,6 +1658,16 @@ function RemoteEvents.Init()
 	RequestClaimPlaytimeReward.Name = "RequestClaimPlaytimeReward"
 	RequestClaimPlaytimeReward.Parent = NetworkFolder
 	
+	-- NPC Deck RemoteFunction
+	RequestNPCDeck = Instance.new("RemoteFunction")
+	RequestNPCDeck.Name = "RequestNPCDeck"
+	RequestNPCDeck.Parent = NetworkFolder
+	
+	-- Battle Reward Claim RemoteEvent
+	RequestClaimBattleReward = Instance.new("RemoteEvent")
+	RequestClaimBattleReward.Name = "RequestClaimBattleReward"
+	RequestClaimBattleReward.Parent = NetworkFolder
+	
 	-- Validate rate limit configuration
 	local function ValidateRateLimitConfig()
 		print("🔒 Rate Limiter Configuration:")
@@ -1521,6 +1725,7 @@ function RemoteEvents.Init()
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()
+	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)
@@ -1529,6 +1734,78 @@ function RemoteEvents.Init()
 	
 	-- Initialize ShopService
 	ShopService.Initialize()
+	
+	-- Setup NPC Deck RemoteFunction handler (also handles Boss decks)
+	RequestNPCDeck.OnServerInvoke = function(player, partName)
+		LogInfo(player, "Processing deck request for part: %s", partName or "nil")
+		
+		-- Validate partName
+		if not partName or type(partName) ~= "string" then
+			LogWarning(player, "Invalid partName for NPC deck request")
+			return {
+				ok = false,
+				error = {
+					code = "INVALID_REQUEST",
+					message = "Missing or invalid partName"
+				}
+			}
+		end
+		
+		-- Check if this is NPC mode or Boss mode
+		if partName:match("^NPCMode") then
+			-- NPC mode: get or generate NPC deck
+			local npcDeckData = MatchService.GetOrGenerateNPCDeck(player, partName)
+			if not npcDeckData then
+				LogWarning(player, "Failed to get NPC deck for part: %s", partName)
+				return {
+					ok = false,
+					error = {
+						code = "DECK_GENERATION_FAILED",
+						message = "Failed to generate NPC deck"
+					}
+				}
+			end
+			
+			return {
+				ok = true,
+				deck = npcDeckData.deck,
+				levels = npcDeckData.levels,
+				reward = npcDeckData.reward -- Include reward for prep window
+			}
+		elseif partName:match("^BossMode") then
+			-- Boss mode: get boss deck with difficulty info
+			local bossDeckInfo = MatchService.GetBossDeckInfo(player, partName)
+			if not bossDeckInfo then
+				LogWarning(player, "Failed to get boss deck for part: %s", partName)
+				return {
+					ok = false,
+					error = {
+						code = "DECK_GENERATION_FAILED",
+						message = "Failed to get boss deck"
+					}
+				}
+			end
+			
+			return {
+				ok = true,
+				deck = bossDeckInfo.deck,
+				levels = bossDeckInfo.levels,
+				bossId = bossDeckInfo.bossId,
+				difficulty = bossDeckInfo.difficulty,
+				reward = bossDeckInfo.reward -- Include hardcoded reward for prep window
+			}
+		else
+			-- Unknown part type
+			LogWarning(player, "Unknown part type for deck request: %s", partName)
+			return {
+				ok = false,
+				error = {
+					code = "INVALID_REQUEST",
+					message = "Unknown part type"
+				}
+			}
+		end
+	end
 	
 	LogInfo(nil, "RemoteEvents initialized successfully")
 end

@@ -36,6 +36,11 @@ ProfileSchema.Profile = {
 	tutorialStep = 0,        -- Tutorial progress (default 0)
 	squadPower = 0,          -- Computed power of current deck
 	
+	-- Boss difficulties (map: bossId -> difficulty string)
+	-- Example: bossDifficulties["1"] = "easy" (for BossMode1Trigger)
+	-- Difficulty levels: "easy", "normal", "hard", "nightmare", "hell"
+	bossDifficulties = {},
+	
 	-- Lootboxes (array of LootboxEntry, max 4, max 1 "Unlocking")
 	lootboxes = {},
 	
@@ -157,6 +162,34 @@ function ProfileSchema.ValidateProfile(profile)
 	
 	if type(profile.squadPower) ~= "number" then
 		return false, "Invalid squadPower"
+	end
+	
+	-- Check bossDifficulties (v2 field)
+	if profile.bossDifficulties ~= nil then
+		if type(profile.bossDifficulties) ~= "table" then
+			return false, "Invalid bossDifficulties (must be table)"
+		end
+		
+		-- Validate each boss difficulty entry
+		for bossId, difficulty in pairs(profile.bossDifficulties) do
+			if type(bossId) ~= "string" then
+				return false, "Invalid boss ID in bossDifficulties"
+			end
+			if type(difficulty) ~= "string" then
+				return false, "Invalid difficulty for boss " .. bossId
+			end
+			-- Validate difficulty value
+			local validDifficulties = {
+				["easy"] = true,
+				["normal"] = true,
+				["hard"] = true,
+				["nightmare"] = true,
+				["hell"] = true
+			}
+			if not validDifficulties[difficulty] then
+				return false, "Invalid difficulty level '" .. difficulty .. "' for boss " .. bossId
+			end
+		end
 	end
 	
 	-- Check lootboxes
@@ -449,8 +482,12 @@ function ProfileSchema.UpdateDeck(profile, newDeck)
 		return false, "Profile is nil"
 	end
 	
-	if not newDeck or type(newDeck) ~= "table" or #newDeck ~= 6 then
-		return false, "Deck must contain exactly 6 cards"
+	-- Allow decks with 1-6 cards
+	if not newDeck or type(newDeck) ~= "table" or #newDeck == 0 then
+		return false, "Deck must contain at least 1 card"
+	end
+	if #newDeck > 6 then
+		return false, "Deck must contain at most 6 cards"
 	end
 	
 	-- Check for duplicates

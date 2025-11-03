@@ -55,8 +55,13 @@ local function ValidateDeck(deck)
 end
 
 local function AssignStarterDeckIfNeeded(profile, userId)
-	if profile.deck and #profile.deck == 6 then
-		return true -- Already has valid deck
+	-- Note: Since we updated validation to allow 1-6 cards, we need to check if deck is completely empty
+	-- For now, keep the old check for decks with exactly 6 cards, but also allow decks with any cards
+	if profile.deck and #profile.deck >= 6 then
+		return true -- Already has full deck
+	elseif profile.deck and #profile.deck > 0 then
+		-- Has some cards but not 6 - this is now valid, don't assign starter deck
+		return true
 	end
 	
 	LogInfo(nil, "Assigning starter deck for user %d", userId)
@@ -64,9 +69,22 @@ local function AssignStarterDeckIfNeeded(profile, userId)
 	-- Use the default deck from ProfileManager
 	local success = ProfileManager.UpdateDeck(userId, ProfileManager.DEFAULT_DECK)
 	if success then
-		profile.deck = ProfileManager.DEFAULT_DECK
-		LogInfo(nil, "Assigned starter deck: %s", table.concat(ProfileManager.DEFAULT_DECK, ", "))
-		return true
+		-- Get the updated profile with the sorted deck from ProfileManager
+		local updatedProfile = ProfileManager.GetCachedProfile(userId)
+		if updatedProfile then
+			profile.deck = (function()
+				local cloned = {}
+				for i, v in ipairs(updatedProfile.deck) do
+					cloned[i] = v
+				end
+				return cloned
+			end)()
+			LogInfo(nil, "Assigned starter deck: %s", table.concat(profile.deck, ", "))
+			return true
+		else
+			LogWarning(nil, "Failed to get updated profile after deck assignment")
+			return false
+		end
 	else
 		LogWarning(nil, "Failed to assign starter deck for user %d", userId)
 		return false
@@ -290,20 +308,25 @@ function PlayerDataService.SetDeck(player, deckIds)
 	-- Update deck atomically (ProfileManager handles squad power computation)
 	local success = ProfileManager.UpdateDeck(player.UserId, deckIds)
 	if success then
-		-- Update local copy
-		playerProfiles[player].deck = (function()
-			local cloned = {}
-			for i, v in ipairs(deckIds) do
-				cloned[i] = v
-			end
-			return cloned
-		end)()
-		
-		-- Update squad power in local cache
-		local stats = ProfileManager.GetProfileStats(player.UserId)
-		playerProfiles[player].squadPower = stats.squadPower
-		
-		LogInfo(player, "Deck updated successfully, squad power: %d", stats.squadPower)
+		-- Get the updated profile from ProfileManager (after sorting and validation)
+		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
+		if updatedProfile then
+			-- Update local copy with the sorted deck from ProfileManager
+			playerProfiles[player].deck = (function()
+				local cloned = {}
+				for i, v in ipairs(updatedProfile.deck) do
+					cloned[i] = v
+				end
+				return cloned
+			end)()
+			
+			-- Update squad power in local cache
+			playerProfiles[player].squadPower = updatedProfile.squadPower
+			
+			LogInfo(player, "Deck updated successfully, squad power: %d", updatedProfile.squadPower)
+		else
+			LogWarning(player, "Failed to get updated profile after deck update")
+		end
 		return true
 	else
 		LogWarning(player, "Failed to update deck")
@@ -338,7 +361,7 @@ function PlayerDataService.LevelUpCard(player, cardId)
 	
 	-- Validation 4: Check next level cost
 	local nextLevel = collectionEntry.level + 1
-	local cost = CardLevels.GetLevelCost(nextLevel)
+	local cost = CardLevels.GetLevelCost(nextLevel, card.rarity)
 	if not cost then
 		return false, "Invalid level cost for level " .. nextLevel
 	end

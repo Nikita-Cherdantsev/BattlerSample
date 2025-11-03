@@ -187,6 +187,12 @@ function CloseButtonHandler:CloseFrame(frameName)
 		if CardInfoHandler and CardInfoHandler.CloseFrame then
 			CardInfoHandler:CloseFrame()
 		end
+	elseif frameName == "BattlePrep" then
+		-- Close BattlePrep frame
+		local BattlePrepHandler = require(game.ReplicatedStorage.ClientModules.BattlePrepHandler)
+		if BattlePrepHandler and BattlePrepHandler.CloseFrame then
+			BattlePrepHandler:CloseFrame()
+		end
 	end
 end
 

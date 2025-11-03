@@ -567,13 +567,64 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 		-- Deduct hard currency
 		profile.currencies.hard = profile.currencies.hard - instantCost
 		
-		-- Complete the timer (set unlocksAt to current time)
-		lootbox.unlocksAt = serverNow
-		lootbox.state = BoxTypes.BoxState.READY
+		-- Roll rewards using stored seed
+		local rng = SeededRNG.New(lootbox.seed)
+		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
 		
-		profile.updatedAt = os.time()
-		profile._lootboxResult = { ok = true, lootbox = lootbox, speedUpCost = instantCost }
-		return preserveProfileInvariants(profile, userId)
+		if not rewards then
+			error("BoxRoller.RollRewards returned nil for rarity: " .. tostring(lootbox.rarity))
+		end
+		
+		rewards.rarity = lootbox.rarity
+		
+		print("🎁 [LootboxService.SpeedUp] Rewards rolled - softDelta:", rewards.softDelta, "hardDelta:", rewards.hardDelta, "card:", rewards.card and rewards.card.cardId or "none")
+		
+		-- Grant rewards
+		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
+		if rewards.hardDelta > 0 then
+			profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
+		end
+		
+		-- Grant card copies
+		if rewards.card then
+			local cardId = rewards.card.cardId
+			local copies = rewards.card.copies
+			
+			if profile.collection[cardId] then
+				profile.collection[cardId].count = profile.collection[cardId].count + copies
+				print("🎁 [LootboxService.SpeedUp] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
+			else
+				profile.collection[cardId] = { count = copies, level = 1 }
+				print("🎁 [LootboxService.SpeedUp] NEW CARD unlocked:", cardId, "with", copies, "copies")
+			end
+			
+			-- Debug: Show all cards in collection
+			local collectionCount = 0
+			for _ in pairs(profile.collection) do
+				collectionCount = collectionCount + 1
+			end
+			print("🎁 [LootboxService.SpeedUp] Total unique cards in collection:", collectionCount)
+		end
+		
+		-- Free the slot (remove the lootbox)
+		profile.lootboxes[slotIndex] = nil
+		
+		-- Compact the array (shift remaining boxes to fill gaps)
+		local compacted = {}
+		local index = 1
+		for i = 1, BoxTypes.MAX_SLOTS do
+			if profile.lootboxes[i] then
+				compacted[index] = profile.lootboxes[i]
+				index = index + 1
+			end
+		end
+		profile.lootboxes = compacted
+		
+		-- Preserve profile invariants
+		profile = preserveProfileInvariants(profile, userId)
+		
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = instantCost }
+		return profile
 	end)
 	
 	if not success then

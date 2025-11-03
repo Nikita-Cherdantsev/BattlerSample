@@ -21,6 +21,9 @@ local PlaytimeHandler = require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 local ShopHandler = require(ReplicatedStorage.ClientModules.ShopHandler)
 local CurrencyHandler = require(ReplicatedStorage.ClientModules.CurrencyHandler)
 local CloseButtonHandler = require(ReplicatedStorage.ClientModules.CloseButtonHandler)
+local BattlePrepHandler = require(ReplicatedStorage.ClientModules.BattlePrepHandler)
+local BattleHandler = require(ReplicatedStorage.ClientModules.BattleHandler)
+local RewardsHandler = require(ReplicatedStorage.ClientModules.RewardsHandler)
 
 -- State
 local isInitialized = false
@@ -52,7 +55,10 @@ function MainController:Init()
 		{name = "PlaytimeHandler", handler = PlaytimeHandler},
 		{name = "ShopHandler", handler = ShopHandler},
 		{name = "CurrencyHandler", handler = CurrencyHandler},
-		{name = "CloseButtonHandler", handler = CloseButtonHandler}
+		{name = "CloseButtonHandler", handler = CloseButtonHandler},
+		{name = "BattlePrepHandler", handler = BattlePrepHandler},
+		{name = "BattleHandler", handler = BattleHandler},
+		{name = "RewardsHandler", handler = RewardsHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do
@@ -85,6 +91,46 @@ end
 function MainController:GetModule(moduleName)
     if moduleName == "Utilities" then
         return require(ReplicatedStorage.Modules.Utilities)
+    elseif moduleName == "Manifest" then
+        return require(ReplicatedStorage.Modules.Assets.Manifest)
+    elseif moduleName == "CardCatalog" then
+        return require(ReplicatedStorage.Modules.Cards.CardCatalog)
+    elseif moduleName == "CardStats" then
+        return require(ReplicatedStorage.Modules.Cards.CardStats)
+    elseif moduleName == "CardLevels" then
+        return require(ReplicatedStorage.Modules.Cards.CardLevels)
+    elseif moduleName == "DeckValidator" then
+        return require(ReplicatedStorage.Modules.Cards.DeckValidator)
+    elseif moduleName == "BoxTypes" then
+        return require(ReplicatedStorage.Modules.Loot.BoxTypes)
+    elseif moduleName == "BoxDropTables" then
+        return require(ReplicatedStorage.Modules.Loot.BoxDropTables)
+    elseif moduleName == "BoxRoller" then
+        return require(ReplicatedStorage.Modules.Loot.BoxRoller)
+    elseif moduleName == "BoxValidator" then
+        return require(ReplicatedStorage.Modules.Loot.BoxValidator)
+    elseif moduleName == "ShopPacksCatalog" then
+        return require(ReplicatedStorage.Modules.Shop.ShopPacksCatalog)
+    elseif moduleName == "SeededRNG" then
+        return require(ReplicatedStorage.Modules.RNG.SeededRNG)
+    elseif moduleName == "GameConstants" then
+        return require(ReplicatedStorage.Modules.Constants.GameConstants)
+    elseif moduleName == "UIConstants" then
+        return require(ReplicatedStorage.Modules.Constants.UIConstants)
+    elseif moduleName == "CombatTypes" then
+        return require(ReplicatedStorage.Modules.Combat.CombatTypes)
+    elseif moduleName == "CombatUtils" then
+        return require(ReplicatedStorage.Modules.Combat.CombatUtils)
+    elseif moduleName == "Types" then
+        return require(ReplicatedStorage.Modules.Types)
+    elseif moduleName == "CardVM" then
+        return require(ReplicatedStorage.Modules.ViewModels.CardVM)
+    elseif moduleName == "DeckVM" then
+        return require(ReplicatedStorage.Modules.ViewModels.DeckVM)
+    elseif moduleName == "BoardLayout" then
+        return require(ReplicatedStorage.Modules.BoardLayout)
+    elseif moduleName == "SelfCheck" then
+        return require(ReplicatedStorage.Modules.SelfCheck)
     end
     return nil
 end
@@ -101,6 +147,26 @@ end
 
 -- Get the LootboxUIHandler instance
 function MainController:GetLootboxUIHandler()
+    return LootboxUIHandler
+end
+
+-- Get NetworkClient instance
+function MainController:GetNetworkClient()
+    return NetworkClient
+end
+
+-- Get BattleHandler instance
+function MainController:GetBattleHandler()
+    return BattleHandler
+end
+
+-- Get RewardsHandler instance
+function MainController:GetRewardsHandler()
+    return RewardsHandler
+end
+
+-- Get LootboxHandler instance (alias for LootboxUIHandler)
+function MainController:GetLootboxHandler()
     return LootboxUIHandler
 end
 
