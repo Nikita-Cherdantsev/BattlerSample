@@ -218,7 +218,18 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 	end
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
-		-- Validate profile before modification
+		-- Auto-repair expired unlocking boxes first
+		for i = 1, BoxTypes.MAX_SLOTS do
+			local box = profile.lootboxes[i]
+			if box and box.state == BoxTypes.BoxState.UNLOCKING and box.unlocksAt then
+				if box.unlocksAt <= serverNow then
+					-- Timer expired, transition to Ready state
+					box.state = BoxTypes.BoxState.READY
+				end
+			end
+		end
+		
+		-- Validate profile before modification (after auto-repair)
 		local isValid, errorMsg = BoxValidator.ValidateProfile(profile.lootboxes, profile.pendingLootbox)
 		if not isValid then
 			error("Profile validation failed: " .. errorMsg)
@@ -226,12 +237,25 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 		
 		local lootbox = profile.lootboxes[slotIndex]
 		if not lootbox then
-			error("No lootbox at slot " .. slotIndex)
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_SLOT }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
+		-- Handle Consumed state (shouldn't exist, but provide clear error)
+		if lootbox.state == BoxTypes.BoxState.CONSUMED then
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox was already consumed" }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- StartUnlock only works on Idle boxes
+		-- If box is Ready, it should be opened, not unlocked again
+		if lootbox.state == BoxTypes.BoxState.READY then
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is ready to open, use CompleteUnlock instead" }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
 		if lootbox.state ~= BoxTypes.BoxState.IDLE then
-			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is in " .. tostring(lootbox.state) .. " state, expected Idle" }
 			return preserveProfileInvariants(profile, userId)
 		end
 		
@@ -278,17 +302,26 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		end
 		
 		local lootbox = profile.lootboxes[slotIndex]
+		-- Idempotency: if box already opened/removed, return success (no-op)
 		if not lootbox then
-			error("No lootbox at slot " .. slotIndex)
+			profile._lootboxResult = { ok = true, rewards = nil, message = "Box already opened" }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING and lootbox.state ~= BoxTypes.BoxState.READY then
-			return { ok = false, error = LootboxService.ErrorCodes.BOX_BAD_STATE }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_BAD_STATE }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
-		-- Check if enough time has passed
+		-- Auto-repair: if timer expired, transition to Ready state
+		if lootbox.state == BoxTypes.BoxState.UNLOCKING and lootbox.unlocksAt and serverNow >= lootbox.unlocksAt then
+			lootbox.state = BoxTypes.BoxState.READY
+		end
+		
+		-- Check if enough time has passed (for Unlocking boxes)
 		if lootbox.state == BoxTypes.BoxState.UNLOCKING and serverNow < lootbox.unlocksAt then
-			return { ok = false, error = LootboxService.ErrorCodes.BOX_TIME_NOT_REACHED }
+			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_TIME_NOT_REACHED }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- Roll rewards using stored seed
@@ -363,8 +396,10 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		end
 		
 		local lootbox = profile.lootboxes[slotIndex]
+		-- Idempotency: if box already opened/removed, return success (no-op)
 		if not lootbox then
-			error("No lootbox at slot " .. slotIndex)
+			profile._lootboxResult = { ok = true, rewards = nil, instantCost = 0, message = "Box already opened" }
+			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- OpenNow works on Unlocking or Ready boxes
@@ -373,24 +408,37 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 			return preserveProfileInvariants(profile, userId)
 		end
 		
-		-- Calculate cost based on state
+		-- Auto-repair: if timer expired, transition to Ready state
+		if lootbox.state == BoxTypes.BoxState.UNLOCKING and lootbox.unlocksAt and serverNow >= lootbox.unlocksAt then
+			lootbox.state = BoxTypes.BoxState.READY
+		end
+		
+		-- Calculate cost based on state and remaining time
+		-- Server is authoritative: only charge if timer is still running
 		local instantCost = 0
 		if lootbox.state == BoxTypes.BoxState.UNLOCKING then
-			-- For unlocking boxes, calculate speed-up cost
+			-- Only charge if timer is still running (speed-up/instant open)
 			local totalDuration = BoxTypes.GetDuration(lootbox.rarity)
 			local remainingTime = math.max(0, lootbox.unlocksAt - serverNow)
-			instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
 			
-			-- Check if player has enough hard currency
-			if profile.currencies.hard < instantCost then
-				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
-				return preserveProfileInvariants(profile, userId)
+			-- If timer has expired, cost is 0 (shouldn't happen after auto-repair, but safety check)
+			if remainingTime <= 0 then
+				instantCost = 0
+			else
+				-- Calculate speed-up cost for remaining time
+				instantCost = BoxTypes.ComputeInstantOpenCost(lootbox.rarity, remainingTime, totalDuration)
+				
+				-- Check if player has enough hard currency
+				if profile.currencies.hard < instantCost then
+					profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+					return preserveProfileInvariants(profile, userId)
+				end
+				
+				-- Deduct hard currency only when charging
+				profile.currencies.hard = profile.currencies.hard - instantCost
 			end
-			
-			-- Deduct hard currency
-			profile.currencies.hard = profile.currencies.hard - instantCost
 		elseif lootbox.state == BoxTypes.BoxState.READY then
-			-- For ready boxes, no additional cost
+			-- Timer completed: no cost
 			instantCost = 0
 		end
 		

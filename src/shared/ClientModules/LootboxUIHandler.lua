@@ -319,7 +319,18 @@ end
 
 -- Update lootbox UI state for a specific container (or all if containerName is nil)
 function LootboxUIHandler:UpdateLootboxStates(error, containerName)
-	if not self.currentProfile or not self.currentProfile.lootboxes then
+	-- Get latest profile from ClientState instead of cached currentProfile
+	-- This ensures we always have the most up-to-date data
+	local latestProfile = self.ClientState and self.ClientState.getProfile()
+	if not latestProfile then
+		-- Fallback to currentProfile if ClientState not available yet
+		if not self.currentProfile or not self.currentProfile.lootboxes then
+			return
+		end
+		latestProfile = self.currentProfile
+	end
+	
+	if not latestProfile.lootboxes then
 		return
 	end
 	
@@ -329,6 +340,16 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 	end
 	
 	self._updatingStates = true
+	
+	-- Sync currentProfile with latest from ClientState
+	if latestProfile ~= self.currentProfile then
+		if not self.currentProfile then
+			self.currentProfile = {}
+		end
+		self.currentProfile.lootboxes = latestProfile.lootboxes
+		self.currentProfile.pendingLootbox = latestProfile.pendingLootbox
+		self.currentProfile.currencies = latestProfile.currencies
+	end
 	
 	local lootboxes = self.currentProfile.lootboxes
 	local pendingLootbox = self.currentProfile.pendingLootbox
@@ -692,6 +713,7 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 					-- Wait a bit for animation to start
 					task.wait(0.5)
 					-- Update UI after animation is playing (lootbox will be removed from profile)
+					-- Force update from ClientState to ensure we have latest data
 					self:UpdateLootboxStates()
 				end)
 			else

@@ -36,13 +36,25 @@ function CardStats.ComputeStats(cardId, level)
 	return stats
 end
 
--- Compute power from stats (floor of average of atk + defence + hp)
+-- Compute power from stats using the formula:
+-- power = (ATK ^ 1.2) + (HP ^ 1.1) + (2 * (DEF ^ 1.6))
+-- Negative or nil stats are treated as 0.
+-- No integer rounding during intermediate steps; result is floating-point.
 function CardStats.ComputePower(stats)
-	if not stats or not stats.atk or not stats.defence or not stats.hp then
+	if not stats then
 		error("Invalid stats object")
 	end
 	
-	return math.floor((stats.atk + stats.defence + stats.hp) / 3)
+	-- Treat negative or nil stats as 0
+	local atk = math.max(0, stats.atk)
+	local hp = math.max(0, stats.hp)
+	local defence = math.max(0, stats.defence)
+	
+	-- Apply power formula with exact exponents
+	-- Use floating-point math throughout, no rounding
+	local power = (atk ^ 1.2) + (hp ^ 1.1) + (2 * (defence ^ 1.6))
+	
+	return power
 end
 
 -- Compute power for a card at a specific level

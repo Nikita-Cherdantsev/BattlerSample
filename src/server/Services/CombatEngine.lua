@@ -82,44 +82,74 @@ local function InitializeBoard(deck, playerId, collection)
 	return board
 end
 
-local function GetAliveUnits(board)
+-- Get all alive units for a board (for battle end checking)
+local function GetAliveUnitsForBoard(board)
 	local aliveUnits = {}
-	for slotIndex, unit in pairs(board) do
-		if unit.state == CombatTypes.UnitState.ALIVE then
+	for slotIndex = 1, 6 do
+		local unit = board[slotIndex]
+		if unit and unit.state == CombatTypes.UnitState.ALIVE then
 			table.insert(aliveUnits, unit)
 		end
 	end
 	return aliveUnits
 end
 
--- Fixed turn order: 1, 2, 3, 4, 5, 6 (v2 combat rules)
-local function CalculateTurnOrder(boardA, boardB)
-	local allUnits = {}
+-- Find next alive unit on a board starting from a given slot index
+-- Returns the unit and the slot index it was found at, or nil if no alive units
+-- If allowActedUnits is true, will return units even if they've already acted (for single-unit scenarios)
+local function FindNextAliveUnit(board, startSlot, allowActedUnits)
+	allowActedUnits = allowActedUnits or false
 	
-	-- Collect all alive units from both boards in slot order
+	-- First, count how many alive units exist on this board
+	local aliveCount = 0
 	for slotIndex = 1, 6 do
-		local unitA = boardA[slotIndex]
-		if unitA and unitA.state == CombatTypes.UnitState.ALIVE then
-			table.insert(allUnits, unitA)
-		end
-		
-		local unitB = boardB[slotIndex]
-		if unitB and unitB.state == CombatTypes.UnitState.ALIVE then
-			table.insert(allUnits, unitB)
+		local unit = board[slotIndex]
+		if unit and unit.state == CombatTypes.UnitState.ALIVE then
+			aliveCount = aliveCount + 1
 		end
 	end
 	
-	-- Sort by slot index (1-6 order)
-	table.sort(allUnits, function(a, b)
-		return a.slotIndex < b.slotIndex
-	end)
-	
-	-- Assign turn order
-	for i, unit in ipairs(allUnits) do
-		unit.turnOrder = i
+	-- Try starting from startSlot and wrap around to find the next alive unit
+	for offset = 0, 5 do
+		local slotIndex = ((startSlot - 1 + offset) % 6) + 1
+		local unit = board[slotIndex]
+		if unit and unit.state == CombatTypes.UnitState.ALIVE then
+			-- If unit has already acted, check if we should allow it
+			if unit.hasActed then
+				-- If there's only one alive unit on this side, allow it to act again
+				if aliveCount == 1 then
+					-- Reset hasActed to allow this unit to act again
+					unit.hasActed = false
+					return unit, slotIndex
+				else
+					-- Skip this unit, it has acted and there are other units available
+					-- Continue searching
+				end
+			else
+				-- Unit hasn't acted yet, use it
+				return unit, slotIndex
+			end
+		end
 	end
 	
-	return allUnits
+	-- If we get here and allowActedUnits is true, check if there's a single unit that has acted
+	-- (this handles edge cases where we might have missed it)
+	if allowActedUnits and aliveCount == 1 then
+		for slotIndex = 1, 6 do
+			local unit = board[slotIndex]
+			if unit and unit.state == CombatTypes.UnitState.ALIVE then
+				unit.hasActed = false
+				return unit, slotIndex
+			end
+		end
+	end
+	
+	return nil, nil
+end
+
+local function GetAliveUnits(board)
+	-- Use the helper function for consistency
+	return GetAliveUnitsForBoard(board)
 end
 
 -- Find target: first available slot starting from slot 1
@@ -300,38 +330,90 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 		-- Process status effects at start of round
 		ProcessStatusEffects(battleState.boardA, battleState.boardB)
 		
-		-- Calculate turn order (fixed 1-6 order)
-		local turnOrder = CalculateTurnOrder(battleState.boardA, battleState.boardB)
+		-- Per-side cursors for alternating turn order
+		-- Each side maintains its own cursor that cycles through its deck
+		local cursorA = 1  -- Next slot to check for player A
+		local cursorB = 1  -- Next slot to check for player B
+		local currentSide = "A"  -- Start with player A (initiative preserved)
 		
-		-- Execute turns
-		for _, unit in ipairs(turnOrder) do
-			-- Skip if unit is dead
-			if unit.state ~= CombatTypes.UnitState.ALIVE then
-				-- Skip to next iteration
-			elseif unit.stats.attack <= 0 then
-				-- Skip units with zero or negative attack (they can't deal damage)
-				LogInfo("Skip: %s slot %d (%s) - zero attack", unit.playerId, unit.slotIndex, unit.cardId)
-				-- Skip to next iteration
-			else
-				-- Find target
-				local target = FindTarget(unit, battleState.boardA, battleState.boardB)
-				if not target then
-					-- No valid targets, skip turn
-					LogInfo("Skip: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
-					-- Skip to next iteration
+		-- Track if we've had any successful actions this round (to detect stalemate)
+		local hasActionThisRound = false
+		local maxTurnsPerRound = 100  -- Safety limit to prevent infinite loops
+		local turnsThisRound = 0
+		
+		-- Execute turns with alternating A↔B order
+		while turnsThisRound < maxTurnsPerRound do
+			turnsThisRound = turnsThisRound + 1
+			
+			-- Get the current side's board and cursor
+			local currentBoard = (currentSide == "A") and battleState.boardA or battleState.boardB
+			local currentCursor = (currentSide == "A") and cursorA or cursorB
+			
+			-- Find next alive unit on this side starting from cursor
+			-- Allow acted units if this side only has one unit (for fair alternating)
+			local unit, foundSlot = FindNextAliveUnit(currentBoard, currentCursor, true)
+			
+			if not unit then
+				-- No alive units on this side, check if battle ended
+				local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+				if winner then
+					battleState.winner = winner
+					battleState.isComplete = true
+					break
+				end
+				-- Reset cursor for this side for next round (will be checked again next round)
+				if currentSide == "A" then
+					cursorA = 1
 				else
-					-- Execute attack
-					ExecuteAttack(unit, target, battleState)
-					
-					-- Check if battle ended
-					local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
-					if winner then
-						battleState.winner = winner
-						battleState.isComplete = true
-						break
+					cursorB = 1
+				end
+			else
+				-- Found alive unit, check if it can attack
+				if unit.stats.attack <= 0 then
+					-- Skip units with zero or negative attack
+					LogInfo("Skip: %s slot %d (%s) - zero attack", unit.playerId, unit.slotIndex, unit.cardId)
+				else
+					-- Find target
+					local target = FindTarget(unit, battleState.boardA, battleState.boardB)
+					if not target then
+						-- No valid targets, skip turn
+						LogInfo("Skip: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
+					else
+						-- Execute attack
+						ExecuteAttack(unit, target, battleState)
+						hasActionThisRound = true
+						
+						-- Check if battle ended
+						local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+						if winner then
+							battleState.winner = winner
+							battleState.isComplete = true
+							break
+						end
 					end
 				end
+				
+				-- Advance cursor to next slot (wraps within deck)
+				local nextSlot = (foundSlot % 6) + 1
+				if currentSide == "A" then
+					cursorA = nextSlot
+				else
+					cursorB = nextSlot
+				end
 			end
+			
+			-- Switch to other side for next turn
+			currentSide = (currentSide == "A") and "B" or "A"
+			
+			-- If we've checked both sides and neither has actions, break to avoid infinite loop
+			if turnsThisRound > 1 and turnsThisRound % 2 == 0 and not hasActionThisRound then
+				-- Both sides have been checked, no actions possible
+				break
+			end
+		end
+		
+		if turnsThisRound >= maxTurnsPerRound then
+			LogWarning("Round %d exceeded max turns per round (%d)", battleState.round, maxTurnsPerRound)
 		end
 		
 		-- Reset turn flags for next round

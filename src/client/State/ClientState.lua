@@ -118,12 +118,22 @@ function ClientState.applyProfileUpdate(payload)
 		
 		-- Update collection
 		if payload.collectionSummary then
-			for _, card in ipairs(payload.collectionSummary) do
-				state.profile.collection[card.cardId] = {
-					count = card.count,
-					level = card.level
-				}
+			-- Ensure collection exists
+			if not state.profile.collection then
+				state.profile.collection = {}
 			end
+			
+			-- Merge collection updates (collectionSummary is a partial update)
+			for _, card in ipairs(payload.collectionSummary) do
+				if card.cardId then
+					state.profile.collection[card.cardId] = {
+						count = card.count or 0,
+						level = card.level or 1
+					}
+				end
+			end
+			
+			log("Collection updated: %d cards in summary", #payload.collectionSummary)
 		end
 		
 		-- Update login info
@@ -157,7 +167,15 @@ function ClientState.applyProfileUpdate(payload)
 			state.profile.playtime = payload.playtime
 		end
 		
-		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d", #state.profile.deck, state.profile.squadPower, #state.profile.lootboxes)
+		local collectionSize = 0
+		if state.profile.collection then
+			for _ in pairs(state.profile.collection) do
+				collectionSize = collectionSize + 1
+			end
+		end
+		
+		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d, collection=%d cards", 
+			#state.profile.deck, state.profile.squadPower, #state.profile.lootboxes, collectionSize)
 	end
 	
 	-- Update timestamp
