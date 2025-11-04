@@ -466,6 +466,13 @@ function ProfileManager.LevelUpCard(userId, cardId, requiredCount, softAmount)
 	collectionEntry.level = collectionEntry.level + 1
 	profile.currencies.soft = profile.currencies.soft - softAmount
 	
+	-- Fix: If count becomes 0 after leveling up, set it to 1
+	-- The leveled-up card itself is still owned (at the new level)
+	-- This ensures the card remains available in the player's collection
+	if collectionEntry.count <= 0 then
+		collectionEntry.count = 1
+	end
+	
 	-- Check if this card is in the active deck and recompute squad power
 	local isInDeck = false
 	for _, deckCardId in ipairs(profile.deck) do

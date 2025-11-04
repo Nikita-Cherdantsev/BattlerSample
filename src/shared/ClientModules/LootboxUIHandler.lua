@@ -319,21 +319,6 @@ end
 
 -- Update lootbox UI state for a specific container (or all if containerName is nil)
 function LootboxUIHandler:UpdateLootboxStates(error, containerName)
-	-- Get latest profile from ClientState instead of cached currentProfile
-	-- This ensures we always have the most up-to-date data
-	local latestProfile = self.ClientState and self.ClientState.getProfile()
-	if not latestProfile then
-		-- Fallback to currentProfile if ClientState not available yet
-		if not self.currentProfile or not self.currentProfile.lootboxes then
-			return
-		end
-		latestProfile = self.currentProfile
-	end
-	
-	if not latestProfile.lootboxes then
-		return
-	end
-	
 	-- Prevent infinite loops by checking if we're already updating
 	if self._updatingStates then
 		return
@@ -341,18 +326,35 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 	
 	self._updatingStates = true
 	
-	-- Sync currentProfile with latest from ClientState
-	if latestProfile ~= self.currentProfile then
+	-- Prioritize currentProfile if it exists and has lootboxes (it was just updated from ProfileUpdated)
+	-- Otherwise, try to get from ClientState
+	local latestProfile = nil
+	if self.currentProfile and self.currentProfile.lootboxes then
+		latestProfile = self.currentProfile
+	else
+		latestProfile = self.ClientState and self.ClientState.getProfile()
+		if not latestProfile then
+			-- No profile available
+			self._updatingStates = false
+			return
+		end
+		-- Initialize currentProfile from ClientState
 		if not self.currentProfile then
 			self.currentProfile = {}
 		end
 		self.currentProfile.lootboxes = latestProfile.lootboxes
 		self.currentProfile.pendingLootbox = latestProfile.pendingLootbox
 		self.currentProfile.currencies = latestProfile.currencies
+		latestProfile = self.currentProfile
 	end
 	
-	local lootboxes = self.currentProfile.lootboxes
-	local pendingLootbox = self.currentProfile.pendingLootbox
+	if not latestProfile.lootboxes then
+		self._updatingStates = false
+		return
+	end
+	
+	local lootboxes = latestProfile.lootboxes
+	local pendingLootbox = latestProfile.pendingLootbox
 	
 	-- Update lootbox UI based on current player data
 	
@@ -665,6 +667,7 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 			-- Update lootboxes
 			if payload.lootboxes then
 				self.currentProfile.lootboxes = payload.lootboxes
+				print("🎁 [LootboxUIHandler] ProfileUpdated: Updated lootboxes, count=" .. (payload.lootboxes and #payload.lootboxes or 0))
 			end
 			
 			-- Update pending lootbox
@@ -718,6 +721,8 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 				end)
 			else
 				-- Update UI immediately if no rewards (normal state update)
+				-- Use currentProfile which was just updated from payload
+				print("🎁 [LootboxUIHandler] ProfileUpdated: No rewards, updating UI immediately with", #(self.currentProfile.lootboxes or {}), "lootboxes")
 				self:UpdateLootboxStates()
 			end
 		else

@@ -354,32 +354,86 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 			local unit, foundSlot = FindNextAliveUnit(currentBoard, currentCursor, true)
 			
 			if not unit then
-				-- No alive units on this side, check if battle ended
-				local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
-				if winner then
-					battleState.winner = winner
-					battleState.isComplete = true
-					break
+				-- Check if there are any alive units on this side
+				local hasAliveUnits = false
+				for slotIndex = 1, 6 do
+					local checkUnit = currentBoard[slotIndex]
+					if checkUnit and checkUnit.state == CombatTypes.UnitState.ALIVE then
+						hasAliveUnits = true
+						break
+					end
 				end
-				-- Reset cursor for this side for next round (will be checked again next round)
-				if currentSide == "A" then
-					cursorA = 1
-				else
-					cursorB = 1
+				
+				if hasAliveUnits then
+					-- All units on this side have acted - reset their hasActed flags to allow cycling
+					-- This ensures strict A-B-A-B alternation regardless of deck size
+					for slotIndex = 1, 6 do
+						local checkUnit = currentBoard[slotIndex]
+						if checkUnit and checkUnit.state == CombatTypes.UnitState.ALIVE then
+							checkUnit.hasActed = false
+						end
+					end
+					-- Try finding again after resetting
+					-- FindNextAliveUnit will skip any dead units at the cursor position
+					unit, foundSlot = FindNextAliveUnit(currentBoard, currentCursor, true)
+					
+					-- Safety check: if we still don't find a unit but there are alive units,
+					-- something is wrong - log and continue searching (shouldn't happen)
+					if not unit then
+						LogWarning("FindNextAliveUnit returned nil after resetting hasActed, but hasAliveUnits=true. This should not happen.")
+						-- Force find first alive unit as fallback
+						for slotIndex = 1, 6 do
+							local checkUnit = currentBoard[slotIndex]
+							if checkUnit and checkUnit.state == CombatTypes.UnitState.ALIVE then
+								unit = checkUnit
+								foundSlot = slotIndex
+								break
+							end
+						end
+					end
 				end
-			else
-				-- Found alive unit, check if it can attack
+				
+				if not unit then
+					-- No alive units on this side, check if battle ended
+					local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+					if winner then
+						battleState.winner = winner
+						battleState.isComplete = true
+						break
+					end
+					-- Reset cursor for this side for next round (will be checked again next round)
+					if currentSide == "A" then
+						cursorA = 1
+					else
+						cursorB = 1
+					end
+					-- Switch to other side since no units found on this side
+					currentSide = (currentSide == "A") and "B" or "A"
+					-- Continue loop to try other side
+				end
+			end
+			
+			-- Process unit if we found one (either initially or after resetting hasActed)
+			if unit then
+				-- Found alive unit - process its turn
+				-- Check if it can attack
 				if unit.stats.attack <= 0 then
-					-- Skip units with zero or negative attack
-					LogInfo("Skip: %s slot %d (%s) - zero attack", unit.playerId, unit.slotIndex, unit.cardId)
+					-- Units with 0 attack still take their turn (for future perks)
+					-- Mark as acted (ExecuteAttack won't be called for 0 attack units)
+					unit.hasActed = true
+					LogInfo("Turn: %s slot %d (%s) - zero attack (perks may activate)", unit.playerId, unit.slotIndex, unit.cardId)
+					-- Mark that we processed a turn (even if no attack)
+					hasActionThisRound = true
 				else
 					-- Find target
 					local target = FindTarget(unit, battleState.boardA, battleState.boardB)
 					if not target then
-						-- No valid targets, skip turn
-						LogInfo("Skip: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
+						-- No valid targets - still processed turn, mark as acted
+						unit.hasActed = true
+						LogInfo("Turn: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
+						hasActionThisRound = true
 					else
-						-- Execute attack
+						-- Execute attack (ExecuteAttack will set hasActed = true itself)
 						ExecuteAttack(unit, target, battleState)
 						hasActionThisRound = true
 						
@@ -393,17 +447,23 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 					end
 				end
 				
-				-- Advance cursor to next slot (wraps within deck)
+				-- After processing unit's turn (regardless of whether it attacked or not),
+				-- advance cursor to next slot (may be dead, but FindNextAliveUnit will skip dead units)
+				-- Then switch sides to maintain strict A-B-A-B alternation
 				local nextSlot = (foundSlot % 6) + 1
 				if currentSide == "A" then
 					cursorA = nextSlot
 				else
 					cursorB = nextSlot
 				end
+				-- Switch to other side for next turn (ensures strict alternation)
+				currentSide = (currentSide == "A") and "B" or "A"
 			end
 			
-			-- Switch to other side for next turn
-			currentSide = (currentSide == "A") and "B" or "A"
+			-- Side switching is handled inside the unit processing logic:
+			-- - After processing any unit's turn (attack, 0 attack, or no target): switch sides
+			-- - If no unit found: switch sides (handled in the "if not unit" block above)
+			-- This ensures strict A-B-A-B alternation regardless of attack status
 			
 			-- If we've checked both sides and neither has actions, break to avoid infinite loop
 			if turnsThisRound > 1 and turnsThisRound % 2 == 0 and not hasActionThisRound then

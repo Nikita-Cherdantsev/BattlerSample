@@ -219,11 +219,17 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
 		-- Auto-repair expired unlocking boxes first
+		-- Also repair boxes that are UNLOCKING but invalid (no unlocksAt)
 		for i = 1, BoxTypes.MAX_SLOTS do
 			local box = profile.lootboxes[i]
-			if box and box.state == BoxTypes.BoxState.UNLOCKING and box.unlocksAt then
-				if box.unlocksAt <= serverNow then
-					-- Timer expired, transition to Ready state
+			if box and box.state == BoxTypes.BoxState.UNLOCKING then
+				if box.unlocksAt then
+					if box.unlocksAt <= serverNow then
+						-- Timer expired, transition to Ready state
+						box.state = BoxTypes.BoxState.READY
+					end
+				else
+					-- Invalid state: UNLOCKING without unlocksAt - auto-repair to READY
 					box.state = BoxTypes.BoxState.READY
 				end
 			end
@@ -247,24 +253,65 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 			return preserveProfileInvariants(profile, userId)
 		end
 		
-		-- StartUnlock only works on Idle boxes
-		-- If box is Ready, it should be opened, not unlocked again
+		-- Handle Ready state: box is ready to open, not unlock
 		if lootbox.state == BoxTypes.BoxState.READY then
 			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is ready to open, use CompleteUnlock instead" }
 			return preserveProfileInvariants(profile, userId)
 		end
 		
+		-- Handle Unlocking state: check if timer expired or if it's still active
+		if lootbox.state == BoxTypes.BoxState.UNLOCKING then
+			if not lootbox.unlocksAt then
+				-- Invalid state: UNLOCKING without unlocksAt - treat as ready to open
+				lootbox.state = BoxTypes.BoxState.READY
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is ready to open, use CompleteUnlock instead" }
+				return preserveProfileInvariants(profile, userId)
+			elseif lootbox.unlocksAt <= serverNow then
+				-- Timer expired but wasn't caught by auto-repair (shouldn't happen, but handle gracefully)
+				-- Auto-repair it now
+				lootbox.state = BoxTypes.BoxState.READY
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is ready to open, use CompleteUnlock instead" }
+				return preserveProfileInvariants(profile, userId)
+			else
+				-- Timer still active - box is already unlocking
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING, message = "Lootbox is already unlocking" }
+				return preserveProfileInvariants(profile, userId)
+			end
+		end
+		
+		-- StartUnlock only works on Idle boxes
 		if lootbox.state ~= BoxTypes.BoxState.IDLE then
 			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is in " .. tostring(lootbox.state) .. " state, expected Idle" }
 			return preserveProfileInvariants(profile, userId)
 		end
 		
 		-- Check if any other box is actively unlocking (timer still running)
+		-- Only count boxes that are actually unlocking with an active timer (not expired)
+		-- Skip the box we're trying to unlock (slotIndex)
+		-- After auto-repair, re-check all boxes to ensure expired ones are fixed
 		for i = 1, BoxTypes.MAX_SLOTS do
-			local otherBox = profile.lootboxes[i]
-			if otherBox and otherBox.state == BoxTypes.BoxState.UNLOCKING and otherBox.unlocksAt and otherBox.unlocksAt > serverNow then
-				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING }
-				return preserveProfileInvariants(profile, userId)
+			if i ~= slotIndex then
+				local otherBox = profile.lootboxes[i]
+				if otherBox and otherBox.state == BoxTypes.BoxState.UNLOCKING then
+					if otherBox.unlocksAt then
+						-- If timer expired, auto-repair it to READY state
+						if otherBox.unlocksAt <= serverNow then
+							otherBox.state = BoxTypes.BoxState.READY
+							-- Log auto-repair for debugging
+							print(string.format("[LootboxService.StartUnlock] Auto-repaired expired UNLOCKING box at slot %d (expired at %d, now %d)", i, otherBox.unlocksAt, serverNow))
+						else
+							-- Timer still running - another box is actively unlocking
+							local errorMsg = string.format("Box at slot %d is still unlocking (expires at %d, now %d, remaining: %d seconds)", i, otherBox.unlocksAt, serverNow, otherBox.unlocksAt - serverNow)
+							print("[LootboxService.StartUnlock] " .. errorMsg)
+							profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_ALREADY_UNLOCKING, message = errorMsg }
+							return preserveProfileInvariants(profile, userId)
+						end
+					else
+						-- Invalid state: UNLOCKING without unlocksAt - auto-repair to READY
+						otherBox.state = BoxTypes.BoxState.READY
+						print(string.format("[LootboxService.StartUnlock] Auto-repaired invalid UNLOCKING box at slot %d (no unlocksAt)", i))
+					end
+				end
 			end
 		end
 		
