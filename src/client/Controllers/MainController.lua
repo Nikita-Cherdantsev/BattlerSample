@@ -117,6 +117,8 @@ function MainController:GetModule(moduleName)
         return require(ReplicatedStorage.Modules.Constants.GameConstants)
     elseif moduleName == "UIConstants" then
         return require(ReplicatedStorage.Modules.Constants.UIConstants)
+    elseif moduleName == "BattleAnimationHandler" then
+        return require(ReplicatedStorage.ClientModules.BattleAnimationHandler)
     elseif moduleName == "CombatTypes" then
         return require(ReplicatedStorage.Modules.Combat.CombatTypes)
     elseif moduleName == "CombatUtils" then

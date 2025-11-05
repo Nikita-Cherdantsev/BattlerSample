@@ -61,6 +61,19 @@ function BattleHandler:Init(controller)
 		self.Manifest = { CardImages = {} }
 	end
 
+	-- Initialize BattleAnimationHandler
+	local animationHandlerSuccess, animationHandler = pcall(function()
+		return controller:GetModule("BattleAnimationHandler")
+	end)
+	
+	if animationHandlerSuccess and animationHandler then
+		animationHandler:Init()
+		self.BattleAnimationHandler = animationHandler
+	else
+		warn("BattleHandler: Could not load BattleAnimationHandler module")
+		self.BattleAnimationHandler = nil
+	end
+
 	-- Setup battle UI
 	self:SetupBattleUI()
 
@@ -194,6 +207,11 @@ function BattleHandler:StartBattle(battleData)
 	
 	-- Store battle data
 	self.currentBattle = battleData
+	
+	-- Reset all effects before battle starts
+	if self.BattleAnimationHandler then
+		self.BattleAnimationHandler:ResetAllEffects()
+	end
 	
 	-- Show battle frame
 	self:ShowBattleFrame()
@@ -559,6 +577,29 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 	end
 end
 
+function BattleHandler:ConvertToAnimationParams(attackerPlayer, attackerSlot, defenderPlayer, defenderSlot, damage, defenderKO, defenceReduced)
+	-- Convert player ID ("A"/"B") to role ("player"/"rival")
+	local attackerRole = (attackerPlayer == "A") and "player" or "rival"
+	local attackerId = attackerSlot
+	
+	-- Target ID and role
+	local targetId = defenderSlot
+	
+	-- Determine damageType based on defenceReduced
+	local damageType = "reduce"
+	if damage == 0 then
+		damageType = "block"
+	end
+	if damage > 0 and defenceReduced and defenceReduced > 0 then
+		damageType = "reduce"  -- Part of damage blocked
+	end
+	
+	local damageValue = damage or 0
+	local isDeath = defenderKO or false
+	
+	return attackerRole, attackerId, targetId, damageType, damageValue, isDeath
+end
+
 function BattleHandler:AnimateAttack(logEntry, round, onComplete)
 	-- Use abbreviated field names from compact log
 	local attackerSlot = logEntry.as
@@ -568,6 +609,7 @@ function BattleHandler:AnimateAttack(logEntry, round, onComplete)
 	local damage = logEntry.d
 	local defenderHealth = logEntry.dh
 	local defenderKO = logEntry.k
+	local defenceReduced = logEntry.dr
 	
 	-- Debug: Log attack info
 	warn(string.format("AnimateAttack: %s slot %d → %s slot %d, health: %s", 
@@ -584,8 +626,21 @@ function BattleHandler:AnimateAttack(logEntry, round, onComplete)
 		return
 	end
 	
-	-- Simplified animation: just size changes as requested
-	self:PlaySimpleAttackAnimation(attackerFrame, defenderFrame, damage, defenderKO, defenderHealth, defenderPlayer, defenderSlot, onComplete)
+	-- Use BattleAnimationHandler if available
+	if self.BattleAnimationHandler then
+		local attackerRole, attackerId, targetId, damageType, damageValue, isDeath = 
+			self:ConvertToAnimationParams(attackerPlayer, attackerSlot, defenderPlayer, defenderSlot, damage, defenderKO, defenceReduced)
+		
+		-- Launch animation with callback
+		self.BattleAnimationHandler:Attack(attackerRole, attackerId, targetId, damageType, damageValue, isDeath, function()
+			-- Update defender's health after animation completes
+			self:UpdateCardHealth(defenderFrame, defenderHealth, defenderPlayer, defenderSlot)
+			if onComplete then onComplete() end
+		end)
+	else
+		-- Fallback to simple animation
+		self:PlaySimpleAttackAnimation(attackerFrame, defenderFrame, damage, defenderKO, defenderHealth, defenderPlayer, defenderSlot, onComplete)
+	end
 end
 
 function BattleHandler:GetCardFrame(player, slot)

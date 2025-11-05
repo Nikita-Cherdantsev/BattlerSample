@@ -36,6 +36,9 @@
         "BattleHandler": {
           "$path": "src/shared/ClientModules/BattleHandler.lua"
         },
+        "BattleAnimationHandler": {
+          "$path": "src/shared/ClientModules/BattleAnimationHandler.lua"
+        },
         "RewardsHandler": {
           "$path": "src/shared/ClientModules/RewardsHandler.lua"
         }
