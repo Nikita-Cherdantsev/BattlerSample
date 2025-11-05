@@ -585,12 +585,10 @@ function BattleHandler:ConvertToAnimationParams(attackerPlayer, attackerSlot, de
 	-- Target ID and role
 	local targetId = defenderSlot
 	
-	-- Determine damageType based on defenceReduced
-	local damageType = "reduce"
+	local damageType = "damage"
 	if damage == 0 then
 		damageType = "block"
-	end
-	if damage > 0 and defenceReduced and defenceReduced > 0 then
+	elseif defenceReduced and defenceReduced > 0 and damage > 0 then
 		damageType = "reduce"  -- Part of damage blocked
 	end
 	

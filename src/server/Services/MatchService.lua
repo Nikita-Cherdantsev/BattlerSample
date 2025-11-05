@@ -677,6 +677,7 @@ local function CreateCompactLog(battleResult)
 				ds = logEntry.defenderSlot,
 				dp = logEntry.defenderPlayer,
 				d = logEntry.damage,
+				dr = logEntry.defenceReduced,
 				dh = logEntry.defenderHealth,
 				k = logEntry.defenderKO
 			})
