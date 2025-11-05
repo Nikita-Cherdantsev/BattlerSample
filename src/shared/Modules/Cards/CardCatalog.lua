@@ -88,14 +88,14 @@ CardCatalog.Cards = {
 		hp = 4,
 		defence = 2
 	}, 300, {
-		[2] = { atk = 1, hp = 1, defence = 1 },
-		[3] = { atk = 0, hp = 0, defence = 0 },
-		[4] = { atk = 1, hp = 1, defence = 1 },
-		[5] = { atk = 0, hp = 0, defence = 0 },
-		[6] = { atk = 1, hp = 1, defence = 1 },
-		[7] = { atk = 0, hp = 0, defence = 0 },
-		[8] = { atk = 1, hp = 1, defence = 1 },
-		[9] = { atk = 0, hp = 0, defence = 0 },
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 0, defence = 1 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 0, defence = 1 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 0, defence = 1 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 0, defence = 1 },
 		[10] = { atk = 1, hp = 1, defence = 1 }
 	}, 30, ""),
 	
@@ -106,13 +106,13 @@ CardCatalog.Cards = {
 	}, 400, {
 		[2] = { atk = 0, hp = 1, defence = 1 },
 		[3] = { atk = 0, hp = 1, defence = 1 },
-		[4] = { atk = 0, hp = 1, defence = 0 },
-		[5] = { atk = 0, hp = 1, defence = 1 },
-		[6] = { atk = 0, hp = 0, defence = 1 },
-		[7] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 0, hp = 1, defence = 1 },
+		[5] = { atk = 0, hp = 0, defence = 1 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 0, defence = 1 },
 		[8] = { atk = 0, hp = 1, defence = 0 },
-		[9] = { atk = 0, hp = 1, defence = 1 },
-		[10] = { atk = 0, hp = 1, defence = 1 }
+		[9] = { atk = 0, hp = 0, defence = 1 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
 	}, 40, ""),
 	
 	["card_500"] = CreateCard("card_500", "Sanji", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, {
@@ -152,15 +152,15 @@ CardCatalog.Cards = {
 		hp = 1,
 		defence = 1
 	}, 700, {
-		[2] = { atk = 0, hp = 0, defence = 0 },
-		[3] = { atk = 1, hp = 1, defence = 1 },
-		[4] = { atk = 0, hp = 0, defence = 0 },
-		[5] = { atk = 0, hp = 0, defence = 0 },
-		[6] = { atk = 1, hp = 1, defence = 1 },
-		[7] = { atk = 0, hp = 0, defence = 0 },
-		[8] = { atk = 0, hp = 0, defence = 0 },
-		[9] = { atk = 1, hp = 1, defence = 1 },
-		[10] = { atk = 0, hp = 0, defence = 0 }
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 0, defence = 1 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 0, defence = 1 },
+		[8] = { atk = 1, hp = 0, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 0, hp = 0, defence = 1 }
 		}, 70, "", nil, { CardCatalog.Rarities.ONEPIECE }),
 	
 	["card_800"] = CreateCard("card_800", "Vegeta", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, {
@@ -187,8 +187,8 @@ CardCatalog.Cards = {
 		[2] = { atk = 0, hp = 1, defence = 0 },
 		[3] = { atk = 1, hp = 1, defence = 0 },
 		[4] = { atk = 0, hp = 1, defence = 0 },
-		[5] = { atk = 1, hp = 1, defence = 0 },
-		[6] = { atk = 0, hp = 0, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
 		[7] = { atk = 1, hp = 1, defence = 0 },
 		[8] = { atk = 0, hp = 1, defence = 0 },
 		[9] = { atk = 1, hp = 1, defence = 0 },
