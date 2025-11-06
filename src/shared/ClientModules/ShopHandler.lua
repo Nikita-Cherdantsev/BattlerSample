@@ -60,6 +60,7 @@ function ShopHandler:SetupShop()
 	self:SetupCloseButton()
 	self:SetupShopButtons()
 	self:SetupProfileUpdatedHandler()
+	self:SetupModelClickHandler()
 	
 	print("✅ ShopHandler: Shop UI setup completed")
 end
@@ -283,6 +284,102 @@ function ShopHandler:SetupLootboxButtons()
 				end
 			end
 		end
+	end
+end
+
+function ShopHandler:SetupModelClickHandler()
+	local targetModelName = "Samurai"
+	local maxWaitTime = 30 -- Maximum wait time in seconds
+	local checkInterval = 0.5 -- Check every 0.5 seconds
+
+	local function findModelByName(parent, name)
+		for _, child in ipairs(parent:GetDescendants()) do
+			if child:IsA("Model") and child.Name == name then
+				return child
+			end
+		end
+		return nil
+	end
+
+	-- Try to find model immediately
+	local targetModel = findModelByName(workspace, targetModelName)
+
+	-- If model not found, wait for it to load
+	if not targetModel then
+		local startTime = tick()
+		local modelConnection = nil
+		
+		-- Set up listener for new children in workspace
+		modelConnection = workspace.ChildAdded:Connect(function(child)
+			if child:IsA("Model") and child.Name == targetModelName then
+				targetModel = child
+			else
+				-- Check descendants in case model is nested
+				local foundModel = findModelByName(child, targetModelName)
+				if foundModel then
+					targetModel = foundModel
+				end
+			end
+		end)
+
+		-- Also check periodically in case model was already added but not detected
+		while not targetModel and (tick() - startTime) < maxWaitTime do
+			targetModel = findModelByName(workspace, targetModelName)
+			if not targetModel then
+				task.wait(checkInterval)
+			end
+		end
+
+		-- Always clean up connection
+		if modelConnection then
+			modelConnection:Disconnect()
+		end
+	end
+
+	if not targetModel then
+		warn("ShopHandler: Model " .. targetModelName .. " not found in workspace after waiting " .. maxWaitTime .. " seconds")
+		return
+	end
+
+	-- Wait for ProximityPrompt to be added to the model
+	local prompt = targetModel:FindFirstChildWhichIsA("ProximityPrompt", true)
+	
+	if not prompt then
+		-- Wait for prompt to be added
+		local startTime = tick()
+		local promptConnection = nil
+		
+		promptConnection = targetModel.DescendantAdded:Connect(function(descendant)
+			if descendant:IsA("ProximityPrompt") then
+				prompt = descendant
+				if promptConnection then
+					promptConnection:Disconnect()
+				end
+			end
+		end)
+
+		-- Also check periodically
+		while not prompt and (tick() - startTime) < maxWaitTime do
+			prompt = targetModel:FindFirstChildWhichIsA("ProximityPrompt", true)
+			if not prompt then
+				task.wait(checkInterval)
+			end
+		end
+
+		-- Clean up connection
+		if promptConnection then
+			promptConnection:Disconnect()
+		end
+	end
+
+	if prompt then
+		local connection = prompt.Triggered:Connect(function(player)
+			self:OpenWindow()
+		end)
+		table.insert(self.Connections, connection)
+		print("✅ ShopHandler: Model click handler connected for " .. targetModelName)
+	else
+		warn("ShopHandler: Proximity prompt not found on model " .. targetModelName .. " after waiting")
 	end
 end
 
