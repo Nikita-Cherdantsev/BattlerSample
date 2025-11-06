@@ -22,29 +22,29 @@ local REWARDS_CONFIG = {
 	thresholds = {3, 6, 9, 12, 15, 18, 22}, -- minutes
 	rewards = {
 		[1] = { 
-			{type = "Currency", name = "Soft", amount = 90}
+			{type = "Currency", name = "Soft", amount = 50}
 		},
 		[2] = {
-			{type = "Currency", name = "Soft", amount = 120}
+			{type = "Currency", name = "Hard", amount = 7}
 		},
 		[3] = {
 			{type = "Currency", name = "Soft", amount = 150},
 			{type = "Currency", name = "Hard", amount = 20}
 		},
 		[4] = {
-			{type = "Currency", name = "Soft", amount = 195},
+			{type = "Currency", name = "Hard", amount = 35},
 			{type = "Lootbox", name = "uncommon", amount = 1}
 		},
 		[5] = {
-			{type = "Currency", name = "Soft", amount = 225}
+			{type = "Currency", name = "Soft", amount = 200}
 		},
 		[6] = {
-			{type = "Currency", name = "Soft", amount = 300},
-			{type = "Currency", name = "Hard", amount = 30},
+			{type = "Currency", name = "Soft", amount = 250},
+			{type = "Currency", name = "Hard", amount = 67},
 			{type = "Lootbox", name = "rare", amount = 1}
 		},
 		[7] = {
-			{type = "Currency", name = "Soft", amount = 375}
+			{type = "Lootbox", name = "rare", amount = 1}
 		}
 	}
 }

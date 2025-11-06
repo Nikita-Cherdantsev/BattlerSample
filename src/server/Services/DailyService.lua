@@ -19,26 +19,26 @@ local Logger = require(game.ReplicatedStorage.Modules.Logger)
 -- Rewards configuration
 local REWARDS_CONFIG = {
 	[1] = { 
-		{type = "Currency", name = "Soft", amount = 225}
+		{type = "Lootbox", name = "uncommon", amount = 1}
 	},
 	[2] = {
 		{type = "Currency", name = "Hard", amount = 20}
 	},
 	[3] = {
-		{type = "Lootbox", name = "uncommon", amount = 1}
+		{type = "Lootbox", name = "rare", amount = 1}
 	},
 	[4] = {
-		{type = "Currency", name = "Soft", amount = 375}
+		{type = "Currency", name = "Hard", amount = 40}
 	},
 	[5] = {
 		{type = "Currency", name = "Hard", amount = 40}
 	},
 	[6] = {
-		{type = "Lootbox", name = "rare", amount = 1}
+		{type = "Lootbox", name = "epic", amount = 1}
 	},
 	[7] = {
-		{type = "Currency", name = "Soft", amount = 450},
-		{type = "Lootbox", name = "epic", amount = 1}
+		{type = "Currency", name = "Hard", amount = 100},
+		{type = "Lootbox", name = "legendary", amount = 1}
 	}
 }
 
