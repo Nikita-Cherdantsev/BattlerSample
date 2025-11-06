@@ -274,6 +274,9 @@
         },
         "Utilities": {
           "$path": "src/client/Utilities.lua"
+        },
+        "MusicPlayer": {
+          "$path": "src/client/MusicPlayer.client.lua"
         }
       }
     }
