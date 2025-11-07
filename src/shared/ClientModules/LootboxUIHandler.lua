@@ -40,7 +40,8 @@ function LootboxUIHandler:Init(controller)
 				ComputeInstantOpenCost = function() return 0 end
 			},
 			TweenUI = { FadeIn = function() end, FadeOut = function() end },
-			Blur = { Show = function() end, Hide = function() end }
+			Blur = { Show = function() end, Hide = function() end },
+			Audio = { PlayAudio = function() end }
 		}
 	end
 	
@@ -998,8 +999,13 @@ function LootboxUIHandler:OpenLootboxAnimation(rewards)
 	local effectAngleTween = TweenService:Create(self.LootboxOpening.FirstEffect, tweenInfo, {Rotation = angle})
 	effectAngleTween:Play()
 	
-	if self.Utilities and self.Utilities.TweenUI then
-		self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Lootbox, fadeInTime)
+	if self.Utilities then
+		if self.Utilities.Audio then
+			self.Utilities.Audio.PlayAudio("Lootbox")
+		end
+		if self.Utilities.TweenUI then
+			self.Utilities.TweenUI.FadeIn(self.LootboxOpening.Lootbox, fadeInTime)
+		end
 	end
 	local ballSizeTween = TweenService:Create(self.LootboxOpening.Lootbox, TweenInfo.new(fadeInTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.237, 0.423) })
 	

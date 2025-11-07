@@ -9,7 +9,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Wait for music folder
-local musicFolder = ReplicatedStorage:WaitForChild("MusicPlaylist")
+local musicFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Music")
 
 -- Fisher-Yates shuffle algorithm
 local function shuffleList(list)
