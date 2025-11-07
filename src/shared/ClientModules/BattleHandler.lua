@@ -77,6 +77,9 @@ function BattleHandler:Init(controller)
 	-- Setup battle UI
 	self:SetupBattleUI()
 
+	-- Setup speed up button
+	self:SetupSpeedUpButton()
+
 	self._initialized = true
 	return true
 end
@@ -133,6 +136,31 @@ function BattleHandler:SetupBattleUI()
 	
 	-- Store original card positions and sizes for animations
 	self:StoreOriginalCardProperties()
+end
+
+function BattleHandler:SetupSpeedUpButton()
+	local buttonsFrame = self.BattleFrame:FindFirstChild("Buttons")
+	if buttonsFrame then
+		local speedUpButton = buttonsFrame:FindFirstChild("BtnSpeedUp")
+		if speedUpButton then
+			speedUpButton.Visible = true
+			self.SpeedUpButton = speedUpButton
+			local connection = speedUpButton.MouseButton1Click:Connect(function()
+				if self.BattleAnimationHandler then
+					self.BattleAnimationHandler:SpeedUp()
+					speedUpButton.Visible = false
+				else
+					warn("BattleHandler: BattleAnimationHandler not found")
+				end
+			end)
+			table.insert(self.Connections, connection)
+			print("✅ BattleHandler: Speed up button connected")
+		else
+			warn("BattleHandler: Speed up button not found in Buttons frame")
+		end
+	else
+		warn("BattleHandler: Buttons frame not found in Battle frame")
+	end
 end
 
 function BattleHandler:StoreOriginalCardProperties()
@@ -231,6 +259,9 @@ function BattleHandler:ShowBattleFrame()
 	end
 	
 	self.BattleFrame.Visible = true
+	if self.SpeedUpButton then
+		self.SpeedUpButton.Visible = true
+	end
 	
 	-- Use TweenUI if available
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then

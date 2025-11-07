@@ -7,6 +7,7 @@
 --// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Module
 local BattleAnimationHandler = {}
@@ -29,12 +30,38 @@ local EFFECT_ELEMENTS = {
 	TEXT_VALUE = "TxtValue",
 }
 
+local DAMAGE_TYPE_TO_SOUNDS = {
+	damage = {"Damage1", "Damage2", "Damage3"},
+	block = {"Block1", "Block2", "Block3"},
+	reduce = {"Damage1", "Damage2", "Damage3"},
+}
+
+local DEFAULT_UTILITIES = {
+	Audio = {
+		PlayAudio = function()
+			-- noop fallback
+		end,
+	},
+}
+
 --// State
 BattleAnimationHandler._initialized = false
 BattleAnimationHandler.GameUI = nil
+BattleAnimationHandler.Utilities = DEFAULT_UTILITIES
+
+local function cloneTable(source)
+	local copy = {}
+	for key, value in pairs(source) do
+		copy[key] = value
+	end
+	return copy
+end
 
 --// Configuration
 BattleAnimationHandler.Config = {
+	-- Speed up multiplier
+	SPEED_UP_MULTIPLIER = 0.5,
+
 	-- Animation timers (in seconds)
 	ATTACK_MOVE_DURATION = 0.3,
 	IMPACT_DURATION = 0.3,
@@ -42,10 +69,11 @@ BattleAnimationHandler.Config = {
 	EFFECT_FADE_DURATION = 0.3,
 	DELAY_BEFORE_IMPACT = 0.1,
 	
-	-- Offsets (in pixels)
-	ATTACKER_OFFSET = 50,
-	TARGET_OFFSET = 20,
-	CONTACT_DISTANCE = 10,
+	-- Offsets (relative to card size)
+	REFERENCE_CARD_WIDTH = 175,
+	ATTACKER_OFFSET_RATIO = 0.25,
+	TARGET_OFFSET_RATIO = 0.1,
+	CONTACT_DISTANCE_RATIO = 0.05,
 	
 	-- Easing styles
 	MOVE_EASING = Enum.EasingStyle.Quad,
@@ -53,6 +81,8 @@ BattleAnimationHandler.Config = {
 	RETURN_EASING = Enum.EasingStyle.Quad,
 	RETURN_DIRECTION = Enum.EasingDirection.In,
 }
+
+BattleAnimationHandler._defaultConfig = cloneTable(BattleAnimationHandler.Config)
 
 --// Initialization
 function BattleAnimationHandler:Init()
@@ -74,10 +104,48 @@ function BattleAnimationHandler:Init()
 	end
 	
 	self.GameUI = gameUI
+	local success, utilities = pcall(function()
+		return require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utilities"))
+	end)
+	if success and utilities and utilities.Audio and utilities.Audio.PlayAudio then
+		self.Utilities = utilities
+	else
+		self.Utilities = DEFAULT_UTILITIES
+		if not success then
+			warn("BattleAnimationHandler: Failed to load Utilities module - " .. tostring(utilities))
+		elseif not (utilities and utilities.Audio and utilities.Audio.PlayAudio) then
+			warn("BattleAnimationHandler: Utilities.Audio.PlayAudio missing; using fallback")
+		end
+	end
 	self._initialized = true
 	
 	print("✅ BattleAnimationHandler initialized")
 	return true
+end
+
+function BattleAnimationHandler:SpeedUp()
+	if not self._initialized then
+		warn("BattleAnimationHandler: Not initialized. Call Init() first.")
+		return
+	end
+	
+	self.Config.ATTACK_MOVE_DURATION = self.Config.ATTACK_MOVE_DURATION * self.Config.SPEED_UP_MULTIPLIER
+	self.Config.IMPACT_DURATION = self.Config.IMPACT_DURATION * self.Config.SPEED_UP_MULTIPLIER
+	self.Config.RETURN_DURATION = self.Config.RETURN_DURATION * self.Config.SPEED_UP_MULTIPLIER
+	self.Config.EFFECT_FADE_DURATION = self.Config.EFFECT_FADE_DURATION * self.Config.SPEED_UP_MULTIPLIER
+	self.Config.DELAY_BEFORE_IMPACT = self.Config.DELAY_BEFORE_IMPACT * self.Config.SPEED_UP_MULTIPLIER
+
+	print("✅ BattleAnimationHandler: Speed up completed")
+end
+
+function BattleAnimationHandler:ResetConfig()
+	if not self._defaultConfig then
+		return
+	end
+
+	for key, value in pairs(self._defaultConfig) do
+		self.Config[key] = value
+	end
 end
 
 --// Helper Functions
@@ -187,6 +255,8 @@ function BattleAnimationHandler:ResetAllEffects()
 		warn("BattleAnimationHandler: Not initialized. Call Init() first.")
 		return
 	end
+
+	self:ResetConfig()
 	
 	-- Reset effects for all player cards (1-6)
 	for cardId = 1, 6 do
@@ -240,20 +310,27 @@ function BattleAnimationHandler:ShowEffect(effectFrame, damageType, damageValue,
 		if deathImage then
 			deathImage.ImageTransparency = CONSTANTS.TRANSPARENCY_VISIBLE
 		end
-		return
+		return EFFECT_ELEMENTS.DEATH
 	end
-	
+
 	-- Show appropriate effect based on damage type
 	local effectImage = damageTypeMap[damageType]
 	if effectImage then
 		effectImage.ImageTransparency = CONSTANTS.TRANSPARENCY_VISIBLE
 	end
-	
+
 	-- Show damage value in format "-N" if > 0 and not Block
 	if damageValue > 0 and txtValue and damageType ~= "block" then
 		txtValue.Text = "-" .. tostring(damageValue)
 		setTxtValueTransparency(txtValue, CONSTANTS.TRANSPARENCY_VISIBLE)
 	end
+
+	local soundChoices = DAMAGE_TYPE_TO_SOUNDS[damageType]
+	if soundChoices and #soundChoices > 0 then
+		return soundChoices[math.random(1, #soundChoices)]
+	end
+
+	return nil
 end
 
 -- Hide effect via alpha fade
@@ -326,17 +403,39 @@ local function calculateContactPosition(attackerFrame, targetFrame, attackerStar
 	local attackerAbsoluteSize = attackerFrame.AbsoluteSize
 	local targetAbsolutePos = targetFrame.AbsolutePosition
 	local targetAbsoluteSize = targetFrame.AbsoluteSize
+
+	local attackerWidth = attackerAbsoluteSize.X
+	local attackerHeight = attackerAbsoluteSize.Y
+	local targetWidth = targetAbsoluteSize.X
+	local targetHeight = targetAbsoluteSize.Y
+
+	local referenceWidth = config.REFERENCE_CARD_WIDTH or attackerWidth
+	local referenceHeight = config.REFERENCE_CARD_HEIGHT or referenceWidth
+
+	if attackerWidth == 0 then
+		attackerWidth = referenceWidth
+	end
+	if attackerHeight == 0 then
+		attackerHeight = referenceHeight
+	end
+	if targetWidth == 0 then
+		targetWidth = referenceWidth
+	end
+	if targetHeight == 0 then
+		targetHeight = referenceHeight
+	end
 	
 	local attackerCenter = Vector2.new(
-		attackerAbsolutePos.X + attackerAbsoluteSize.X / 2,
-		attackerAbsolutePos.Y + attackerAbsoluteSize.Y / 2
+		attackerAbsolutePos.X + attackerWidth / 2,
+		attackerAbsolutePos.Y + attackerHeight / 2
 	)
 	local targetCenter = Vector2.new(
-		targetAbsolutePos.X + targetAbsoluteSize.X / 2,
-		targetAbsolutePos.Y + targetAbsoluteSize.Y / 2
+		targetAbsolutePos.X + targetWidth / 2,
+		targetAbsolutePos.Y + targetHeight / 2
 	)
 	
-	local requiredDistance = attackerAbsoluteSize.X + config.CONTACT_DISTANCE
+	local contactPadding = attackerWidth * config.CONTACT_DISTANCE_RATIO
+	local requiredDistance = attackerWidth + contactPadding
 	local attackerCenterXTarget = targetCenter.X - (requiredDistance * directionMultiplier)
 	
 	local contactOffsetXPixels = attackerCenterXTarget - attackerCenter.X
@@ -363,8 +462,21 @@ end
 
 -- Play impact animation phase
 local function playImpactAnimation(attackerFrame, targetFrame, contactPosition, targetStartPosition, directionMultiplier, effectFrame, damageType, damageValue, config, onComplete)
-	local attackerOffsetPosition = offsetPosition(contactPosition, config.ATTACKER_OFFSET * directionMultiplier)
-	local targetOffsetPosition = offsetPosition(targetStartPosition, config.TARGET_OFFSET * directionMultiplier)
+	local attackerWidth = attackerFrame.AbsoluteSize.X
+	local targetWidth = targetFrame.AbsoluteSize.X
+
+	if attackerWidth == 0 then
+		attackerWidth = config.REFERENCE_CARD_WIDTH
+	end
+	if targetWidth == 0 then
+		targetWidth = config.REFERENCE_CARD_WIDTH
+	end
+
+	local attackerImpactOffset = attackerWidth * config.ATTACKER_OFFSET_RATIO
+	local targetImpactOffset = targetWidth * config.TARGET_OFFSET_RATIO
+
+	local attackerOffsetPosition = offsetPosition(contactPosition, attackerImpactOffset * directionMultiplier)
+	local targetOffsetPosition = offsetPosition(targetStartPosition, targetImpactOffset * directionMultiplier)
 	
 	local attackerImpactTween = TweenService:Create(
 		attackerFrame,
@@ -379,7 +491,7 @@ local function playImpactAnimation(attackerFrame, targetFrame, contactPosition, 
 	)
 	
 	effectFrame.Visible = true
-	BattleAnimationHandler:ShowEffect(effectFrame, damageType, damageValue, false)
+	local effectSound = BattleAnimationHandler:ShowEffect(effectFrame, damageType, damageValue, false)
 	
 	local effectOriginalSize = effectFrame.Size
 	if effectOriginalSize.X.Scale == 0 and effectOriginalSize.X.Offset == 0 then
@@ -396,6 +508,10 @@ local function playImpactAnimation(attackerFrame, targetFrame, contactPosition, 
 	attackerImpactTween:Play()
 	targetImpactTween:Play()
 	effectScaleTween:Play()
+
+	if effectSound then
+		BattleAnimationHandler.Utilities.Audio.PlayAudio(effectSound)
+	end
 	
 	attackerImpactTween.Completed:Connect(onComplete)
 end
@@ -529,6 +645,7 @@ function BattleAnimationHandler:Attack(attackerRole, attackerId, targetId, damag
 			-- Handle death effect or fade out effect simultaneously with return animation
 			if isDeath then
 				handleDeathEffect(effectFrame, self.Config)
+				self.Utilities.Audio.PlayAudio(EFFECT_ELEMENTS.DEATH)
 			else
 				BattleAnimationHandler:HideEffect(effectFrame, self.Config.EFFECT_FADE_DURATION, function() end)
 			end
