@@ -9,7 +9,7 @@ local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitF
 local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 
 -- Configuration
-local MAX_ROUNDS = 50 -- Hard cap to prevent infinite battles
+local MAX_ROUNDS = 15 -- Hard cap to prevent infinite battles
 
 -- Battle state
 local BattleState = {
