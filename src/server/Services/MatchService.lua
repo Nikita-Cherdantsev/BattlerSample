@@ -20,7 +20,7 @@ local RATE_LIMIT = {
 	MAX_REQUESTS = 5 -- max requests per minute
 }
 
-local MAX_ROUNDS = 50 -- Maximum battle rounds
+local MAX_ROUNDS = 15 -- Maximum battle rounds
 
 -- Studio-only: keep the BUSY window long enough for the concurrency test
 local TEST_BUSY_DELAY_SEC = 0.75 -- was ~0.2; use 0.75s
