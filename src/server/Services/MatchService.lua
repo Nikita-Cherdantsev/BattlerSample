@@ -387,30 +387,25 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 			candidateLevels[slot] = level
 		end
 		
-		if #candidateDeck ~= deckSize then
-			-- Not enough unique cards available for this attempt; skip
-			goto continue
+		if #candidateDeck == deckSize then
+			local strength = ComputeDeckStrength(candidateDeck, candidateLevels)
+			local diff = math.abs(strength - targetStrength)
+			
+			if strength >= minStrength and strength <= maxStrength then
+				table.insert(matchingCandidates, {
+					deck = candidateDeck,
+					levels = candidateLevels,
+					strength = strength
+				})
+			elseif diff < bestDiff then
+				bestDiff = diff
+				bestCandidate = {
+					deck = candidateDeck,
+					levels = candidateLevels,
+					strength = strength
+				}
+			end
 		end
-		
-		local strength = ComputeDeckStrength(candidateDeck, candidateLevels)
-		local diff = math.abs(strength - targetStrength)
-		
-		if strength >= minStrength and strength <= maxStrength then
-			table.insert(matchingCandidates, {
-				deck = candidateDeck,
-				levels = candidateLevels,
-				strength = strength
-			})
-		elseif diff < bestDiff then
-			bestDiff = diff
-			bestCandidate = {
-				deck = candidateDeck,
-				levels = candidateLevels,
-				strength = strength
-			}
-		end
-		
-		::continue::
 	end
 	
 	local chosen = nil
