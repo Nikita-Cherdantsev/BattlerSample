@@ -97,14 +97,27 @@ BoxDropTables.LEGENDARY = {
 
 -- Drop table for One Piece boxes
 BoxDropTables.ONEPIECE = {
-	softRange = { min = 350, max = 450 },
-	hardChance = 0.12, -- 12% chance
-	hardRange = { min = 1, max = 77 }, -- Random int 1..77
+	softRange = { min = 80, max = 450 },
+	hardChance = 0.21, -- 21% chance
+	hardRange = { min = 1, max = 53 }, -- Random int 1..53
 	characterRewards = {
 		{
-			rarity = BoxTypes.BoxRarity.ONEPIECE,
-			probability = 1.00, -- 100%
-			copiesRange = { min = 3, max = 6 }
+			rarity = BoxTypes.BoxRarity.UNCOMMON,
+			probability = 0.69, -- 69%
+			copiesRange = { min = 3, max = 6 },
+			cardPool = { "card_700", "card_1100", "card_1300" }
+		},
+		{
+			rarity = BoxTypes.BoxRarity.RARE,
+			probability = 0.23, -- 23%
+			copiesRange = { min = 3, max = 6 },
+			cardPool = { "card_500" }
+		},
+		{
+			rarity = BoxTypes.BoxRarity.LEGENDARY,
+			probability = 0.08, -- 8%
+			copiesRange = { min = 3, max = 6 },
+			cardPool = { "card_100", "card_200" }
 		}
 	}
 }

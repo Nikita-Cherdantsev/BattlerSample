@@ -52,11 +52,16 @@ function LootboxUIHandler:Init(controller)
 	self.lootboxPacks = {}
 	self.LootboxOpening = {}
 	self._updatingStates = false -- Prevent infinite loops
+	self.stateSubscription = nil
+	self.profileReadyDisconnect = nil
 
 	-- Setup Lootbox UI
 	self:SetupLootboxUI()
-
+	
 	self._initialized = true
+	
+	self:BindClientState()
+
 	print("✅ LootboxUIHandler initialized successfully!")
 	return true
 end
@@ -136,6 +141,54 @@ function LootboxUIHandler:SetupLootboxUI()
 	
 	print("✅ LootboxUIHandler: Lootbox UI setup completed")
 end
+function LootboxUIHandler:BindClientState()
+	if not self.ClientState then
+		return
+	end
+	
+	-- Apply snapshot immediately if available
+	if self.ClientState.getProfile then
+		local profile = self.ClientState.getProfile()
+		if profile then
+			self:ApplyProfileSnapshot(profile)
+		end
+	end
+	
+	-- Subscribe to future state updates
+	if self.ClientState.subscribe then
+		self.stateSubscription = self.ClientState.subscribe(function(state)
+			if state.profile then
+				self:ApplyProfileSnapshot(state.profile)
+			end
+		end)
+	end
+	
+	-- Ensure we catch the first profile once it's ready
+	if self.ClientState.onProfileReady then
+		self.profileReadyDisconnect = self.ClientState.onProfileReady(function(profile)
+			if profile then
+				self:ApplyProfileSnapshot(profile)
+			end
+		end)
+	end
+end
+
+function LootboxUIHandler:ApplyProfileSnapshot(profile)
+	if not profile then
+		return
+	end
+	
+	if not self.currentProfile then
+		self.currentProfile = {}
+	end
+	
+	self.currentProfile.lootboxes = profile.lootboxes or {}
+	self.currentProfile.pendingLootbox = profile.pendingLootbox
+	self.currentProfile.currencies = profile.currencies or { soft = 0, hard = 0 }
+	
+	self:UpdateLootboxStates()
+end
+
 
 function LootboxUIHandler:SetupLootboxPacks()
 	-- Setup BottomPanel packs
@@ -1072,6 +1125,16 @@ function LootboxUIHandler:Cleanup()
 	
 	-- Stop all timers
 	self:StopAllTimers()
+	
+	if self.stateSubscription then
+		self.stateSubscription()
+		self.stateSubscription = nil
+	end
+	
+	if self.profileReadyDisconnect then
+		self.profileReadyDisconnect()
+		self.profileReadyDisconnect = nil
+	end
 	
 	self._initialized = false
 	print("✅ LootboxUIHandler cleaned up")

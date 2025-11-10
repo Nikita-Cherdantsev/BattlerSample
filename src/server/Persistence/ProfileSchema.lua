@@ -538,15 +538,23 @@ end
 -- Add currency
 function ProfileSchema.AddCurrency(profile, currencyType, amount)
 	if not profile or not profile.currencies then
-		return false
+		return false, "Profile missing currencies table"
 	end
 	
-	if currencyType == "soft" or currencyType == "hard" then
-		profile.currencies[currencyType] = profile.currencies[currencyType] + amount
-		return true
+	if currencyType ~= "soft" and currencyType ~= "hard" then
+		return false, "Invalid currency type"
 	end
 	
-	return false, "Invalid currency type"
+	if type(amount) ~= "number" then
+		return false, "Invalid currency amount"
+	end
+	
+	if type(profile.currencies[currencyType]) ~= "number" then
+		profile.currencies[currencyType] = 0
+	end
+	
+	profile.currencies[currencyType] = profile.currencies[currencyType] + amount
+	return true
 end
 
 -- Remove currency (with validation)

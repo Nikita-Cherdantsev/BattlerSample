@@ -10,6 +10,8 @@ local NetworkClient = require(game.StarterPlayer.StarterPlayerScripts.Controller
 local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 local CardStats = require(game.ReplicatedStorage.Modules.Cards.CardStats)
 local CardLevels = require(game.ReplicatedStorage.Modules.Cards.CardLevels)
+local CardLevels = require(game.ReplicatedStorage.Modules.Cards.CardLevels)
+local Types = require(game.ReplicatedStorage.Modules.Types)
 local Manifest = require(game.ReplicatedStorage.Modules.Assets.Manifest)
 
 --// Module
@@ -292,45 +294,93 @@ function DeckHandler:SortCollectionCards()
 	local ownedCards = {}
 	local unownedCards = {}
 	
+	local rarityOrder = {
+		uncommon = 1,
+		rare = 2,
+		epic = 3,
+		legendary = 4,
+		onepiece = 5
+	}
+	
 	-- Get all cards from catalog
 	for id, card in pairs(CardCatalog.Cards) do
 		-- Check if player owns this card
 		local collectionData = self.currentProfile.collection[id]
-		local isOwned = false
+		local cardCount = 0
+		local cardLevel = 0
 		
 		if collectionData then
-			-- Check if it's a number (old format) or table (new format)
 			if type(collectionData) == "number" then
-				isOwned = collectionData > 0
-			elseif type(collectionData) == "table" and collectionData.count then
-				isOwned = collectionData.count > 0
+				cardCount = math.max(0, collectionData)
+				cardLevel = cardCount > 0 and 1 or 0
+			elseif type(collectionData) == "table" then
+				cardCount = math.max(0, collectionData.count or 0)
+				cardLevel = math.max(0, collectionData.level or 0)
 			end
 		end
 		
-		if isOwned then
-			table.insert(ownedCards, card)
+		local entry = {
+			cardData = card,
+			cardCount = cardCount,
+			cardLevel = cardLevel,
+			slotNumber = card.slotNumber or 0
+		}
+		
+		if cardCount > 0 then
+			table.insert(ownedCards, entry)
 		else
-			table.insert(unownedCards, card)
+			table.insert(unownedCards, entry)
 		end
 	end
 	
-	-- Sort owned cards by slotNumber
 	table.sort(ownedCards, function(a, b)
-		return a.slotNumber < b.slotNumber
+		if a.cardCount == 0 then
+			return false
+		end
+		if b.cardCount == 0 then
+			return true
+		end
+		
+		if a.cardData.rarity ~= b.cardData.rarity then
+			return rarityOrder[a.cardData.rarity] < rarityOrder[b.cardData.rarity]
+		end
+		
+		if a.cardLevel ~= b.cardLevel then
+			return a.cardLevel > b.cardLevel
+		end
+		
+		if a.cardCount ~= b.cardCount then
+			return a.cardCount > b.cardCount
+		end
+		
+		if a.cardData.name ~= b.cardData.name then
+			return a.cardData.name < b.cardData.name
+		end
+		
+		return (a.slotNumber or 0) < (b.slotNumber or 0)
 	end)
 	
-	-- Sort unowned cards by slotNumber
 	table.sort(unownedCards, function(a, b)
-		return a.slotNumber < b.slotNumber
+		local rarityA = rarityOrder[a.cardData.rarity] or 999
+		local rarityB = rarityOrder[b.cardData.rarity] or 999
+		if rarityA ~= rarityB then
+			return rarityA < rarityB
+		end
+		
+		if a.cardData.name ~= b.cardData.name then
+			return a.cardData.name < b.cardData.name
+		end
+		
+		return (a.slotNumber or 0) < (b.slotNumber or 0)
 	end)
 	
 	-- Combine: owned cards first, then unowned cards
 	local sortedCards = {}
-	for _, card in ipairs(ownedCards) do
-		table.insert(sortedCards, card)
+	for _, entry in ipairs(ownedCards) do
+		table.insert(sortedCards, entry.cardData)
 	end
-	for _, card in ipairs(unownedCards) do
-		table.insert(sortedCards, card)
+	for _, entry in ipairs(unownedCards) do
+		table.insert(sortedCards, entry.cardData)
 	end
 	
 	return sortedCards
@@ -533,11 +583,15 @@ function DeckHandler:UpdateCardAppearance(cardInstance, cardData, hasCard, cardL
 				-- Update progress text
 				local progressText = progressFrame:FindFirstChild("TxtValue")
 				if progressText then
-					local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1, cardData.rarity)
-					if nextLevelCost then
-						progressText.Text = cardCount .. " / " .. nextLevelCost.requiredCount
+					if cardLevel >= Types.MAX_LEVEL then
+						progressText.Text = "MAX"
 					else
-						progressText.Text = cardCount .. " / MAX"
+						local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1, cardData.rarity)
+						if nextLevelCost then
+							progressText.Text = cardCount .. " / " .. nextLevelCost.requiredCount
+						else
+							progressText.Text = cardCount .. " / MAX"
+						end
 					end
 				end
 			else

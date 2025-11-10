@@ -14,6 +14,7 @@ local BoxValidator = require(game.ReplicatedStorage.Modules.Loot.BoxValidator)
 local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
 local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 local Logger = require(game.ReplicatedStorage.Modules.Logger)
+local Types = require(game.ReplicatedStorage.Modules.Types)
 
 -- Helper function to preserve profile invariants
 local function preserveProfileInvariants(profile, userId)
@@ -373,7 +374,17 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		
 		-- Roll rewards using stored seed
 		local rng = SeededRNG.New(lootbox.seed)
-		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity)
+		local excludeCards = {}
+		if profile.collection then
+			for cardId, entry in pairs(profile.collection) do
+				local cardLevel = entry and entry.level or 1
+				if cardLevel >= Types.MAX_LEVEL then
+					excludeCards[cardId] = true
+				end
+			end
+		end
+		
+		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity, { excludeCards = excludeCards })
 		
 		-- Grant rewards
 		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
@@ -564,6 +575,17 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 	end
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
+		-- Ensure core tables exist to avoid nil arithmetic
+		profile.currencies = profile.currencies or { soft = 0, hard = 0 }
+		if type(profile.currencies.soft) ~= "number" then
+			profile.currencies.soft = 0
+		end
+		if type(profile.currencies.hard) ~= "number" then
+			profile.currencies.hard = 0
+		end
+		
+		profile.collection = profile.collection or {}
+		
 		-- Create a temporary lootbox with the specified rarity
 		local lootbox = {
 			id = BoxRoller.GenerateBoxId(),
@@ -591,11 +613,12 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 			local cardId = rewards.card.cardId
 			local copies = rewards.card.copies
 			
-			if profile.collection[cardId] then
-				profile.collection[cardId].count = profile.collection[cardId].count + copies
+			profile.collection[cardId] = profile.collection[cardId] or { count = 0, level = 1 }
+			profile.collection[cardId].count = profile.collection[cardId].count + copies
+			
+			if profile.collection[cardId].count > copies then
 				print("🎁 [LootboxService.OpenShopLootbox] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
 			else
-				profile.collection[cardId] = { count = copies, level = 1 }
 				print("🎁 [LootboxService.OpenShopLootbox] NEW CARD unlocked:", cardId, "with", copies, "copies")
 			end
 			

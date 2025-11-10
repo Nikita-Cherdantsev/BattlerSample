@@ -538,6 +538,17 @@ function DailyHandler:RegisterWithCloseButton(isOpen)
 	
 	if success and CloseButtonHandler then
 		local instance = CloseButtonHandler.GetInstance()
+		
+		-- Ensure the close button handler is initialized before use
+		if (not instance) or (not instance.isInitialized) then
+			local initializedInstance = CloseButtonHandler.Init()
+			if initializedInstance and initializedInstance.isInitialized then
+				instance = initializedInstance
+			else
+				instance = nil
+			end
+		end
+		
 		if instance and instance.isInitialized then
 			if isOpen then
 				instance:RegisterFrameOpen("Daily")
@@ -558,6 +569,17 @@ function DailyHandler:UpdateCloseButtonVisibility()
 	
 	if success and CloseButtonHandler then
 		local instance = CloseButtonHandler.GetInstance()
+		
+		-- Ensure the close button handler is initialized before use
+		if (not instance) or (not instance.isInitialized) then
+			local initializedInstance = CloseButtonHandler.Init()
+			if initializedInstance and initializedInstance.isInitialized then
+				instance = initializedInstance
+			else
+				instance = nil
+			end
+		end
+		
 		if instance and instance.isInitialized then
 			-- If window is open and reward is NOT claimed, block close button
 			-- User must claim the reward before they can close the window

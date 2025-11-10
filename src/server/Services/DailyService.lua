@@ -99,6 +99,12 @@ function DailyService.GetDailyData(userId)
 		daysSinceLastLogin = math.floor((currentDay - lastLoginDay) / 86400)
 	end
 	
+	-- If player missed more than one day, streak resets for display (matches claim logic)
+	local effectiveStreak = streak
+	if daysSinceLastLogin > 1 then
+		effectiveStreak = 0
+	end
+	
 	-- Check if reward for current day is already claimed
 	-- According to provided code: daysSince == 0 means already claimed today
 	local isClaimed = false
@@ -113,20 +119,20 @@ function DailyService.GetDailyData(userId)
 	local currentRewardDay = 1
 	if isClaimed then
 		-- Already claimed today - show current day (streak value)
-		if streak >= 1 and streak <= 7 then
-			currentRewardDay = streak
+		if effectiveStreak >= 1 and effectiveStreak <= 7 then
+			currentRewardDay = effectiveStreak
 		else
 			currentRewardDay = 1
 		end
 	else
 		-- Not claimed yet - show next day to claim
-		if streak == 0 then
+		if effectiveStreak == 0 then
 			-- First time or reset - day 1
 			currentRewardDay = 1
-		elseif streak >= 1 and streak < 7 then
+		elseif effectiveStreak >= 1 and effectiveStreak < 7 then
 			-- Normal progression: next day
-			currentRewardDay = streak + 1
-		elseif streak == 7 then
+			currentRewardDay = effectiveStreak + 1
+		elseif effectiveStreak == 7 then
 			-- After completing day 7, wrap to day 1
 			currentRewardDay = 1
 		else
@@ -136,7 +142,7 @@ function DailyService.GetDailyData(userId)
 	end
 	
 	return {
-		streak = streak,
+		streak = effectiveStreak,
 		lastLogin = lastLogin,
 		currentDay = currentRewardDay,
 		isClaimed = isClaimed,
@@ -153,7 +159,7 @@ end
 local function GrantLootboxRewards(userId, rarity)
 	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time())
 	if not lootboxResult or not lootboxResult.ok then
-		warn("[DailyService] Failed to open lootbox: " .. tostring(rarity) .. " for user " .. tostring(userId))
+		warn("[DailyService] Failed to open lootbox: " .. tostring(rarity) .. " for user " .. tostring(userId) .. " (error=" .. tostring(lootboxResult and lootboxResult.error) .. ")")
 		return nil
 	end
 	return lootboxResult.rewards
@@ -169,7 +175,61 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 	local currentDay = GetCurrentDayTimestamp()
 	local lootboxesToGrant = {}
 	
-	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
+	local success, resultOrError = ProfileManager.UpdateProfile(userId, function(profile)
+		-- Ensure core tables exist before modifying
+		profile.currencies = profile.currencies or { soft = 0, hard = 0 }
+		if type(profile.currencies.soft) ~= "number" then
+			profile.currencies.soft = 0
+		end
+		if type(profile.currencies.hard) ~= "number" then
+			profile.currencies.hard = 0
+		end
+		
+		profile.collection = profile.collection or {}
+		if type(profile.collection) ~= "table" then
+			profile.collection = {}
+		end
+		
+		for cardId, entry in pairs(profile.collection) do
+			if type(entry) == "number" then
+				profile.collection[cardId] = {
+					count = math.max(0, entry),
+					level = 1
+				}
+			elseif type(entry) == "table" then
+				entry.count = math.max(0, entry.count or 0)
+				entry.level = math.max(1, entry.level or 1)
+			else
+				profile.collection[cardId] = {
+					count = 0,
+					level = 1
+				}
+			end
+		end
+		
+		if type(profile.lootboxes) ~= "table" then
+			profile.lootboxes = {}
+		end
+		
+		for slot, lootbox in pairs(profile.lootboxes) do
+			if type(lootbox) ~= "table" or type(lootbox.state) ~= "string" or type(lootbox.rarity) ~= "string" then
+				Logger.debug("DailyService: Removing invalid lootbox entry at slot %s for user %d", tostring(slot), userId)
+				profile.lootboxes[slot] = nil
+			end
+		end
+		
+		-- Compact lootbox array to maintain sequential indices
+		local compacted = {}
+		for _, lootbox in ipairs(profile.lootboxes) do
+			table.insert(compacted, lootbox)
+		end
+		profile.lootboxes = compacted
+		
+		if profile.pendingLootbox ~= nil and type(profile.pendingLootbox) ~= "table" then
+			Logger.debug("DailyService: Resetting invalid pendingLootbox for user %d", userId)
+			profile.pendingLootbox = nil
+		end
+		
 		-- Initialize daily if missing
 		if not profile.daily then
 			profile.daily = {
@@ -187,6 +247,7 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 			local daysSinceLastLogin = math.floor((currentDay - lastLoginDay) / 86400)
 			if daysSinceLastLogin == 0 then
 				-- Same day - already claimed today, cannot claim again
+				Logger.debug("DailyService: Reward already claimed today for user %d (rewardIndex=%d)", userId, rewardIndex)
 				profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.REWARD_ALREADY_CLAIMED }
 				return profile
 			end
@@ -215,9 +276,12 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		
 		-- Calculate expected reward day (should match the streak we're about to set)
 		local expectedRewardDay = streak
+		Logger.info("DailyService: Claim attempt user %d -> streak=%d lastLoginDay=%d daysMissed=%d rewardIndex=%d expected=%d currentDayTimestamp=%d", 
+			userId, streak, lastLoginDay, daysMissed, rewardIndex, expectedRewardDay, currentDay)
 		
 		-- Check if the requested reward index matches expected day
 		if rewardIndex ~= expectedRewardDay then
+			Logger.warn("DailyService: Reward index mismatch for user %d (expected %d, got %d)", userId, expectedRewardDay, rewardIndex)
 			profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.REWARD_NOT_AVAILABLE }
 			return profile
 		end
@@ -225,6 +289,7 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		-- Get reward config
 		local rewardConfig = REWARDS_CONFIG[rewardIndex]
 		if not rewardConfig then
+			Logger.debug("DailyService: Missing reward config for index %d (user %d)", rewardIndex, userId)
 			profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.INTERNAL }
 			return profile
 		end
@@ -234,7 +299,12 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 			if reward.type == "Currency" then
 				local currencyName = string.lower(reward.name)
 				if currencyName == "soft" or currencyName == "hard" then
-					ProfileSchema.AddCurrency(profile, currencyName, reward.amount)
+					local ok, err = ProfileSchema.AddCurrency(profile, currencyName, reward.amount)
+					if not ok then
+						Logger.debug("DailyService: Failed to add currency '%s' amount %s for user %d: %s", currencyName, tostring(reward.amount), userId, tostring(err))
+						profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.INTERNAL }
+						return profile
+					end
 				end
 			elseif reward.type == "Lootbox" then
 				-- Collect lootbox for granting outside UpdateProfile
@@ -251,10 +321,16 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		return profile
 	end)
 	
+	local profileResult = resultOrError
+	if not success then
+		Logger.debug("DailyService: UpdateProfile failed for user %d: %s", userId, tostring(resultOrError))
+		return { ok = false, error = DailyService.ErrorCodes.INTERNAL }
+	end
+	
 	-- Grant lootboxes after successful profile update
 	local dailyResult = nil
-	if success and result and result._dailyResult and result._dailyResult.ok then
-		dailyResult = result._dailyResult
+	if profileResult and profileResult._dailyResult and profileResult._dailyResult.ok then
+		dailyResult = profileResult._dailyResult
 		
 		-- Collect all lootbox rewards (in case there are multiple lootboxes in one day, e.g., day 7)
 		local allLootboxRewards = {}
@@ -279,8 +355,13 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		end
 	end
 	
-	if not success then
-		return { ok = false, error = DailyService.ErrorCodes.INTERNAL }
+	if not profileResult then
+		Logger.debug("DailyService: UpdateProfile returned nil profile for user %d", userId)
+	elseif not profileResult._dailyResult then
+		Logger.debug("DailyService: _dailyResult missing after UpdateProfile for user %d", userId)
+	elseif not profileResult._dailyResult.ok then
+		Logger.debug("DailyService: _dailyResult not OK for user %d: %s", userId, tostring(profileResult._dailyResult.error))
+		return { ok = false, error = profileResult._dailyResult.error }
 	end
 	
 	-- Return result (excluding internal lootboxes array)

@@ -1447,6 +1447,9 @@ local function HandleRequestClaimDailyReward(player, requestData)
 	
 	-- Claim reward
 	local result = DailyService.ClaimDailyReward(player.UserId, requestData.rewardIndex)
+	if not result or not result.ok then
+		LogWarning(player, "Claim daily reward failed (raw result): %s", game:GetService("HttpService"):JSONEncode(result or { ok = false, error = "nil_result" }))
+	end
 	
 	-- Get updated profile
 	local profile = PlayerDataService.GetProfile(player)

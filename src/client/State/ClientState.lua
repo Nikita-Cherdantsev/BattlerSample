@@ -17,6 +17,9 @@ local state = {
 	lastError = nil,         -- { code: string, message: string }?
 }
 
+local profileReady = false
+local profileReadyEvent = Instance.new("BindableEvent")
+
 -- Subscribers
 local subscribers = {}
 
@@ -89,6 +92,7 @@ function ClientState.applyProfileUpdate(payload)
 	-- Update profile data (merge with existing if available)
 	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies or payload.playtime then
 		-- Create or update profile
+		local didCreateProfile = false
 		if not state.profile then
 			state.profile = {
 				version = 2,
@@ -109,6 +113,7 @@ function ClientState.applyProfileUpdate(payload)
 					claimedRewards = {}
 				}
 			}
+			didCreateProfile = true
 		end
 		
 		-- Update deck
@@ -176,6 +181,11 @@ function ClientState.applyProfileUpdate(payload)
 		
 		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d, collection=%d cards", 
 			#state.profile.deck, state.profile.squadPower, #state.profile.lootboxes, collectionSize)
+		
+		if not profileReady and state.profile then
+			profileReady = true
+			profileReadyEvent:Fire(state.profile)
+		end
 	end
 	
 	-- Update timestamp
@@ -252,6 +262,63 @@ end
 -- Get lootbox operation state
 function ClientState.isLootBusy()
 	return state.isLootOpInFlight
+end
+
+function ClientState.isProfileReady()
+	return profileReady
+end
+
+function ClientState.onProfileReady(callback)
+	if profileReady then
+		task.spawn(callback, state.profile)
+		return function() end
+	end
+	local connection = profileReadyEvent.Event:Connect(callback)
+	return function()
+		if connection.Connected then
+			connection:Disconnect()
+		end
+	end
+end
+
+function ClientState.waitForProfile(timeoutSeconds)
+	if profileReady then
+		return state.profile
+	end
+	
+	if timeoutSeconds and timeoutSeconds > 0 then
+		local profileResult = nil
+		local completed = false
+		local connection
+		
+		connection = profileReadyEvent.Event:Connect(function(profile)
+			profileResult = profile
+			completed = true
+		end)
+		
+		local elapsed = 0
+		local step = 0.1
+		while not completed and elapsed < timeoutSeconds do
+			elapsed = elapsed + step
+			task.wait(step)
+		end
+		
+		if connection and connection.Connected then
+			connection:Disconnect()
+		end
+		
+		return profileResult or state.profile
+	end
+	
+	local ok, profile = pcall(function()
+		return profileReadyEvent.Event:Wait()
+	end)
+	
+	if ok then
+		return profile or state.profile
+	end
+	
+	return state.profile
 end
 
 return ClientState

@@ -29,7 +29,7 @@ BoxTypes.DurationSeconds = {
 	[BoxTypes.BoxRarity.RARE] = 30 * 60,       -- 30 minutes
 	[BoxTypes.BoxRarity.EPIC] = 120 * 60,     -- 120 minutes
 	[BoxTypes.BoxRarity.LEGENDARY] = 240 * 60,  -- 240 minutes
-	[BoxTypes.BoxRarity.ONEPIECE] = 240 * 60
+	[BoxTypes.BoxRarity.ONEPIECE] = 180 * 60
 }
 
 -- Hard currency cost to buy a box from store
@@ -46,7 +46,7 @@ BoxTypes.InstantOpenBaseCost = {
 	[BoxTypes.BoxRarity.RARE] = 11,
 	[BoxTypes.BoxRarity.EPIC] = 27,
 	[BoxTypes.BoxRarity.LEGENDARY] = 50,
-	[BoxTypes.BoxRarity.ONEPIECE] = 50
+	[BoxTypes.BoxRarity.ONEPIECE] = 40
 }
 
 -- Maximum number of lootbox slots per profile

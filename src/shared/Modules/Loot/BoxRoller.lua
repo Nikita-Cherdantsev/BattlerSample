@@ -12,11 +12,34 @@ local BoxDropTables = require(script.Parent.BoxDropTables)
 local CardCatalog = require(script.Parent.Parent.Cards.CardCatalog)
 local SeededRNG = require(script.Parent.Parent.RNG.SeededRNG)
 
+local function selectCardFromPool(pool, rng, excludeSet)
+	if not pool or #pool == 0 then
+		return nil
+	end
+	
+	local candidates = {}
+	for _, cardId in ipairs(pool) do
+		if not excludeSet or not excludeSet[cardId] then
+			table.insert(candidates, cardId)
+		end
+	end
+	
+	if #candidates == 0 then
+		return nil
+	end
+	
+	local index = rng:NextInt(1, #candidates)
+	return candidates[index]
+end
+
 -- Roll rewards for a lootbox of given rarity using the provided RNG
-function BoxRoller.RollRewards(rng, rarity)
+function BoxRoller.RollRewards(rng, rarity, options)
 	if not BoxTypes.IsValidRarity(rarity) then
 		error("Invalid rarity: " .. tostring(rarity))
 	end
+	
+	options = options or {}
+	local excludeCards = options.excludeCards or {}
 	
 	local dropTable = BoxDropTables.GetTable(rarity)
 	local rewards = {
@@ -52,7 +75,18 @@ function BoxRoller.RollRewards(rng, rarity)
 		cumulativeProbability = cumulativeProbability + reward.probability
 		if characterRoll <= cumulativeProbability then
 			-- Select a card of this rarity
-			local cardId = BoxRoller.SelectCardByRarity(reward.rarity, rng)
+			local cardId = nil
+			if reward.cardPool then
+				cardId = selectCardFromPool(reward.cardPool, rng, excludeCards)
+			end
+			
+			if not cardId then
+				cardId = BoxRoller.SelectCardByRarity(reward.rarity, rng, excludeCards)
+				
+				if not cardId and excludeCards and next(excludeCards) then
+					cardId = BoxRoller.SelectCardByRarity(reward.rarity, rng, nil)
+				end
+			end
 			if cardId then
 				-- Roll copies within range
 				local copiesRange = reward.copiesRange.max - reward.copiesRange.min
@@ -78,7 +112,7 @@ end
 
 -- Select a card uniformly from cards of the given rarity
 -- If no cards of that rarity exist, fallback to next lower rarity with cards
-function BoxRoller.SelectCardByRarity(targetRarity, rng)
+function BoxRoller.SelectCardByRarity(targetRarity, rng, excludeSet)
 	local rarityOrder = {
 		BoxTypes.BoxRarity.ONEPIECE,
 		BoxTypes.BoxRarity.LEGENDARY,
@@ -106,9 +140,25 @@ function BoxRoller.SelectCardByRarity(targetRarity, rng)
 		local cardsOfRarity = CardCatalog.GetCardsByRarity(rarity)
 		
 		if #cardsOfRarity > 0 then
-			-- Select uniformly from available cards using the provided RNG
-			local cardIndex = rng:NextInt(1, #cardsOfRarity)
-			return cardsOfRarity[cardIndex].id
+			local filtered = {}
+			for _, card in ipairs(cardsOfRarity) do
+				local cardId = card.id or card
+				if not excludeSet or not excludeSet[cardId] then
+					table.insert(filtered, cardId)
+				end
+			end
+			
+			if #filtered == 0 and excludeSet and next(excludeSet) then
+				-- Attempt without exclusions
+				for _, card in ipairs(cardsOfRarity) do
+					table.insert(filtered, card.id or card)
+				end
+			end
+			
+			if #filtered > 0 then
+				local cardIndex = rng:NextInt(1, #filtered)
+				return filtered[cardIndex]
+			end
 		end
 	end
 	

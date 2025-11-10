@@ -21,7 +21,7 @@ BossDecks["1"] = {
 		levels = { 1, 1, 1 }, -- All level 1 for easy
 		reward = {
 			type = "lootbox",
-			rarity = "uncommon",
+			rarity = "onepiece",
 			count = 1
 		}
 	},
@@ -35,7 +35,7 @@ BossDecks["1"] = {
 		levels = { 2, 1, 1, 2 }, -- Mix of levels
 		reward = {
 			type = "lootbox",
-			rarity = "rare",
+			rarity = "onepiece",
 			count = 1
 		}
 	},
@@ -50,7 +50,7 @@ BossDecks["1"] = {
 		levels = { 3, 3, 2, 2, 3 },
 		reward = {
 			type = "lootbox",
-			rarity = "epic",
+			rarity = "onepiece",
 			count = 1
 		}
 	},
@@ -66,7 +66,7 @@ BossDecks["1"] = {
 		levels = { 5, 5, 4, 4, 5, 5 },
 		reward = {
 			type = "lootbox",
-			rarity = "legendary",
+			rarity = "onepiece",
 			count = 1
 		}
 	},
@@ -82,8 +82,8 @@ BossDecks["1"] = {
 		levels = { 10, 10, 10, 10, 8, 8 }, -- Max levels for hell difficulty
 		reward = {
 			type = "lootbox",
-			rarity = "legendary",
-			count = 2 -- Hell difficulty gives 2 legendary lootboxes
+			rarity = "onepiece",
+			count = 1
 		}
 	}
 }

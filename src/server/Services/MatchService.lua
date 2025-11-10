@@ -11,6 +11,7 @@ local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):Wai
 local SeededRNG = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("RNG"):WaitForChild("SeededRNG"))
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
+local Types = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Types"))
 local BossDecks = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Boss"):WaitForChild("BossDecks"))
 
 -- Configuration
@@ -276,89 +277,148 @@ local function CleanupPlayerState(player)
 	end
 end
 
--- Generate NPC deck with power matching (±7 power variance)
--- Returns: { deck = {...}, levels = {...} } where deck is array of card IDs and levels is array of card levels
-local function GenerateNPCDeck(playerSquadPower, rng)
-	-- Target power: player power ± 7
-	local powerVariance = SeededRNG.RandomFloat(rng, -3, 3)
-	local targetPower = math.max(1, math.floor(playerSquadPower + powerVariance)) -- Ensure at least 1
+-- Compute deck metadata (strength, average level, etc.) for a player's current deck
+local function BuildPlayerDeckInfo(profile)
+	local deck = profile.deck or {}
+	local collection = profile.collection or {}
 	
-	-- Random deck size (1-6 cards)
-	local deckSize = SeededRNG.RandomInt(rng, 1, 6)
+	local strength = 0
+	local totalLevel = 0
+	local deckCopy = {}
+	local levelCopy = {}
 	
-	-- Get all available cards
-	local allCards = {}
-	for cardId, _ in pairs(CardCatalog.GetAllCards()) do
-		table.insert(allCards, cardId)
-	end
-	
-	if #allCards == 0 then
-		warn("[MatchService] No cards available for NPC deck generation")
-		return { deck = {}, levels = {} }
-	end
-	
-	-- Generate deck by trying different combinations
-	local bestDeck = {}
-	local bestLevels = {}
-	local bestPowerDiff = math.huge
-	local maxAttempts = 100
-	
-	for attempt = 1, maxAttempts do
-		local candidateDeck = {}
-		local candidateLevels = {}
-		local totalPower = 0
+	for index, cardId in ipairs(deck) do
+		deckCopy[index] = cardId
+		local collectionEntry = collection[cardId]
+		local level = collectionEntry and math.max(1, math.floor(collectionEntry.level)) or 1
+		level = math.min(level, Types.MAX_LEVEL)
+		levelCopy[index] = level
 		
-		-- Shuffle card pool for this attempt
-		local shuffledCards = {}
-		for _, cardId in ipairs(allCards) do
-			table.insert(shuffledCards, cardId)
-		end
-		SeededRNG.Shuffle(rng, shuffledCards)
-		
-		-- Try to build a deck of the target size
-		for i = 1, deckSize do
-			if i <= #shuffledCards then
-				local cardId = shuffledCards[i]
-				-- Random level 1-10
-				local level = SeededRNG.RandomInt(rng, 1, 10)
-				local cardPower = CardStats.ComputeCardPower(cardId, level)
-				
-				-- Check if adding this card gets us closer to target
-				if totalPower + cardPower <= targetPower + 10 then -- Allow some overflow
-					table.insert(candidateDeck, cardId)
-					table.insert(candidateLevels, level)
-					totalPower = totalPower + cardPower
-				end
-			end
-		end
-		
-		-- Evaluate this candidate
-		local powerDiff = math.abs(totalPower - targetPower)
-		if powerDiff < bestPowerDiff and #candidateDeck > 0 then
-			bestPowerDiff = powerDiff
-			bestDeck = candidateDeck
-			bestLevels = candidateLevels
-			
-			-- If we're within ±7, we're good
-			if powerDiff <= 3 then
-				break
-			end
-		end
+		totalLevel = totalLevel + level
+		local cardPower = CardStats.ComputeCardPower(cardId, level)
+		strength = strength + cardPower
 	end
 	
-	-- If we still don't have a deck, use fallback (just pick random cards)
-	if #bestDeck == 0 then
-		SeededRNG.Shuffle(rng, allCards)
-		for i = 1, math.min(deckSize, #allCards) do
-			table.insert(bestDeck, allCards[i])
-			table.insert(bestLevels, SeededRNG.RandomInt(rng, 1, 10))
-		end
-	end
+	local deckSize = #deckCopy
+	local averageLevel = deckSize > 0 and (totalLevel / deckSize) or 1
 	
 	return {
-		deck = bestDeck,
-		levels = bestLevels
+		deck = deckCopy,
+		levels = levelCopy,
+		size = deckSize,
+		strength = strength,
+		averageLevel = averageLevel
 	}
+end
+
+local function ComputeDeckStrength(deck, levels)
+	local total = 0
+	for i, cardId in ipairs(deck) do
+		local level = levels[i] or 1
+		level = math.max(1, math.min(level, Types.MAX_LEVEL))
+		total = total + CardStats.ComputeCardPower(cardId, level)
+	end
+	return total
+end
+
+-- Generate NPC deck that matches the player's deck strength and size constraints
+-- Returns: { deck = {...}, levels = {...}, strength = number }
+local function GenerateNPCDeck(playerDeckInfo, rng)
+	local targetStrength = math.max(1, playerDeckInfo.strength or 0)
+	local minStrength = targetStrength * 0.8
+	local maxStrength = targetStrength * 1.1
+	
+	local minSize = math.max(1, math.min(6, (playerDeckInfo.size or 1) - 2))
+	local maxSize = math.max(1, math.min(6, (playerDeckInfo.size or 1) + 2))
+	if minSize > maxSize then
+		minSize, maxSize = maxSize, minSize
+	end
+	
+	-- Pull full card catalog as pool
+	local cardPool = {}
+	for cardId, _ in pairs(CardCatalog.GetAllCards()) do
+		table.insert(cardPool, cardId)
+	end
+	
+	if #cardPool == 0 then
+		warn("[MatchService] No cards available for NPC deck generation")
+		return {
+			deck = {},
+			levels = {},
+			strength = 0
+		}
+	end
+	
+	local attempts = 200
+	local matchingCandidates = {}
+	local bestCandidate = nil
+	local bestDiff = math.huge
+	
+	local baseLevel = math.clamp(math.floor((playerDeckInfo.averageLevel or 1) + 0.5), 1, Types.MAX_LEVEL)
+	local levelVariance = math.clamp(math.ceil((playerDeckInfo.averageLevel or 1) * 0.3), 1, 3)
+	
+	for _ = 1, attempts do
+		local deckSize = SeededRNG.RandomInt(rng, minSize, maxSize)
+		local candidateDeck = {}
+		local candidateLevels = {}
+		
+		for slot = 1, deckSize do
+			local cardId = SeededRNG.RandomChoice(rng, cardPool)
+			candidateDeck[slot] = cardId
+			
+			local minLevel = math.max(1, baseLevel - levelVariance)
+			local maxLevel = math.min(Types.MAX_LEVEL, baseLevel + levelVariance)
+			if minLevel > maxLevel then
+				minLevel = maxLevel
+			end
+			local level = SeededRNG.RandomInt(rng, minLevel, maxLevel)
+			candidateLevels[slot] = level
+		end
+		
+		local strength = ComputeDeckStrength(candidateDeck, candidateLevels)
+		local diff = math.abs(strength - targetStrength)
+		
+		if strength >= minStrength and strength <= maxStrength then
+			table.insert(matchingCandidates, {
+				deck = candidateDeck,
+				levels = candidateLevels,
+				strength = strength
+			})
+		elseif diff < bestDiff then
+			bestDiff = diff
+			bestCandidate = {
+				deck = candidateDeck,
+				levels = candidateLevels,
+				strength = strength
+			}
+		end
+	end
+	
+	local chosen = nil
+	if #matchingCandidates > 0 then
+		local idx = SeededRNG.RandomInt(rng, 1, #matchingCandidates)
+		chosen = matchingCandidates[idx]
+	else
+		chosen = bestCandidate
+	end
+	
+	if not chosen or #chosen.deck == 0 then
+		-- Fallback: mirror player's deck at their recorded levels
+		local fallbackDeck = {}
+		local fallbackLevels = {}
+		for i, cardId in ipairs(playerDeckInfo.deck or {}) do
+			fallbackDeck[i] = cardId
+			fallbackLevels[i] = playerDeckInfo.levels and playerDeckInfo.levels[i] or baseLevel
+		end
+		
+		return {
+			deck = fallbackDeck,
+			levels = fallbackLevels,
+			strength = playerDeckInfo.strength or targetStrength
+		}
+	end
+	
+	return chosen
 end
 
 -- Generate new NPC deck for a player and part
@@ -374,32 +434,44 @@ local function GenerateNPCDeckForPlayer(player, partName)
 		return nil
 	end
 	
-	-- Get player's squad power
-	local playerSquadPower = profile.squadPower or 0
-	if playerSquadPower == 0 then
-		-- Calculate squad power if not set
-		local totalPower = 0
-		for _, cardId in ipairs(profile.deck) do
-			local cardEntry = profile.collection[cardId]
-			local level = cardEntry and cardEntry.level or 1
-			totalPower = totalPower + CardStats.ComputeCardPower(cardId, level)
-		end
-		playerSquadPower = totalPower
+	local playerDeckInfo = BuildPlayerDeckInfo(profile)
+	if playerDeckInfo.size == 0 then
+		LogWarning(player, "Player deck is empty during NPC deck generation")
+		return {
+			deck = {},
+			levels = {},
+			seed = os.time(),
+			strength = 0,
+			reward = nil
+		}
 	end
+	
+	-- Optionally refresh stored squad power to keep in sync with new formula
+	profile.squadPower = math.floor(playerDeckInfo.strength + 0.5)
 	
 	-- Generate seed for this part (use current time to ensure freshness)
 	local seed = os.time() * 1000 + player.UserId + (os.clock() * 1000) % 1000
 	local rng = SeededRNG.New(seed)
 	
 	-- Generate NPC deck
-	local npcDeckData = GenerateNPCDeck(playerSquadPower, rng)
+	local npcDeckData = GenerateNPCDeck(playerDeckInfo, rng)
 	
-	-- Generate reward (for victory): random lootbox (uncommon, rare, epic, or legendary)
-	-- Use a separate RNG instance to avoid correlation
-	local rewardRNG = SeededRNG.New(seed + 5000)
-	local rarities = {"uncommon", "rare", "epic", "legendary"}
-	local rarityIndex = SeededRNG.RandomInt(rewardRNG, 1, #rarities)
-	local rewardRarity = rarities[rarityIndex]
+	-- Generate reward (for victory) with weighted rarity distribution
+	-- 50% Uncommon, 30% Rare, 15% Epic, 5% Legendary
+	local rewardRarity = "uncommon"
+	do
+		local rewardRNG = SeededRNG.New(seed + 5000)
+		local roll = SeededRNG.RandomFloat(rewardRNG, 0, 1)
+		if roll < 0.5 then
+			rewardRarity = "uncommon"
+		elseif roll < 0.8 then
+			rewardRarity = "rare"
+		elseif roll < 0.95 then
+			rewardRarity = "epic"
+		else
+			rewardRarity = "legendary"
+		end
+	end
 	
 	local reward = {
 		type = "lootbox",
@@ -407,12 +479,14 @@ local function GenerateNPCDeckForPlayer(player, partName)
 		count = 1
 	}
 	
-	LogInfo(player, "Generated NPC deck for part %s: %d cards, seed %d, reward: %s lootbox", 
-		partName, #npcDeckData.deck, seed, rewardRarity)
+	LogInfo(player, "Generated NPC deck for part %s: %d cards, strength %.2f (target %.2f-%.2f), seed %d, reward: %s lootbox", 
+		partName, #npcDeckData.deck, npcDeckData.strength or 0,
+		playerDeckInfo.strength * 0.8, playerDeckInfo.strength * 1.1, seed, rewardRarity)
 	
 	return {
 		deck = npcDeckData.deck,
 		levels = npcDeckData.levels,
+		strength = npcDeckData.strength,
 		seed = seed,
 		reward = reward -- Store reward with NPC deck
 	}
