@@ -200,12 +200,6 @@ function CloseButtonHandler:CloseFrame(frameName)
 		if DeckHandler and DeckHandler.CloseFrame then
 			DeckHandler:CloseFrame()
 		end
-	elseif frameName == "CardInfo" then
-		-- Close CardInfo frame
-		local CardInfoHandler = require(game.ReplicatedStorage.ClientModules.CardInfoHandler)
-		if CardInfoHandler and CardInfoHandler.CloseFrame then
-			CardInfoHandler:CloseFrame()
-		end
 	elseif frameName == "BattlePrep" then
 		-- Close BattlePrep frame
 		local BattlePrepHandler = require(game.ReplicatedStorage.ClientModules.BattlePrepHandler)

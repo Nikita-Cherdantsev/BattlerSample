@@ -20,6 +20,7 @@ CardInfoHandler.Connections = {}
 CardInfoHandler._initialized = false
 CardInfoHandler.originalGradientColor = nil -- Store original gradient color
 CardInfoHandler.originalBevelColor = nil -- Store original bevel background color
+CardInfoHandler.InputBlocker = nil -- Overlay to close card info
 
 CardInfoHandler.isAnimating = false
 CardInfoHandler.currentProfile = nil
@@ -96,6 +97,7 @@ function CardInfoHandler:SetupCardInfo()
 	-- Store UI reference for later use
 	self.UI = gameGui
 	self.CardInfoFrame = cardInfoFrame
+	self.InputBlocker = cardInfoFrame:FindFirstChild("InputBlocker")
 	
 	-- Hide card info initially
 	cardInfoFrame.Visible = false
@@ -114,29 +116,37 @@ function CardInfoHandler:SetupCardInfo()
 end
 
 function CardInfoHandler:SetupCloseButton()
-	-- Look for close button in the card info frame
-	local topPanel = self.CardInfoFrame:FindFirstChild("TopPanel")
-	if not topPanel then
-		warn("CardInfoHandler: TopPanel not found")
-		return
+	local closeButton = self.CardInfoFrame and self.CardInfoFrame:FindFirstChild("Main")
+	if closeButton then
+		closeButton = closeButton:FindFirstChild("Content")
+		if closeButton then
+			closeButton = closeButton:FindFirstChild("BtnClose")
+			if closeButton then
+				closeButton = closeButton:FindFirstChild("Button")
+			end
+		end
 	end
 	
-	local btnClose = topPanel:FindFirstChild("BtnClose")
-	if not btnClose then
-		warn("CardInfoHandler: BtnClose not found")
-		return
-	end
-	
-	local closeButton = btnClose:FindFirstChild("Button")
 	if not closeButton then
-		warn("CardInfoHandler: Close Button not found")
+		warn("CardInfoHandler: Close button not found - you may need to add a CloseButton to CardInfo frame")
 		return
 	end
-	
+
 	local connection = closeButton.MouseButton1Click:Connect(function()
 		self:CloseWindow()
 	end)
+
 	table.insert(self.Connections, connection)
+
+	if self.InputBlocker then
+		local blockerConnection = self.InputBlocker.MouseButton1Click:Connect(function()
+			self:CloseWindow()
+		end)
+		table.insert(self.Connections, blockerConnection)
+	else
+		warn("CardInfoHandler: InputBlocker not found")
+	end
+
 	print("✅ CardInfoHandler: Close button connected")
 end
 
@@ -271,6 +281,9 @@ function CardInfoHandler:UpdateCardInfoDisplay(cardData, hasCard, cardLevel, car
 	local rarityColors = hasCard and Manifest.RarityColors or Manifest.RarityColorsDisabled
 	local rarityGradientColors = Manifest.RarityColorsGradient
 	
+	-- Update frame stroke color
+	self:UpdateFrameStrokeColor(Manifest.RarityColors[rarityKey], rarityGradientColors[rarityKey])
+	
 	-- Update header
 	self:UpdateHeader(cardData, Manifest.RarityColors, rarityGradientColors)
 	
@@ -291,6 +304,19 @@ function CardInfoHandler:UpdateCardInfoDisplay(cardData, hasCard, cardLevel, car
 	
 	-- Update buttons
 	self:UpdateButtons(cardData, hasCard, cardLevel, cardCount)
+end
+
+function CardInfoHandler:UpdateFrameStrokeColor(colorFrom, colorTo)
+	local mainContent = self.CardInfoFrame:FindFirstChild("Main")
+	if not mainContent then return end
+	
+	local uiGradient = mainContent:FindFirstChild("UIGradient")
+	if uiGradient then
+		uiGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, colorFrom),
+			ColorSequenceKeypoint.new(1, colorTo)
+		})
+	end
 end
 
 function CardInfoHandler:UpdateHeader(cardData, rarityColors, rarityGradientColors)
@@ -867,7 +893,9 @@ function CardInfoHandler:OnCollectionButtonClicked()
 	
 	-- Remove card from deck if it's currently in the deck
 	if self:IsCardInDeck(self.currentCardId) then
-		self:RemoveCardFromDeck(self.currentCardId)
+		if self:RemoveCardFromDeck(self.currentCardId) then
+			self:CloseWindow()
+		end
 	else
 	end
 end
@@ -881,7 +909,9 @@ function CardInfoHandler:OnDeckButtonClicked()
 	
 	-- Add card to deck if it's not already in the deck
 	if not self:IsCardInDeck(self.currentCardId) then
-		self:AddCardToDeck(self.currentCardId)
+		if self:AddCardToDeck(self.currentCardId) then
+			self:CloseWindow()
+		end
 	else
 	end
 end
@@ -953,13 +983,6 @@ function CardInfoHandler:OpenWindow()
 		self.isAnimating = false
 	end
 	
-	-- Register with CloseButtonHandler
-	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
-	local closeButtonHandler = CloseButtonHandler.GetInstance()
-	if closeButtonHandler then
-		closeButtonHandler:RegisterFrameOpen("CardInfo")
-	end
-	
 	print("✅ CardInfoHandler: card info window opened")
 end
 
@@ -981,23 +1004,11 @@ function CardInfoHandler:CloseWindow()
 		self.isAnimating = false
 	end
 	
-	-- Unregister from CloseButtonHandler
-	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
-	local closeButtonHandler = CloseButtonHandler.GetInstance()
-	if closeButtonHandler then
-		closeButtonHandler:RegisterFrameClosed("CardInfo")
-	end
-	
 	-- Clear current card data
 	self.currentCardId = nil
 	self.currentSlotIndex = nil
 	
 	print("✅ CardInfoHandler: card info window closed")
-end
-
--- CloseFrame method for CloseButtonHandler compatibility
-function CardInfoHandler:CloseFrame()
-	self:CloseWindow()
 end
 
 function CardInfoHandler:SetupProfileUpdatedHandler()
