@@ -332,7 +332,7 @@ function PlayerDataService.SetDeck(player, deckIds)
 			-- Update squad power in local cache
 			playerProfiles[player].squadPower = updatedProfile.squadPower
 			
-			LogInfo(player, "Deck updated successfully, squad power: %.3f", updatedProfile.squadPower)
+			LogInfo(player, "Deck updated successfully, squad power: %.1f", updatedProfile.squadPower)
 		else
 			LogWarning(player, "Failed to get updated profile after deck update")
 		end
@@ -415,7 +415,7 @@ function PlayerDataService.LevelUpCard(player, cardId)
 					totalPower = totalPower + CardStats.ComputePower(stats)
 				end
 			end
-			profile.squadPower = RoundToDecimals(totalPower, 3)
+			profile.squadPower = RoundToDecimals(totalPower, 1)
 		end
 		
 		LogInfo(player, "Card %s leveled up to level %d (cost: %d copies, %d soft)", 

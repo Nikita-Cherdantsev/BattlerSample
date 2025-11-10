@@ -310,7 +310,7 @@ local function BuildPlayerDeckInfo(profile)
 	
 	local deckSize = #deckCopy
 	local averageLevel = deckSize > 0 and (totalLevel / deckSize) or 1
-	local roundedStrength = RoundToDecimals(strength, 3)
+	local roundedStrength = RoundToDecimals(strength, 1)
 	
 	return {
 		deck = deckCopy,
@@ -399,7 +399,7 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 		
 		if #candidateDeck == deckSize then
 			local strengthRaw = ComputeDeckStrength(candidateDeck, candidateLevels)
-			local strengthRounded = RoundToDecimals(strengthRaw, 3)
+			local strengthRounded = RoundToDecimals(strengthRaw, 1)
 			local diff = math.abs(strengthRaw - targetStrength)
 			
 			if strengthRaw >= minStrength and strengthRaw <= maxStrength then
@@ -439,7 +439,7 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 		return {
 			deck = fallbackDeck,
 			levels = fallbackLevels,
-			strength = RoundToDecimals(playerDeckInfo.strength or targetStrength, 3)
+			strength = RoundToDecimals(playerDeckInfo.strength or targetStrength, 1)
 		}
 	end
 	
@@ -472,7 +472,7 @@ local function GenerateNPCDeckForPlayer(player, partName)
 	end
 	
 	-- Optionally refresh stored squad power to keep in sync with new formula
-	profile.squadPower = RoundToDecimals(playerDeckInfo.strength, 3)
+	profile.squadPower = RoundToDecimals(playerDeckInfo.strength, 1)
 	
 	-- Generate seed for this part (use current time to ensure freshness)
 	local seed = os.time() * 1000 + player.UserId + (os.clock() * 1000) % 1000

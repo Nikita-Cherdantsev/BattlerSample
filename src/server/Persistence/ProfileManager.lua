@@ -204,7 +204,7 @@ local function ComputeSquadPower(profile)
 		totalPower = totalPower + cardPower
 	end
 	
-	return RoundToDecimals(totalPower, 3)
+	return RoundToDecimals(totalPower, 1)
 end
 
 -- Migrate profile if needed
