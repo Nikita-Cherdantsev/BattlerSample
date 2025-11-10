@@ -359,11 +359,23 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 	
 	for _ = 1, attempts do
 		local deckSize = SeededRNG.RandomInt(rng, minSize, maxSize)
+		deckSize = math.clamp(deckSize, 1, #cardPool)
 		local candidateDeck = {}
 		local candidateLevels = {}
+		local availableCards = {}
+		for idx, cardId in ipairs(cardPool) do
+			availableCards[idx] = cardId
+		end
 		
 		for slot = 1, deckSize do
-			local cardId = SeededRNG.RandomChoice(rng, cardPool)
+			if #availableCards == 0 then
+				break
+			end
+			
+			local pickIndex = SeededRNG.RandomInt(rng, 1, #availableCards)
+			local cardId = availableCards[pickIndex]
+			table.remove(availableCards, pickIndex)
+			
 			candidateDeck[slot] = cardId
 			
 			local minLevel = math.max(1, baseLevel - levelVariance)
@@ -373,6 +385,11 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 			end
 			local level = SeededRNG.RandomInt(rng, minLevel, maxLevel)
 			candidateLevels[slot] = level
+		end
+		
+		if #candidateDeck ~= deckSize then
+			-- Not enough unique cards available for this attempt; skip
+			goto continue
 		end
 		
 		local strength = ComputeDeckStrength(candidateDeck, candidateLevels)
@@ -392,6 +409,8 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 				strength = strength
 			}
 		end
+		
+		::continue::
 	end
 	
 	local chosen = nil
