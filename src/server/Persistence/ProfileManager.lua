@@ -29,6 +29,15 @@ ProfileManager.DEFAULT_DECK = {
 -- Cache for loaded profiles
 local profileCache = {}
 
+local function RoundToDecimals(value, decimals)
+	if type(value) ~= "number" then
+		return 0
+	end
+	decimals = decimals or 0
+	local multiplier = 10 ^ decimals
+	return math.floor(value * multiplier + 0.5) / multiplier
+end
+
 -- Card ID migration mapping (old -> new)
 local CARD_ID_MIGRATION = {
 	["dps_001"] = "card_100",
@@ -195,7 +204,7 @@ local function ComputeSquadPower(profile)
 		totalPower = totalPower + cardPower
 	end
 	
-	return totalPower
+	return RoundToDecimals(totalPower, 3)
 end
 
 -- Migrate profile if needed

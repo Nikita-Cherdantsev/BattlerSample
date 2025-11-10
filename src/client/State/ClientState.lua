@@ -179,7 +179,7 @@ function ClientState.applyProfileUpdate(payload)
 			end
 		end
 		
-		log("Profile updated: deck=%d cards, squadPower=%d, lootboxes=%d, collection=%d cards", 
+		log("Profile updated: deck=%d cards, squadPower=%.3f, lootboxes=%d, collection=%d cards", 
 			#state.profile.deck, state.profile.squadPower, #state.profile.lootboxes, collectionSize)
 		
 		if not profileReady and state.profile then

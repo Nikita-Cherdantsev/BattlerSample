@@ -25,6 +25,15 @@ local MAX_ROUNDS = 50 -- Maximum battle rounds
 -- Studio-only: keep the BUSY window long enough for the concurrency test
 local TEST_BUSY_DELAY_SEC = 0.75 -- was ~0.2; use 0.75s
 
+local function RoundToDecimals(value, decimals)
+	if type(value) ~= "number" then
+		return 0
+	end
+	decimals = decimals or 0
+	local multiplier = 10 ^ decimals
+	return math.floor(value * multiplier + 0.5) / multiplier
+end
+
 -- Dev mode detection
 local IS_DEV_MODE = RunService:IsStudio()
 
@@ -301,12 +310,13 @@ local function BuildPlayerDeckInfo(profile)
 	
 	local deckSize = #deckCopy
 	local averageLevel = deckSize > 0 and (totalLevel / deckSize) or 1
+	local roundedStrength = RoundToDecimals(strength, 3)
 	
 	return {
 		deck = deckCopy,
 		levels = levelCopy,
 		size = deckSize,
-		strength = strength,
+		strength = roundedStrength,
 		averageLevel = averageLevel
 	}
 end
@@ -388,21 +398,22 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 		end
 		
 		if #candidateDeck == deckSize then
-			local strength = ComputeDeckStrength(candidateDeck, candidateLevels)
-			local diff = math.abs(strength - targetStrength)
+			local strengthRaw = ComputeDeckStrength(candidateDeck, candidateLevels)
+			local strengthRounded = RoundToDecimals(strengthRaw, 3)
+			local diff = math.abs(strengthRaw - targetStrength)
 			
-			if strength >= minStrength and strength <= maxStrength then
+			if strengthRaw >= minStrength and strengthRaw <= maxStrength then
 				table.insert(matchingCandidates, {
 					deck = candidateDeck,
 					levels = candidateLevels,
-					strength = strength
+					strength = strengthRounded
 				})
 			elseif diff < bestDiff then
 				bestDiff = diff
 				bestCandidate = {
 					deck = candidateDeck,
 					levels = candidateLevels,
-					strength = strength
+					strength = strengthRounded
 				}
 			end
 		end
@@ -428,7 +439,7 @@ local function GenerateNPCDeck(playerDeckInfo, rng)
 		return {
 			deck = fallbackDeck,
 			levels = fallbackLevels,
-			strength = playerDeckInfo.strength or targetStrength
+			strength = RoundToDecimals(playerDeckInfo.strength or targetStrength, 3)
 		}
 	end
 	
@@ -461,7 +472,7 @@ local function GenerateNPCDeckForPlayer(player, partName)
 	end
 	
 	-- Optionally refresh stored squad power to keep in sync with new formula
-	profile.squadPower = math.floor(playerDeckInfo.strength + 0.5)
+	profile.squadPower = RoundToDecimals(playerDeckInfo.strength, 3)
 	
 	-- Generate seed for this part (use current time to ensure freshness)
 	local seed = os.time() * 1000 + player.UserId + (os.clock() * 1000) % 1000

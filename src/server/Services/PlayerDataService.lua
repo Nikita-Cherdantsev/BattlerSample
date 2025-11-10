@@ -45,6 +45,15 @@ local function LogError(player, message, ...)
 	error(string.format("[PlayerDataService] %s: %s", playerName, formattedMessage))
 end
 
+local function RoundToDecimals(value, decimals)
+	if type(value) ~= "number" then
+		return 0
+	end
+	decimals = decimals or 0
+	local multiplier = 10 ^ decimals
+	return math.floor(value * multiplier + 0.5) / multiplier
+end
+
 local function ValidateDeck(deck)
 	-- Use shared DeckValidator (v2: enforces uniqueness, no collection count check)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(deck)
@@ -323,7 +332,7 @@ function PlayerDataService.SetDeck(player, deckIds)
 			-- Update squad power in local cache
 			playerProfiles[player].squadPower = updatedProfile.squadPower
 			
-			LogInfo(player, "Deck updated successfully, squad power: %d", updatedProfile.squadPower)
+			LogInfo(player, "Deck updated successfully, squad power: %.3f", updatedProfile.squadPower)
 		else
 			LogWarning(player, "Failed to get updated profile after deck update")
 		end
@@ -406,7 +415,7 @@ function PlayerDataService.LevelUpCard(player, cardId)
 					totalPower = totalPower + CardStats.ComputePower(stats)
 				end
 			end
-			profile.squadPower = totalPower
+			profile.squadPower = RoundToDecimals(totalPower, 3)
 		end
 		
 		LogInfo(player, "Card %s leveled up to level %d (cost: %d copies, %d soft)", 
