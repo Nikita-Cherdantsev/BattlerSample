@@ -7,8 +7,6 @@
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
 local ShopService = {}
 
 -- Dependencies
@@ -31,15 +29,26 @@ ShopService.ErrorCodes = {
 -- Receipt ledger to prevent double-crediting
 local processedReceipts = {}
 
+local function generateReceiptKey(receiptInfo)
+	if receiptInfo.PurchaseId and receiptInfo.PurchaseId ~= "" then
+		return receiptInfo.PurchaseId
+	else
+		return string.format("%d_%d", receiptInfo.PlayerId, receiptInfo.ProductId)
+	end
+end
+
 -- Process Developer Product receipt
 function ShopService.ProcessReceipt(receiptInfo)
 	local productId = receiptInfo.ProductId
 	local playerId = receiptInfo.PlayerId
-	local purchaseId = receiptInfo.PurchaseId
+	local robuxSpent = receiptInfo.CurrencySpent or 0
+	local purchaseId = generateReceiptKey(receiptInfo)
 	
 	-- Check if receipt already processed
 	if processedReceipts[purchaseId] then
-		return Enum.ProductPurchaseDecision.NotProcessedYet
+		-- Roblox may resend receipts until we acknowledge them; if we already
+		-- handled this purchase just confirm it so the platform doesn't retry.
+		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	
 	-- Find pack by productId using helper function
@@ -61,7 +70,11 @@ function ShopService.ProcessReceipt(receiptInfo)
 			local totalHard = pack.hardAmount + (pack.additionalHard or 0)
 			local oldHard = profile.currencies.hard or 0
 			profile.currencies.hard = oldHard + totalHard
-			profile.totalRobuxSpent = (profile.totalRobuxSpent or 0) + (pack.robuxPrice or 0)
+			local amountSpent = robuxSpent
+			if amountSpent <= 0 then
+				amountSpent = pack.robuxPrice or 0
+			end
+			profile.totalRobuxSpent = (profile.totalRobuxSpent or 0) + amountSpent
 			profile.updatedAt = os.time()
 			
 			return profile
@@ -112,26 +125,6 @@ function ShopService.ProcessReceipt(receiptInfo)
 	end
 	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
-end
-
-function ShopService.ProcessPackPurchaseForStudio(playerId, pack)
-	if not RunService:IsStudio() then
-		return
-	end
-	
-	if not pack or not pack.devProductId then
-		warn("[ShopService] Cannot simulate pack purchase in Studio: missing pack or devProductId")
-		return
-	end
-	
-	local purchaseId = string.format("DEV_%d_%d_%d", playerId, pack.devProductId, os.time())
-	local receipt = {
-		ProductId = pack.devProductId,
-		PlayerId = playerId,
-		PurchaseId = purchaseId
-	}
-	
-	ShopService.ProcessReceipt(receipt)
 end
 
 -- Get shop packs for client
