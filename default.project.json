@@ -41,6 +41,9 @@
         },
         "RewardsHandler": {
           "$path": "src/shared/ClientModules/RewardsHandler.lua"
+        },
+        "FollowRewardHandler": {
+          "$path": "src/shared/ClientModules/FollowRewardHandler.lua"
         }
       },
       "Modules": {
@@ -240,6 +243,9 @@
         },
         "DailyService": {
           "$path": "src/server/Services/DailyService.lua"
+        },
+        "FollowRewardService": {
+          "$path": "src/server/Services/FollowRewardService.lua"
         }
       }
     },

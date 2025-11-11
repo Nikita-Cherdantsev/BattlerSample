@@ -12,6 +12,7 @@ local ShopService = require(game.ServerScriptService:WaitForChild("Services"):Wa
 local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
 local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
 local DailyService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("DailyService"))
+local FollowRewardService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("FollowRewardService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
@@ -38,6 +39,7 @@ local RequestPlaytimeData = nil
 local RequestClaimPlaytimeReward = nil
 local RequestDailyData = nil
 local RequestClaimDailyReward = nil
+local RequestClaimFollowReward = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
 
@@ -126,6 +128,10 @@ local RATE_LIMITS = {
 	RequestClaimDailyReward = {
 		cooldownSec = 1,
 		maxPerMinute = 10
+	},
+	RequestClaimFollowReward = {
+		cooldownSec = 1,
+		maxPerMinute = 5
 	},
 	RequestClaimBattleReward = {
 		cooldownSec = 1,
@@ -261,6 +267,11 @@ local function InitializeRateLimit(player)
 				resetTime = os.time() + 60
 			},
 			RequestClaimDailyReward = {
+				lastRequest = 0,
+				requestCount = 0,
+				resetTime = os.time() + 60
+			},
+			RequestClaimFollowReward = {
 				lastRequest = 0,
 				requestCount = 0,
 				resetTime = os.time() + 60
@@ -1494,6 +1505,51 @@ local function HandleRequestClaimDailyReward(player, requestData)
 	SendProfileUpdate(player, payload)
 end
 
+local function HandleRequestClaimFollowReward(player)
+	LogInfo(player, "Processing follow reward request")
+
+	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimFollowReward")
+	if not canProceed then
+		SendProfileUpdate(player, {
+			error = { code = "RATE_LIMITED", message = errorMessage },
+			serverNow = os.time()
+		})
+		return
+	end
+
+	local result = FollowRewardService.GrantFollowReward(player)
+	local payload = {
+		serverNow = os.time()
+	}
+
+	if result.ok then
+		payload.followReward = { status = "granted" }
+		payload.rewards = result.rewards
+		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
+		if updatedProfile then
+			payload.currencies = updatedProfile.currencies or {}
+			if updatedProfile.collection then
+				payload.collectionSummary = CreateCollectionSummary(updatedProfile.collection)
+			end
+		end
+
+		LogInfo(player, "Follow reward granted successfully")
+	else
+		local reason = result.reason or "INTERNAL"
+		payload.followReward = { status = reason }
+		if reason == "NOT_FOLLOWING" then
+			LogInfo(player, "Follow reward denied: player has not followed the game")
+			print("you are not followed to the game")
+		elseif reason == "ALREADY_CLAIMED" then
+			LogInfo(player, "Follow reward denied: already claimed")
+		else
+			LogWarning(player, "Follow reward failed: %s", reason)
+		end
+	end
+
+	SendProfileUpdate(player, payload)
+end
+
 local function HandleRequestBuyLootbox(player, requestData)
 	LogInfo(player, "Processing buy lootbox request")
 	
@@ -1726,6 +1782,7 @@ RemoteEvents.RequestPlaytimeData = RequestPlaytimeData
 RemoteEvents.RequestClaimPlaytimeReward = RequestClaimPlaytimeReward
 RemoteEvents.RequestDailyData = RequestDailyData
 RemoteEvents.RequestClaimDailyReward = RequestClaimDailyReward
+RemoteEvents.RequestClaimFollowReward = RequestClaimFollowReward
 RemoteEvents.RequestNPCDeck = RequestNPCDeck
 RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
 
@@ -1826,6 +1883,10 @@ function RemoteEvents.Init()
 	RequestClaimDailyReward = Instance.new("RemoteEvent")
 	RequestClaimDailyReward.Name = "RequestClaimDailyReward"
 	RequestClaimDailyReward.Parent = NetworkFolder
+
+	RequestClaimFollowReward = Instance.new("RemoteEvent")
+	RequestClaimFollowReward.Name = "RequestClaimFollowReward"
+	RequestClaimFollowReward.Parent = NetworkFolder
 	
 	-- NPC Deck RemoteFunction
 	RequestNPCDeck = Instance.new("RemoteFunction")
@@ -1860,6 +1921,7 @@ function RemoteEvents.Init()
 			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward},
 			{name = "RequestDailyData", instance = RequestDailyData},
 			{name = "RequestClaimDailyReward", instance = RequestClaimDailyReward},
+			{name = "RequestClaimFollowReward", instance = RequestClaimFollowReward},
 			{name = "RequestClaimBattleReward", instance = RequestClaimBattleReward}
 		}
 		
@@ -1896,6 +1958,7 @@ function RemoteEvents.Init()
 	RequestClaimPlaytimeReward.OnServerEvent:Connect(HandleRequestClaimPlaytimeReward)
 	RequestDailyData.OnServerEvent:Connect(HandleRequestDailyData)
 	RequestClaimDailyReward.OnServerEvent:Connect(HandleRequestClaimDailyReward)
+	RequestClaimFollowReward.OnServerEvent:Connect(HandleRequestClaimFollowReward)
 	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Initialize PlaytimeService

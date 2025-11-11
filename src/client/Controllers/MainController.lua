@@ -24,6 +24,7 @@ local CloseButtonHandler = require(ReplicatedStorage.ClientModules.CloseButtonHa
 local BattlePrepHandler = require(ReplicatedStorage.ClientModules.BattlePrepHandler)
 local BattleHandler = require(ReplicatedStorage.ClientModules.BattleHandler)
 local RewardsHandler = require(ReplicatedStorage.ClientModules.RewardsHandler)
+local FollowRewardHandler = require(ReplicatedStorage.ClientModules.FollowRewardHandler)
 
 -- State
 local isInitialized = false
@@ -58,7 +59,8 @@ function MainController:Init()
 		{name = "CloseButtonHandler", handler = CloseButtonHandler},
 		{name = "BattlePrepHandler", handler = BattlePrepHandler},
 		{name = "BattleHandler", handler = BattleHandler},
-		{name = "RewardsHandler", handler = RewardsHandler}
+		{name = "RewardsHandler", handler = RewardsHandler},
+		{name = "FollowRewardHandler", handler = FollowRewardHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do

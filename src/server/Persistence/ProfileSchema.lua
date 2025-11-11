@@ -37,6 +37,7 @@ ProfileSchema.Profile = {
 	squadPower = 0,          -- Computed power of current deck
 	npcWins = 0,             -- Total PvE (NPC) victories
 	totalRobuxSpent = 0,     -- Lifetime Robux spent in shop (developer products)
+	followRewardClaimed = false, -- Whether the follow reward has been claimed
 	
 	-- Boss difficulties (map: bossId -> difficulty string)
 	-- Example: bossDifficulties["1"] = "easy" (for BossMode1Trigger)
@@ -179,6 +180,10 @@ function ProfileSchema.ValidateProfile(profile)
 
 	if type(profile.totalRobuxSpent) ~= "number" then
 		return false, "Invalid totalRobuxSpent"
+	end
+
+	if profile.followRewardClaimed ~= nil and type(profile.followRewardClaimed) ~= "boolean" then
+		return false, "Invalid followRewardClaimed"
 	end
 	
 	-- Check bossDifficulties (v2 field)
@@ -410,6 +415,7 @@ function ProfileSchema.CreateProfile(playerId)
 			streak = 0,
 			lastLogin = 0
 		},
+		followRewardClaimed = false,
 		bossWins = {},
 		npcWins = 0,
 		totalRobuxSpent = 0
@@ -444,6 +450,7 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 			streak = 0,
 			lastLogin = 0
 		},
+		followRewardClaimed = v1Profile.followRewardClaimed or false,
 		bossWins = v1Profile.bossWins or {},
 		npcWins = v1Profile.npcWins or 0,
 		totalRobuxSpent = v1Profile.totalRobuxSpent or 0

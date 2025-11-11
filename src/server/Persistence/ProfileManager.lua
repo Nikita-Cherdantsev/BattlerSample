@@ -309,6 +309,9 @@ function ProfileManager.LoadProfile(userId)
 			if type(profile.npcWins) ~= "number" then
 				profile.npcWins = 0
 			end
+			if type(profile.followRewardClaimed) ~= "boolean" then
+				profile.followRewardClaimed = false
+			end
 			if type(profile.bossWins) ~= "table" then
 				profile.bossWins = {}
 			end
