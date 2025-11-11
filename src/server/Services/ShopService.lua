@@ -7,6 +7,7 @@
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local ShopService = {}
 
@@ -60,6 +61,7 @@ function ShopService.ProcessReceipt(receiptInfo)
 			local totalHard = pack.hardAmount + (pack.additionalHard or 0)
 			local oldHard = profile.currencies.hard or 0
 			profile.currencies.hard = oldHard + totalHard
+			profile.totalRobuxSpent = (profile.totalRobuxSpent or 0) + (pack.robuxPrice or 0)
 			profile.updatedAt = os.time()
 			
 			return profile
@@ -110,6 +112,26 @@ function ShopService.ProcessReceipt(receiptInfo)
 	end
 	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+function ShopService.ProcessPackPurchaseForStudio(playerId, pack)
+	if not RunService:IsStudio() then
+		return
+	end
+	
+	if not pack or not pack.devProductId then
+		warn("[ShopService] Cannot simulate pack purchase in Studio: missing pack or devProductId")
+		return
+	end
+	
+	local purchaseId = string.format("DEV_%d_%d_%d", playerId, pack.devProductId, os.time())
+	local receipt = {
+		ProductId = pack.devProductId,
+		PlayerId = playerId,
+		PurchaseId = purchaseId
+	}
+	
+	ShopService.ProcessReceipt(receipt)
 end
 
 -- Get shop packs for client

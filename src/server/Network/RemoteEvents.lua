@@ -1243,6 +1243,12 @@ local function HandleRequestStartPackPurchase(player, requestData)
 		payload.ok = true
 		payload.packId = requestData.packId
 		payload.devProductId = result.pack.devProductId
+		
+		if RunService:IsStudio() then
+			task.defer(function()
+				ShopService.ProcessPackPurchaseForStudio(player.UserId, result.pack)
+			end)
+		end
 	else
 		payload.error = {
 			code = result.error,

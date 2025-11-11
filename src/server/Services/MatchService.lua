@@ -13,6 +13,7 @@ local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitF
 local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 local Types = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Types"))
 local BossDecks = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Boss"):WaitForChild("BossDecks"))
+local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 
 -- Configuration
 local RATE_LIMIT = {
@@ -1066,19 +1067,50 @@ function MatchService.ExecuteMatch(player, requestData)
 	-- Determine battle outcome
 	-- CombatEngine returns "A" for player, "B" for opponent, "Draw" for draw
 	local isPlayerVictory = (battleResult.winner == "A")
+	local bossId = ExtractBossId(partName)
 	
 	-- Clear NPC deck after battle completes (win or lose)
 	-- This ensures fresh deck generation next time prep window opens
 	if partName and partName:match("^NPCMode") then
 		MatchService.ClearNPCDeck(player, partName)
 	end
+
+	if isPlayerVictory and partName and partName:match("^NPCMode") then
+		local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+			profile.npcWins = (profile.npcWins or 0) + 1
+			return profile
+		end)
+
+		if success and updatedProfile then
+			if playerProfile then
+				playerProfile.npcWins = updatedProfile.npcWins
+			end
+			LogInfo(player, "NPC victory recorded. Total NPC wins: %d", updatedProfile.npcWins or 0)
+		else
+			LogWarning(player, "Failed to record NPC victory: %s", tostring(updatedProfile))
+		end
+	end
+
+	if isPlayerVictory and bossId then
+		local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+			profile.bossWins = profile.bossWins or {}
+			profile.bossWins[bossId] = (profile.bossWins[bossId] or 0) + 1
+			return profile
+		end)
+
+		if success and updatedProfile then
+			if playerProfile then
+				playerProfile.bossWins = updatedProfile.bossWins
+			end
+			LogInfo(player, "Boss %s victory recorded. Total wins: %d", bossId, updatedProfile.bossWins[bossId] or 0)
+		else
+			LogWarning(player, "Failed to record boss victory for boss %s: %s", tostring(bossId), tostring(updatedProfile))
+		end
+	end
 	
 	-- Increase boss difficulty after victory (boss mode only)
-	if isPlayerVictory and partName and partName:match("^BossMode") then
-		local bossId = ExtractBossId(partName)
-		if bossId then
-			IncreaseBossDifficulty(player, bossId)
-		end
+	if isPlayerVictory and bossId then
+		IncreaseBossDifficulty(player, bossId)
 	end
 	
 	-- Generate battle rewards based on outcome

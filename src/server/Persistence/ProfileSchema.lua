@@ -35,11 +35,14 @@ ProfileSchema.Profile = {
 	favoriteLastSeen = nil,  -- Unix seconds when player last claimed "Like" bonus (optional)
 	tutorialStep = 0,        -- Tutorial progress (default 0)
 	squadPower = 0,          -- Computed power of current deck
+	npcWins = 0,             -- Total PvE (NPC) victories
+	totalRobuxSpent = 0,     -- Lifetime Robux spent in shop (developer products)
 	
 	-- Boss difficulties (map: bossId -> difficulty string)
 	-- Example: bossDifficulties["1"] = "easy" (for BossMode1Trigger)
 	-- Difficulty levels: "easy", "normal", "hard", "nightmare", "hell"
 	bossDifficulties = {},
+	bossWins = {},           -- Map bossId -> victories
 	
 	-- Lootboxes (array of LootboxEntry, max 4, max 1 "Unlocking")
 	lootboxes = {},
@@ -169,6 +172,14 @@ function ProfileSchema.ValidateProfile(profile)
 	if type(profile.squadPower) ~= "number" then
 		return false, "Invalid squadPower"
 	end
+
+	if type(profile.npcWins) ~= "number" then
+		return false, "Invalid npcWins"
+	end
+
+	if type(profile.totalRobuxSpent) ~= "number" then
+		return false, "Invalid totalRobuxSpent"
+	end
 	
 	-- Check bossDifficulties (v2 field)
 	if profile.bossDifficulties ~= nil then
@@ -194,6 +205,21 @@ function ProfileSchema.ValidateProfile(profile)
 			}
 			if not validDifficulties[difficulty] then
 				return false, "Invalid difficulty level '" .. difficulty .. "' for boss " .. bossId
+			end
+		end
+	end
+
+	if profile.bossWins ~= nil then
+		if type(profile.bossWins) ~= "table" then
+			return false, "Invalid bossWins (must be table)"
+		end
+
+		for bossId, wins in pairs(profile.bossWins) do
+			if type(bossId) ~= "string" then
+				return false, "Invalid boss ID in bossWins"
+			end
+			if type(wins) ~= "number" or wins < 0 then
+				return false, "Invalid wins value for boss " .. bossId
 			end
 		end
 	end
@@ -383,7 +409,10 @@ function ProfileSchema.CreateProfile(playerId)
 		daily = {
 			streak = 0,
 			lastLogin = 0
-		}
+		},
+		bossWins = {},
+		npcWins = 0,
+		totalRobuxSpent = 0
 	}
 	
 	return profile
@@ -414,7 +443,10 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 		daily = {
 			streak = 0,
 			lastLogin = 0
-		}
+		},
+		bossWins = v1Profile.bossWins or {},
+		npcWins = v1Profile.npcWins or 0,
+		totalRobuxSpent = v1Profile.totalRobuxSpent or 0
 	}
 	
 	-- Migrate collection from v1 format to v2 format

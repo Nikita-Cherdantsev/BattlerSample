@@ -301,6 +301,18 @@ function ProfileManager.LoadProfile(userId)
 	if success and profile then
 		-- Migrate if needed
 		profile = MigrateProfileIfNeeded(profile)
+
+		if profile then
+			if type(profile.totalRobuxSpent) ~= "number" then
+				profile.totalRobuxSpent = 0
+			end
+			if type(profile.npcWins) ~= "number" then
+				profile.npcWins = 0
+			end
+			if type(profile.bossWins) ~= "table" then
+				profile.bossWins = {}
+			end
+		end
 		
 		-- Validate loaded profile
 		if profile and IsProfileValid(profile) then
