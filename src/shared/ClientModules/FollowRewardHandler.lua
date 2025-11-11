@@ -24,13 +24,22 @@ local function waitForChildRecursive(parent, childName, timeout)
 end
 
 function FollowRewardHandler:Init()
-	local rootFolder = Workspace:FindFirstChild("FollowPresent")
+	local rootContainer = Workspace:FindFirstChild("Folder")
+	if not rootContainer then
+		warn("[FollowRewardHandler] Workspace/Folder container not found")
+		return
+	end
+
+	local rootFolder = rootContainer:FindFirstChild("FollowPresent")
+	if not rootFolder then
+		rootFolder = rootContainer:FindFirstChild("FollowPresent", true)
+	end
 	if not rootFolder then
 		warn("[FollowRewardHandler] FollowPresent folder not found in Workspace")
 		return
 	end
 
-	local triggerPart = rootFolder:FindFirstChild("FollowTriggerPart")
+	local triggerPart = rootFolder:FindFirstChild("FollowTriggerPart") or rootFolder:FindFirstChild("FollowTriggerPart", true)
 	if not triggerPart or not triggerPart:IsA("BasePart") then
 		warn("[FollowRewardHandler] FollowTriggerPart missing or not a BasePart")
 		return
