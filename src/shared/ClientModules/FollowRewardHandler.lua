@@ -7,6 +7,36 @@ local TweenService = game:GetService("TweenService")
 
 local localPlayer = Players.LocalPlayer
 
+local STATUS_MESSAGES = {
+	GRANTED = "Thank you for following! Reward delivered.",
+	ALREADY_CLAIMED = "You already got the reward.",
+	NOT_FOLLOWING = "You should like and follow the game to get the reward.",
+	HTTP_DISABLED = "Follow check unavailable. Please try again later.",
+	HTTP_ERROR = "Unable to verify follow. Please try again later.",
+	HTTP_FORBIDDEN = "Follow check unavailable. Please try again later.",
+	JSON_ERROR = "Unable to verify follow. Please try again later.",
+	INVALID_RESPONSE = "Unable to verify follow. Please try again later.",
+	UNIVERSE_ID_UNKNOWN = "Follow reward unavailable. Please try again later."
+}
+
+local function messageForStatus(status)
+	if not status then
+		return STATUS_MESSAGES.INVALID_RESPONSE
+	end
+
+	local upper = string.upper(status)
+
+	if STATUS_MESSAGES[upper] then
+		return STATUS_MESSAGES[upper]
+	end
+
+	if upper:find("^HTTP_ERROR_") then
+		return STATUS_MESSAGES.HTTP_ERROR
+	end
+
+	return STATUS_MESSAGES.INVALID_RESPONSE
+end
+
 local TWEEN_INFO = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local MESSAGE_DURATION = 5
 
@@ -154,19 +184,7 @@ function FollowRewardHandler:Init()
 		local status = payload.followReward.status or "UNKNOWN"
 		status = string.upper(status)
 
-		if status == "GRANTED" then
-			showTimed("Thank you for following! Reward delivered.", 5)
-		elseif status == "ALREADY_CLAIMED" then
-			showTimed("You already got the reward.", 5)
-		elseif status == "NOT_FOLLOWING" then
-			showTimed("You should like and follow the game to get the reward.", 5)
-		elseif status == "HTTP_DISABLED" then
-			showTimed("Follow check unavailable. Please try again later.", 5)
-		elseif status == "HTTP_ERROR" or status == "JSON_ERROR" or status == "INVALID_RESPONSE" then
-			showTimed("Unable to verify follow. Please try again later.", 5)
-		else
-			showTimed("Unable to grant follow reward. Please try again later.", 5)
-		end
+		showTimed(messageForStatus(status), 5)
 	end)
 end
 
