@@ -13,6 +13,7 @@ local LootboxService = require(game.ServerScriptService:WaitForChild("Services")
 local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
 local DailyService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("DailyService"))
 local FollowRewardService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("FollowRewardService"))
+local ProfileSnapshotService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ProfileSnapshotService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
@@ -344,39 +345,97 @@ local function CleanupRateLimit(player)
 	playerRateLimits[player] = nil
 end
 
-local function SendProfileUpdate(player, payload)
-	-- Add serverNow timestamp to all profile updates (non-breaking)
-	payload.serverNow = os.time()
-	if ProfileUpdated then
-	ProfileUpdated:FireClient(player, payload)
+local function SendProfileUpdate(player, overrides, options)
+	options = options or {}
+	local context = options.context
+	if not context or context == "" then
+		local ok, inferred = pcall(function()
+			return debug.info(2, "n")
+		end)
+		if ok and inferred and inferred ~= "" then
+			context = tostring(inferred)
+		else
+			context = "unspecified"
+		end
 	end
+
+	local snapshotOptions = {
+		includeCollection = options.includeCollection,
+		includeLoginInfo = options.includeLoginInfo,
+		includeDaily = options.includeDaily,
+		includePlaytime = options.includePlaytime,
+	}
+
+	local useSnapshot = options.snapshot ~= false
+	local payload
+	local snapshotSuccess = false
+
+	if useSnapshot then
+		local snapshot, errorCode, errorMessage = ProfileSnapshotService.GetSnapshot(player, snapshotOptions)
+		if snapshot then
+			payload = snapshot
+			snapshotSuccess = true
+		else
+			payload = {
+				error = {
+					code = errorCode,
+					message = errorMessage,
+				},
+				updatedAt = os.time(),
+			}
+			ProfileSnapshotService.LogSnapshotFailure(player, context, errorCode, errorMessage)
+		end
+	else
+		payload = {
+			updatedAt = os.time(),
+		}
+	end
+
+	if overrides then
+		for key, value in pairs(overrides) do
+			payload[key] = value
+		end
+	end
+
+	payload.serverNow = os.time()
+
+	if snapshotSuccess or not useSnapshot then
+		ProfileSnapshotService.LogSnapshot(player, context, payload)
+	end
+
+	if ProfileUpdated then
+		ProfileUpdated:FireClient(player, payload)
+	end
+
+	return payload, snapshotSuccess
 end
 
 local function CreateCollectionSummary(collection)
-	local summary = {}
-	for cardId, entry in pairs(collection) do
-		-- Handle v2 format: {count, level}
-		local count = type(entry) == "table" and entry.count or entry
-		local level = type(entry) == "table" and entry.level or 1
-		
-		table.insert(summary, {
-			cardId = cardId,
-			count = count,
-			level = level
-		})
-	end
-	return summary
+	return ProfileSnapshotService.CreateCollectionSummary(collection)
 end
 
 local function CreateLoginInfo(player)
-	local loginInfo = PlayerDataService.GetLoginInfo(player)
-	if loginInfo then
-		return {
-			lastLoginAt = loginInfo.lastLoginAt,
-			loginStreak = loginInfo.loginStreak
-		}
+	return ProfileSnapshotService.CreateLoginInfo(player)
+end
+
+local function SendErrorUpdate(player, context, code, message, options)
+	options = options or {}
+	options.context = context
+	if options.snapshot == nil then
+		options.snapshot = false
 	end
-	return nil
+	return SendProfileUpdate(player, {
+		error = {
+			code = code,
+			message = message,
+		},
+	}, options)
+end
+
+local function SendSnapshot(player, context, overrides, options)
+	options = options or {}
+	options.context = context
+	return SendProfileUpdate(player, overrides, options)
 end
 
 -- Request handlers
@@ -387,57 +446,29 @@ local function HandleRequestSetDeck(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestSetDeck")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			updatedAt = os.time()
-		})
+		SendErrorUpdate(player, "RequestSetDeck.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate request data
 	if not requestData or not requestData.deck then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing deck data"
-			},
-			updatedAt = os.time()
-		})
+		SendErrorUpdate(player, "RequestSetDeck.invalidRequest", "INVALID_REQUEST", "Missing deck data")
 		return
 	end
 	
 	-- Validate deck via PlayerDataService
-	local success, errorMessage = PlayerDataService.SetDeck(player, requestData.deck)
+	local success, setDeckError = PlayerDataService.SetDeck(player, requestData.deck)
 	
 	if success then
-		-- Get updated profile data
-		local profile = PlayerDataService.GetProfile(player)
-		local collection = PlayerDataService.GetCollection(player)
-		
-		-- Send success response
-		SendProfileUpdate(player, {
-			deck = profile.deck,
-			collectionSummary = CreateCollectionSummary(collection),
-			currencies = profile.currencies,
-			squadPower = profile.squadPower,
-			updatedAt = os.time()
+		SendSnapshot(player, "RequestSetDeck.success", nil, {
+			includeCollection = true,
 		})
 		
 		LogInfo(player, "Deck updated successfully")
 	else
-		-- Send error response
-		SendProfileUpdate(player, {
-			error = {
-				code = "DECK_UPDATE_FAILED",
-				message = errorMessage
-			},
-			updatedAt = os.time()
-		})
+		SendErrorUpdate(player, "RequestSetDeck.failure", "DECK_UPDATE_FAILED", setDeckError)
 		
-		LogWarning(player, "Deck update failed: %s", errorMessage)
+		LogWarning(player, "Deck update failed: %s", setDeckError)
 	end
 end
 
@@ -447,64 +478,27 @@ local function HandleRequestProfile(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestProfile")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			updatedAt = os.time()
-		})
+		SendErrorUpdate(player, "RequestProfile.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Get profile data via PlayerDataService (with lazy loading)
-	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	local profile, errorCode, profileErrorMessage = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
-		-- Send error response
-		SendProfileUpdate(player, {
-			error = {
-				code = errorCode or "PROFILE_LOAD_FAILED",
-				message = errorMessage or "Failed to load profile data"
-			},
-			updatedAt = os.time()
+		SendErrorUpdate(player, "RequestProfile.loadFailed", errorCode or "PROFILE_LOAD_FAILED", profileErrorMessage or "Failed to load profile data", {
+			snapshot = false,
 		})
 		
-		LogWarning(player, "Failed to load profile data: %s", errorMessage or "Unknown error")
+		LogWarning(player, "Failed to load profile data: %s", profileErrorMessage or "Unknown error")
 		return
 	end
 	
-	-- Get collection and login info
-	local collection = PlayerDataService.GetCollection(player)
-	local loginInfo = CreateLoginInfo(player)
-	
-	-- Get daily data for initial profile load
-	local dailyData = DailyService.GetDailyData(player.UserId)
-	
-	-- Prepare payload
-	local payload = {
-		deck = profile.deck,
-		collectionSummary = CreateCollectionSummary(collection),
-		loginInfo = loginInfo,
-		lootboxes = profile.lootboxes or {},
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies or { soft = 0, hard = 0 },
-		squadPower = profile.squadPower,
-		updatedAt = os.time()
-	}
-	
-	-- Include daily data if available
-	if dailyData then
-		payload.daily = {
-			streak = dailyData.streak,
-			lastLogin = dailyData.lastLogin,
-			currentDay = dailyData.currentDay,
-			isClaimed = dailyData.isClaimed,
-			rewardsConfig = dailyData.rewardsConfig
-		}
-	end
-	
-	-- Send profile snapshot (including lootboxes, currencies, and daily data)
-	SendProfileUpdate(player, payload)
+	SendSnapshot(player, "RequestProfile.success", nil, {
+		includeCollection = true,
+		includeLoginInfo = true,
+		includeDaily = true,
+		includePlaytime = true,
+	})
 	
 	LogInfo(player, "Profile sent successfully")
 end
@@ -560,60 +554,29 @@ local function HandleRequestLevelUpCard(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestLevelUpCard")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestLevelUpCard.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate request data
 	if not requestData or not requestData.cardId then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing cardId"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestLevelUpCard.invalidRequest", "INVALID_REQUEST", "Missing cardId")
 		return
 	end
 	
 	-- Execute level-up via PlayerDataService
-	local success, errorMessage = PlayerDataService.LevelUpCard(player, requestData.cardId)
+	local success, levelError = PlayerDataService.LevelUpCard(player, requestData.cardId)
 	
 	if success then
-		-- Get updated profile data
-		local profile = PlayerDataService.GetProfile(player)
-		local collection = PlayerDataService.GetCollection(player)
-		
-		-- Send success response
-		SendProfileUpdate(player, {
-			collectionSummary = CreateCollectionSummary(collection),
-			currencies = {
-				soft = profile.currencies.soft,
-				hard = profile.currencies.hard
-			},
-			squadPower = profile.squadPower,
-			updatedAt = os.time(),
-			serverNow = os.time()
+		SendSnapshot(player, "RequestLevelUpCard.success", nil, {
+			includeCollection = true,
 		})
 		
 		LogInfo(player, "Card %s leveled up successfully", requestData.cardId)
 	else
-		-- Send error response
-		SendProfileUpdate(player, {
-			error = {
-				code = "LEVEL_UP_FAILED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestLevelUpCard.failure", "LEVEL_UP_FAILED", levelError)
 		
-		LogWarning(player, "Level-up failed: %s", errorMessage)
+		LogWarning(player, "Level-up failed: %s", levelError)
 	end
 end
 
@@ -624,33 +587,20 @@ local function HandleRequestLootState(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestLootState")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestLootState.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
-	-- Get profile data
-	local profile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	-- Ensure profile is available
+	local profile, errorCode, loadError = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = errorCode or "PROFILE_LOAD_FAILED",
-				message = errorMessage or "Failed to load profile data"
-			}
+		SendErrorUpdate(player, "RequestLootState.loadFailed", errorCode or "PROFILE_LOAD_FAILED", loadError or "Failed to load profile data", {
+			snapshot = false,
 		})
 		return
 	end
 	
-	-- Send lootbox state
-	SendProfileUpdate(player, {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	})
+	SendSnapshot(player, "RequestLootState.success")
 	
 	LogInfo(player, "Loot state sent successfully")
 end
@@ -660,35 +610,20 @@ local function HandleRequestAddBox(player, requestData)
 	
 	-- Dev gating: Allow in Studio or when explicitly enabled
 	if not RunService:IsStudio() then
-		SendProfileUpdate(player, {
-			error = {
-				code = "FORBIDDEN_DEV_ONLY",
-				message = "RequestAddBox is only available in Studio for development"
-			}
-		})
+		SendErrorUpdate(player, "RequestAddBox.forbidden", "FORBIDDEN_DEV_ONLY", "RequestAddBox is only available in Studio for development")
 		return
 	end
 	
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestAddBox")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestAddBox.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.rarity then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing rarity field"
-			}
-		})
+		SendErrorUpdate(player, "RequestAddBox.invalidRequest", "INVALID_REQUEST", "Missing rarity field")
 		return
 	end
 	
@@ -696,36 +631,11 @@ local function HandleRequestAddBox(player, requestData)
 	local rarity = string.lower(tostring(requestData.rarity))
 	local result = LootboxService.TryAddBox(player.UserId, rarity, requestData.source)
 	
-	-- Get updated profile
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send response
-	local payload = {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox
-	}
-	
-	if not result.ok then
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-	end
-	
-	SendProfileUpdate(player, payload)
-	
 	if result.ok then
+		SendSnapshot(player, "RequestAddBox.success")
 		LogInfo(player, "Add box request completed successfully")
 	else
+		SendErrorUpdate(player, "RequestAddBox.failure", result.error or "INTERNAL", tostring(result.error))
 		LogWarning(player, "Add box request failed: %s", tostring(result.error))
 	end
 end
@@ -736,12 +646,7 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingDiscard")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingDiscard.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
@@ -749,34 +654,11 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	local result = LootboxService.ResolvePendingDiscard(player.UserId)
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingDiscard.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send success response with loot state
-	SendProfileUpdate(player, {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	})
+	SendSnapshot(player, "RequestResolvePendingDiscard.success")
 	
 	Logger.debug("lootboxes: op=discard userId=%s pending=true->false result=OK", tostring(player.UserId))
 	LogInfo(player, "Pending box discarded successfully")
@@ -788,34 +670,19 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingReplace")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingReplace.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing slotIndex field"
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingReplace.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
 		return
 	end
 	
 	-- Validate slot index
 	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_SLOT",
-				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingReplace.invalidSlot", "INVALID_SLOT", "Invalid slot index: " .. tostring(requestData.slotIndex))
 		return
 	end
 	
@@ -823,34 +690,11 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex)
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestResolvePendingReplace.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send success response with loot state
-	SendProfileUpdate(player, {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	})
+	SendSnapshot(player, "RequestResolvePendingReplace.success")
 	
 	Logger.debug("lootboxes: op=replace userId=%s slot=%d pending=true->false result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Pending box replaced successfully")
@@ -862,34 +706,19 @@ local function HandleRequestStartUnlock(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartUnlock")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestStartUnlock.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing slotIndex field"
-			}
-		})
+		SendErrorUpdate(player, "RequestStartUnlock.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
 		return
 	end
 	
 	-- Validate slot index
 	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_SLOT",
-				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
-			}
-		})
+		SendErrorUpdate(player, "RequestStartUnlock.invalidSlot", "INVALID_SLOT", "Invalid slot index: " .. tostring(requestData.slotIndex))
 		return
 	end
 	
@@ -897,34 +726,11 @@ local function HandleRequestStartUnlock(player, requestData)
 	local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestStartUnlock.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send success response with loot state
-	SendProfileUpdate(player, {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	})
+	SendSnapshot(player, "RequestStartUnlock.success")
 	
 	Logger.debug("lootboxes: op=start userId=%s slot=%d state=Idle->Unlocking result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Unlock started successfully")
@@ -936,34 +742,19 @@ local function HandleRequestSpeedUp(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestSpeedUp")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestSpeedUp.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing slotIndex field"
-			}
-		})
+		SendErrorUpdate(player, "RequestSpeedUp.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
 		return
 	end
 	
 	-- Validate slot index
 	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_SLOT",
-				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
-			}
-		})
+		SendErrorUpdate(player, "RequestSpeedUp.invalidSlot", "INVALID_SLOT", "Invalid slot index: " .. tostring(requestData.slotIndex))
 		return
 	end
 	
@@ -971,40 +762,20 @@ local function HandleRequestSpeedUp(player, requestData)
 	local result = LootboxService.SpeedUp(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestSpeedUp.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
+	local overrides = {}
+	if result.rewards then
+		overrides.rewards = result.rewards
 	end
 	
-	-- Send success response with loot state, currencies, rewards, and collection summary
-	local payload = {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	}
+	local payload = SendSnapshot(player, "RequestSpeedUp.success", overrides, {
+		includeCollection = result.rewards ~= nil,
+	})
 	
 	if result.rewards then
-		-- Include rewards and collection summary
-		payload.rewards = result.rewards
-		local collection = PlayerDataService.GetCollection(player)
-		payload.collectionSummary = CreateCollectionSummary(collection)
 		LogInfo(player, "SpeedUp: Sending rewards - softDelta=%d, hardDelta=%d, card=%s", 
 			result.rewards.softDelta or 0, 
 			result.rewards.hardDelta or 0,
@@ -1013,9 +784,9 @@ local function HandleRequestSpeedUp(player, requestData)
 		LogWarning(player, "SpeedUp: No rewards in result! This should not happen.")
 	end
 	
-	LogInfo(player, "SpeedUp: Lootboxes after speed-up: %d boxes", #profile.lootboxes)
-	
-	SendProfileUpdate(player, payload)
+	if payload and payload.lootboxes then
+		LogInfo(player, "SpeedUp: Lootboxes after speed-up: %d boxes", #payload.lootboxes)
+	end
 	
 	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Opened result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Speed up and open completed successfully")
@@ -1027,34 +798,19 @@ local function HandleRequestOpenNow(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestOpenNow")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestOpenNow.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing slotIndex field"
-			}
-		})
+		SendErrorUpdate(player, "RequestOpenNow.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
 		return
 	end
 	
 	-- Validate slot index
 	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_SLOT",
-				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
-			}
-		})
+		SendErrorUpdate(player, "RequestOpenNow.invalidSlot", "INVALID_SLOT", "Invalid slot index: " .. tostring(requestData.slotIndex))
 		return
 	end
 	
@@ -1062,43 +818,18 @@ local function HandleRequestOpenNow(player, requestData)
 	local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestOpenNow.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send success response with loot state and currencies
-	local payload = {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	}
-	
+	local overrides = {}
 	if result.rewards then
-		-- Include rewards and collection summary
-		payload.rewards = result.rewards
-		local collection = PlayerDataService.GetCollection(player)
-		payload.collectionSummary = CreateCollectionSummary(collection)
+		overrides.rewards = result.rewards
 	end
 	
-	SendProfileUpdate(player, payload)
+	SendSnapshot(player, "RequestOpenNow.success", overrides, {
+		includeCollection = result.rewards ~= nil,
+	})
 	
 	Logger.debug("lootboxes: op=openNow userId=%s slot=%d state=Unlocking->removed result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Box opened instantly successfully")
@@ -1110,34 +841,19 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestCompleteUnlock")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			}
-		})
+		SendErrorUpdate(player, "RequestCompleteUnlock.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing slotIndex field"
-			}
-		})
+		SendErrorUpdate(player, "RequestCompleteUnlock.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
 		return
 	end
 	
 	-- Validate slot index
 	if type(requestData.slotIndex) ~= "number" or requestData.slotIndex < 1 or requestData.slotIndex > 4 then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_SLOT",
-				message = "Invalid slot index: " .. tostring(requestData.slotIndex)
-			}
-		})
+		SendErrorUpdate(player, "RequestCompleteUnlock.invalidSlot", "INVALID_SLOT", "Invalid slot index: " .. tostring(requestData.slotIndex))
 		return
 	end
 	
@@ -1145,43 +861,18 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		-- Send error without loot state
-		SendProfileUpdate(player, {
-			error = {
-				code = result.error,
-				message = result.error
-			}
-		})
+		SendErrorUpdate(player, "RequestCompleteUnlock.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	-- Get updated profile for success case
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load updated profile"
-			}
-		})
-		return
-	end
-	
-	-- Send success response with loot state and currencies
-	local payload = {
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		currencies = profile.currencies
-	}
-	
+	local overrides = {}
 	if result.rewards then
-		-- Include rewards and collection summary
-		payload.rewards = result.rewards
-		local collection = PlayerDataService.GetCollection(player)
-		payload.collectionSummary = CreateCollectionSummary(collection)
+		overrides.rewards = result.rewards
 	end
 	
-	SendProfileUpdate(player, payload)
+	SendSnapshot(player, "RequestCompleteUnlock.success", overrides, {
+		includeCollection = result.rewards ~= nil,
+	})
 	
 	Logger.debug("lootboxes: op=complete userId=%s slot=%d state=Unlocking->removed result=OK", tostring(player.UserId), requestData.slotIndex)
 	LogInfo(player, "Unlock completed successfully")
@@ -1193,9 +884,8 @@ local function HandleRequestGetShopPacks(player, requestData)
 	
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestGetShopPacks")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = { code = "RATE_LIMITED", message = errorMessage },
-			serverNow = os.time()
+		SendErrorUpdate(player, "RequestGetShopPacks.rateLimited", "RATE_LIMITED", errorMessage, {
+			snapshot = false,
 		})
 		return
 	end
@@ -1228,18 +918,16 @@ local function HandleRequestStartPackPurchase(player, requestData)
 	
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartPackPurchase")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = { code = "RATE_LIMITED", message = errorMessage },
-			serverNow = os.time()
+		SendErrorUpdate(player, "RequestStartPackPurchase.rateLimited", "RATE_LIMITED", errorMessage, {
+			snapshot = false,
 		})
 		return
 	end
 	
 	-- Validate request
 	if not requestData or not requestData.packId then
-		SendProfileUpdate(player, {
-			error = { code = "INVALID_REQUEST", message = "Missing packId" },
-			serverNow = os.time()
+		SendErrorUpdate(player, "RequestStartPackPurchase.invalidRequest", "INVALID_REQUEST", "Missing packId", {
+			snapshot = false,
 		})
 		return
 	end
@@ -1276,37 +964,19 @@ local function HandleRequestPlaytimeData(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestPlaytimeData")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestPlaytimeData.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
-	-- Get playtime data
+	-- Ensure playtime data is available
 	local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
 	if not playtimeData then
-		SendProfileUpdate(player, {
-			error = {
-				code = "PROFILE_LOAD_FAILED",
-				message = "Failed to load playtime data"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestPlaytimeData.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load playtime data")
 		return
 	end
 	
-	-- Send playtime data
-	SendProfileUpdate(player, {
-		playtime = {
-			totalTime = playtimeData.totalTime,
-			claimedRewards = playtimeData.claimedRewards,
-			rewardsConfig = playtimeData.rewardsConfig
-		},
-		serverNow = os.time()
+	SendSnapshot(player, "RequestPlaytimeData.success", nil, {
+		includePlaytime = true,
 	})
 	
 	LogInfo(player, "Playtime data sent successfully")
@@ -1318,70 +988,35 @@ local function HandleRequestClaimPlaytimeReward(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimPlaytimeReward")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimPlaytimeReward.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate request
 	if not requestData or type(requestData.rewardIndex) ~= "number" then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing or invalid rewardIndex"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimPlaytimeReward.invalidRequest", "INVALID_REQUEST", "Missing or invalid rewardIndex")
 		return
 	end
 	
 	-- Claim reward
 	local result = PlaytimeService.ClaimPlaytimeReward(player.UserId, requestData.rewardIndex)
-	
-	-- Get updated profile
-	local profile = PlayerDataService.GetProfile(player)
-	local payload = {
-		currencies = profile and profile.currencies or {},
-		lootboxes = profile and profile.lootboxes or {},
-		pendingLootbox = profile and profile.pendingLootbox or nil,
-		serverNow = os.time()
-	}
-	
-	if result.ok then
-		-- Include rewards and collection summary if lootbox was opened
-		if result.rewards then
-			payload.rewards = result.rewards
-			local collection = PlayerDataService.GetCollection(player)
-			if collection then
-				payload.collectionSummary = CreateCollectionSummary(collection)
-			end
-		end
-		
-		-- Include updated playtime data
-		local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
-		if playtimeData then
-			payload.playtime = {
-				totalTime = playtimeData.totalTime,
-				claimedRewards = playtimeData.claimedRewards,
-				rewardsConfig = playtimeData.rewardsConfig
-			}
-		end
-		
-		LogInfo(player, "Playtime reward %d claimed successfully", requestData.rewardIndex)
-	else
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
+	if not result.ok then
+		SendErrorUpdate(player, "RequestClaimPlaytimeReward.failure", result.error or "INTERNAL", tostring(result.error))
 		LogWarning(player, "Claim playtime reward failed: %s", tostring(result.error))
+		return
 	end
 	
-	SendProfileUpdate(player, payload)
+	local overrides = {}
+	if result.rewards then
+		overrides.rewards = result.rewards
+	end
+	
+	SendSnapshot(player, "RequestClaimPlaytimeReward.success", overrides, {
+		includePlaytime = true,
+		includeCollection = result.rewards ~= nil,
+	})
+	
+	LogInfo(player, "Playtime reward %d claimed successfully", requestData.rewardIndex)
 end
 
 local function HandleRequestDailyData(player, requestData)
@@ -1390,39 +1025,19 @@ local function HandleRequestDailyData(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestDailyData")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestDailyData.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
-	-- Get daily data
+	-- Ensure daily data exists
 	local dailyData = DailyService.GetDailyData(player.UserId)
 	if not dailyData then
-		SendProfileUpdate(player, {
-			error = {
-				code = "PROFILE_LOAD_FAILED",
-				message = "Failed to load daily data"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestDailyData.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load daily data")
 		return
 	end
 	
-	-- Send daily data
-	SendProfileUpdate(player, {
-		daily = {
-			streak = dailyData.streak,
-			lastLogin = dailyData.lastLogin,
-			currentDay = dailyData.currentDay,
-			isClaimed = dailyData.isClaimed,
-			rewardsConfig = dailyData.rewardsConfig
-		},
-		serverNow = os.time()
+	SendSnapshot(player, "RequestDailyData.success", nil, {
+		includeDaily = true,
 	})
 	
 	LogInfo(player, "Daily data sent successfully")
@@ -1434,25 +1049,13 @@ local function HandleRequestClaimDailyReward(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimDailyReward")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimDailyReward.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate request
 	if not requestData or type(requestData.rewardIndex) ~= "number" then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing or invalid rewardIndex"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimDailyReward.invalidRequest", "INVALID_REQUEST", "Missing or invalid rewardIndex")
 		return
 	end
 	
@@ -1460,49 +1063,21 @@ local function HandleRequestClaimDailyReward(player, requestData)
 	local result = DailyService.ClaimDailyReward(player.UserId, requestData.rewardIndex)
 	if not result or not result.ok then
 		LogWarning(player, "Claim daily reward failed (raw result): %s", game:GetService("HttpService"):JSONEncode(result or { ok = false, error = "nil_result" }))
+		SendErrorUpdate(player, "RequestClaimDailyReward.failure", (result and result.error) or "INTERNAL", "Failed to claim daily reward")
+		return
 	end
 	
-	-- Get updated profile
-	local profile = PlayerDataService.GetProfile(player)
-	local payload = {
-		currencies = profile and profile.currencies or {},
-		lootboxes = profile and profile.lootboxes or {},
-		pendingLootbox = profile and profile.pendingLootbox or nil,
-		serverNow = os.time()
-	}
-	
-	if result.ok then
-		-- Include rewards and collection summary if lootbox was opened
-		if result.rewards then
-			payload.rewards = result.rewards
-			local collection = PlayerDataService.GetCollection(player)
-			if collection then
-				payload.collectionSummary = CreateCollectionSummary(collection)
-			end
-		end
-		
-		-- Include updated daily data
-		local dailyData = DailyService.GetDailyData(player.UserId)
-		if dailyData then
-			payload.daily = {
-				streak = dailyData.streak,
-				lastLogin = dailyData.lastLogin,
-				currentDay = dailyData.currentDay,
-				isClaimed = dailyData.isClaimed,
-				rewardsConfig = dailyData.rewardsConfig
-			}
-		end
-		
-		LogInfo(player, "Daily reward %d claimed successfully", requestData.rewardIndex)
-	else
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
-		LogWarning(player, "Claim daily reward failed: %s", tostring(result.error))
+	local overrides = {}
+	if result.rewards then
+		overrides.rewards = result.rewards
 	end
 	
-	SendProfileUpdate(player, payload)
+	SendSnapshot(player, "RequestClaimDailyReward.success", overrides, {
+		includeDaily = true,
+		includeCollection = result.rewards ~= nil,
+	})
+	
+	LogInfo(player, "Daily reward %d claimed successfully", requestData.rewardIndex)
 end
 
 local function HandleRequestClaimFollowReward(player)
@@ -1510,33 +1085,28 @@ local function HandleRequestClaimFollowReward(player)
 
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimFollowReward")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = { code = "RATE_LIMITED", message = errorMessage },
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimFollowReward.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 
 	local result = FollowRewardService.GrantFollowReward(player)
-	local payload = {
-		serverNow = os.time()
-	}
-
 	if result.ok then
-		payload.followReward = { status = "granted" }
-		payload.rewards = result.rewards
-		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
-		if updatedProfile then
-			payload.currencies = updatedProfile.currencies or {}
-			if updatedProfile.collection then
-				payload.collectionSummary = CreateCollectionSummary(updatedProfile.collection)
-			end
-		end
+		local overrides = {
+			followReward = { status = "granted" },
+			rewards = result.rewards,
+		}
+
+		SendSnapshot(player, "RequestClaimFollowReward.success", overrides, {
+			includeCollection = result.rewards ~= nil,
+		})
 
 		LogInfo(player, "Follow reward granted successfully")
 	else
 		local reason = result.reason or "INTERNAL"
-		payload.followReward = { status = reason }
+		local overrides = {
+			followReward = { status = reason },
+		}
+
 		if reason == "NOT_FOLLOWING" then
 			LogInfo(player, "Follow reward denied: player has not followed the game")
 			print("you are not followed to the game")
@@ -1545,9 +1115,9 @@ local function HandleRequestClaimFollowReward(player)
 		else
 			LogWarning(player, "Follow reward failed: %s", reason)
 		end
-	end
 
-	SendProfileUpdate(player, payload)
+		SendSnapshot(player, "RequestClaimFollowReward.failure", overrides)
+	end
 end
 
 local function HandleRequestBuyLootbox(player, requestData)
@@ -1555,50 +1125,32 @@ local function HandleRequestBuyLootbox(player, requestData)
 	
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestBuyLootbox")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = { code = "RATE_LIMITED", message = errorMessage },
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestBuyLootbox.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate request
 	if not requestData or not requestData.rarity then
-		SendProfileUpdate(player, {
-			error = { code = "INVALID_REQUEST", message = "Missing rarity" },
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestBuyLootbox.invalidRequest", "INVALID_REQUEST", "Missing rarity")
 		return
 	end
 	
 	local result = ShopService.BuyLootbox(player.UserId, requestData.rarity)
 	
-	-- Get updated profile for response
-	local profile = PlayerDataService.GetProfile(player)
-	local payload = {
-		currencies = profile and profile.currencies or {},
-		lootboxes = profile and profile.lootboxes or {},
-		pendingLootbox = profile and profile.pendingLootbox or nil,
-		serverNow = os.time()
-	}
-	
 	if result.ok then
-		-- Include rewards and collection summary for successful purchase
+		local overrides = {}
 		if result.rewards then
-			payload.rewards = result.rewards
-			local collection = PlayerDataService.GetCollection(player)
-			payload.collectionSummary = CreateCollectionSummary(collection)
+			overrides.rewards = result.rewards
 		end
+		
+		SendSnapshot(player, "RequestBuyLootbox.success", overrides, {
+			includeCollection = result.rewards ~= nil,
+		})
 		LogInfo(player, "Shop lootbox purchase successful")
 	else
-		payload.error = {
-			code = result.error,
-			message = result.error
-		}
+		SendErrorUpdate(player, "RequestBuyLootbox.failure", result.error or "INTERNAL", tostring(result.error))
 		LogWarning(player, "Shop lootbox purchase failed: %s", tostring(result.error))
 	end
-	
-	SendProfileUpdate(player, payload)
 	
 	if result.ok then
 		LogInfo(player, "Lootbox purchase successful: %s for %d hard", requestData.rarity, result.cost)
@@ -1613,148 +1165,51 @@ local function HandleRequestClaimBattleReward(player, requestData)
 	-- Rate limiting
 	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimBattleReward")
 	if not canProceed then
-		SendProfileUpdate(player, {
-			error = {
-				code = "RATE_LIMITED",
-				message = errorMessage
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimBattleReward.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
 	-- Validate payload
 	if not requestData or not requestData.rewardType then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Missing rewardType field"
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimBattleReward.invalidRequest", "INVALID_REQUEST", "Missing rewardType field")
 		return
 	end
 	
-	-- Get updated profile
-	local profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		SendProfileUpdate(player, {
-			error = {
-				code = "INTERNAL",
-				message = "Failed to load profile"
-			},
-			serverNow = os.time()
-		})
-		return
-	end
-	
-	local payload = {
-		currencies = profile.currencies,
-		lootboxes = profile.lootboxes,
-		pendingLootbox = profile.pendingLootbox,
-		serverNow = os.time()
-	}
-	
-	if requestData.rewardType == "soft" then
-		-- Grant soft currency
+	local rewardType = requestData.rewardType
+	if rewardType == "soft" then
 		local amount = requestData.amount or 0
 		if amount <= 0 then
-			SendProfileUpdate(player, {
-				error = {
-					code = "INVALID_REQUEST",
-					message = "Invalid soft currency amount"
-				},
-				serverNow = os.time()
-			})
+			SendErrorUpdate(player, "RequestClaimBattleReward.invalidSoftAmount", "INVALID_REQUEST", "Invalid soft currency amount")
 			return
 		end
 		
-		-- Use ProfileManager to add currency
 		local success, errorMsg = ProfileManager.AddCurrency(player.UserId, "soft", amount)
-		if success then
-			-- Reload profile to get updated currencies
-			profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-			if profile then
-				payload.currencies = profile.currencies
-			end
-			LogInfo(player, "Soft currency reward granted: %d", amount)
-		else
-			SendProfileUpdate(player, {
-				error = {
-					code = "INTERNAL",
-					message = errorMsg or "Failed to grant soft currency"
-				},
-				serverNow = os.time()
-			})
+		if not success then
+			SendErrorUpdate(player, "RequestClaimBattleReward.softFailure", "INTERNAL", errorMsg or "Failed to grant soft currency")
 			return
 		end
-	elseif requestData.rewardType == "lootbox" then
-		-- Grant lootbox
+		
+		LogInfo(player, "Soft currency reward granted: %d", amount)
+	elseif rewardType == "lootbox" then
 		local rarity = requestData.rarity
 		if not rarity then
-			SendProfileUpdate(player, {
-				error = {
-					code = "INVALID_REQUEST",
-					message = "Missing rarity for lootbox reward"
-				},
-				serverNow = os.time()
-			})
+			SendErrorUpdate(player, "RequestClaimBattleReward.missingRarity", "INVALID_REQUEST", "Missing rarity for lootbox reward")
 			return
 		end
 		
-		-- Check if player has free slot
-		local lootboxCount = 0
-		for i = 1, 4 do
-			if profile.lootboxes[i] then
-				lootboxCount = lootboxCount + 1
-			end
-		end
-		
-		if lootboxCount >= 4 then
-			-- No free slot - this shouldn't happen if client checked, but handle it
-			SendProfileUpdate(player, {
-				error = {
-					code = "NO_FREE_SLOT",
-					message = "No free lootbox slot available"
-				},
-				serverNow = os.time()
-			})
-			return
-		end
-		
-		-- Add lootbox using LootboxService
 		local result = LootboxService.TryAddBox(player.UserId, rarity, "battle_reward")
-		if result.ok then
-			-- Reload profile to get updated lootboxes
-			profile, _, _ = PlayerDataService.EnsureProfileLoaded(player)
-			if profile then
-				payload.lootboxes = profile.lootboxes
-				payload.pendingLootbox = profile.pendingLootbox
-			end
-			LogInfo(player, "Lootbox reward granted: %s", rarity)
-		else
-			SendProfileUpdate(player, {
-				error = {
-					code = result.error or "INTERNAL",
-					message = "Failed to grant lootbox reward"
-				},
-				serverNow = os.time()
-			})
+		if not result.ok then
+			SendErrorUpdate(player, "RequestClaimBattleReward.lootboxFailure", result.error or "INTERNAL", "Failed to grant lootbox reward")
 			return
 		end
+		
+		LogInfo(player, "Lootbox reward granted: %s", rarity)
 	else
-		SendProfileUpdate(player, {
-			error = {
-				code = "INVALID_REQUEST",
-				message = "Invalid reward type: " .. tostring(requestData.rewardType)
-			},
-			serverNow = os.time()
-		})
+		SendErrorUpdate(player, "RequestClaimBattleReward.invalidType", "INVALID_REQUEST", "Invalid reward type: " .. tostring(rewardType))
 		return
 	end
 	
-	-- Send success response
-	SendProfileUpdate(player, payload)
+	SendSnapshot(player, "RequestClaimBattleReward.success")
 	LogInfo(player, "Battle reward claimed successfully")
 end
 

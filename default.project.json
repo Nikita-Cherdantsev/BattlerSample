@@ -245,6 +245,9 @@
         "PlayerDataService": {
           "$path": "src/server/Services/PlayerDataService.lua"
         },
+        "ProfileSnapshotService": {
+          "$path": "src/server/Services/ProfileSnapshotService.lua"
+        },
         "ShopService": {
           "$path": "src/server/Services/ShopService.lua"
         },
