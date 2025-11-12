@@ -3,6 +3,13 @@
   "tree": {
     "$className": "DataModel",
 
+    "ReplicatedFirst": {
+      "$className": "ReplicatedFirst",
+      "StartLoading": {
+        "$path": "src/replicatedFirst/StartLoading.client.lua"
+      }
+    },
+
     "ReplicatedStorage": {
       "ClientModules": {  
         "$className": "Folder",
@@ -17,6 +24,9 @@
         },
         "LootboxUIHandler": {
           "$path": "src/shared/ClientModules/LootboxUIHandler.lua"
+        },
+        "LoadingScreenHandler": {
+          "$path": "src/shared/ClientModules/LoadingScreenHandler.lua"
         },
         "PlaytimeHandler": {
           "$path": "src/shared/ClientModules/PlaytimeHandler.lua"

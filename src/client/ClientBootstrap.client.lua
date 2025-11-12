@@ -6,6 +6,7 @@
 ]]
 
 -- Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
@@ -17,9 +18,11 @@ local MainController = require(Controllers:WaitForChild("MainController"))
 local function InitializeClient()
     print("🎮 Starting client initialization...")
     
-    -- Initialize MainController (this will initialize all handlers)
+    ReplicatedStorage:SetAttribute("ClientInitialized", false)
+    
     MainController:Init()
     
+    ReplicatedStorage:SetAttribute("ClientInitialized", true)
     print("🎉 Client initialization complete!")
 end
 

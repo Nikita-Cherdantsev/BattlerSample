@@ -12,6 +12,7 @@ local PlayerDataService = require(ServerScriptService:WaitForChild("Services"):W
 local MatchService = require(ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local CombatEngine = require(ServerScriptService:WaitForChild("Services"):WaitForChild("CombatEngine"))
 local RemoteEvents = require(ServerScriptService:WaitForChild("Network"):WaitForChild("RemoteEvents"))
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Runtime verification: ensure all required modules are properly loaded
 local function VerifyModuleTypes()
@@ -41,6 +42,8 @@ end
 -- Initialize the server
 local function InitializeServer()
 	print("🚀 Initializing server...")
+
+	ReplicatedStorage:SetAttribute("ServerInitialized", false)
 	
 	-- Verify all modules are the correct type
 	VerifyModuleTypes()
@@ -77,6 +80,7 @@ local function InitializeServer()
 		print("⚠️ MatchService has no Init function")
 	end
 	
+	ReplicatedStorage:SetAttribute("ServerInitialized", true)
 	print("🎉 Server initialization complete!")
 end
 

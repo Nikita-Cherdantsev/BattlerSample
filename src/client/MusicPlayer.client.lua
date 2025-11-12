@@ -7,6 +7,28 @@
 
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+-- Wait for loading screen to finish before starting music
+local function waitForLoadingScreen()
+	local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+	local playerGui = player:WaitForChild("PlayerGui")
+	local loadingScreen = playerGui:WaitForChild("LoadingScreen", 10)
+	
+	if not loadingScreen then
+		warn("MusicPlayer: LoadingScreen GUI not found; starting music immediately")
+		return
+	end
+	
+	if loadingScreen.Enabled then
+		local changedSignal = loadingScreen:GetPropertyChangedSignal("Enabled")
+		while loadingScreen.Enabled do
+			changedSignal:Wait()
+		end
+	end
+end
+
+waitForLoadingScreen()
 
 -- Wait for music folder
 local musicFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Music")
