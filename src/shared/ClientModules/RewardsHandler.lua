@@ -8,7 +8,6 @@
 --// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 
 --// Module
 local RewardsHandler = {}
@@ -226,29 +225,32 @@ function RewardsHandler:SetupProfileUpdatedHandler()
 			end)
 		end
 		
-		if not payload.error and self.isWaitingForSlot then
-			-- Check if we now have a free slot (a lootbox was opened/removed)
-			if payload.lootboxes then
-				local currentCount = #payload.lootboxes
-				local previousCount = 0
-				if self.ClientState and self.ClientState.getProfile then
-					local profile = self.ClientState:getProfile()
-					if profile and profile.lootboxes then
-						previousCount = #profile.lootboxes
-					end
+		if not payload.error and self.isWaitingForSlot and self.pendingLootboxReward then
+			local currentCount = payload.lootboxes and #payload.lootboxes or 0
+			local previousCount = 0
+			if self.ClientState and self.ClientState.getProfile then
+				local profile = self.ClientState:getProfile()
+				if profile and profile.lootboxes then
+					previousCount = #profile.lootboxes
+				end
+			end
+			
+			if currentCount < previousCount then
+				-- Slot was freed - update UI immediately
+				if self.BtnDestroy then
+					self.BtnDestroy.Visible = false
+					self.BtnDestroy.Active = false
+				end
+				if self.BtnClaim then
+					self.BtnClaim.Visible = true
+					self.BtnClaim.Active = true
+				end
+				if self.PackSelectorFrame then
+					self.PackSelectorFrame.Visible = false
 				end
 				
-				-- Slot was freed if count decreased
-				if currentCount < previousCount and self.pendingLootboxReward then
-					-- Wait for lootbox opening animation to complete (rewards will be shown automatically)
-					-- The reward lootbox will be added after animation via the lootbox handler's ProfileUpdated
-					-- So we just wait a bit and then add the pending reward
-					task.spawn(function()
-						-- Wait for opening animation to complete (~5 seconds based on LootboxUIHandler)
-						task.wait(6)
-						self:AddPendingLootboxReward()
-					end)
-				end
+				-- Grant the pending lootbox reward
+				self:AddPendingLootboxReward()
 			end
 		end
 	end)
@@ -395,7 +397,6 @@ function RewardsHandler:ShowVictoryRewardsFreeSlot()
 end
 
 function RewardsHandler:ShowVictoryRewardsNoSlot()
-	-- Show PackSelector, enable BtnDestroy, disable BtnClaim
 	if self.PackSelectorFrame then self.PackSelectorFrame.Visible = true end
 	if self.BtnClaim then
 		self.BtnClaim.Visible = false
@@ -406,13 +407,9 @@ function RewardsHandler:ShowVictoryRewardsNoSlot()
 		self.BtnDestroy.Active = true
 	end
 	
-	-- Setup PackSelector with lootboxes
 	self:SetupPackSelector()
-	
-	-- Show Rewards frame
 	self:ShowRewardsFrame()
 	
-	-- Store pending reward
 	self.isWaitingForSlot = true
 	self.pendingLootboxReward = self.currentReward
 end
@@ -459,15 +456,6 @@ function RewardsHandler:SetupPackSelector()
 	
 	if not packsContainer then
 		warn("RewardsHandler: Packs container not found in PackSelector")
-		-- Debug: print all children
-		if self.PackSelectorFrame then
-			print("RewardsHandler: PackSelectorFrame children:")
-			for _, child in pairs(self.PackSelectorFrame:GetDescendants()) do
-				if child.Name == "Pack1" or child.Name == "Pack2" or child.Name == "Pack3" or child.Name == "Pack4" then
-					print("  Found:", child.Name, "at", child:GetFullName())
-				end
-			end
-		end
 		return
 	end
 	
@@ -553,7 +541,10 @@ function RewardsHandler:OnClaimButtonClicked()
 	
 	-- Call server to grant reward
 	if self.NetworkClient.requestClaimBattleReward then
-		self.NetworkClient.requestClaimBattleReward(requestData)
+		local success = self.NetworkClient.requestClaimBattleReward(requestData)
+		if not success then
+			return
+		end
 		-- Close rewards and complete battle
 		self:CloseRewards()
 	else
@@ -601,12 +592,12 @@ function RewardsHandler:AddPendingLootboxReward()
 	self.currentReward = self.pendingLootboxReward
 	self:GrantLootboxReward()
 	
-	-- Reset state
+	-- Reset waiting state
 	self.pendingLootboxReward = nil
 	self.isWaitingForSlot = false
 	
-	-- Close rewards and complete battle
-	self:CloseRewards()
+	-- Note: UI update (hiding Destroy/PacksSelector, showing Claim) happens in SetupProfileUpdatedHandler
+	-- CloseRewards will be called only when user clicks BtnClaim
 end
 
 function RewardsHandler:ShowRewardsFrame()
@@ -626,6 +617,10 @@ function RewardsHandler:ShowRewardsFrame()
 	else
 		print("🎁 RewardsHandler: TweenUI not available, just setting visible")
 	end
+	
+	if self.Utilities and self.Utilities.Blur then
+		self.Utilities.Blur.Show()
+	end
 end
 
 function RewardsHandler:CloseRewards()
@@ -633,21 +628,36 @@ function RewardsHandler:CloseRewards()
 		return
 	end
 	
+	local function finalize()
+		self.currentReward = nil
+		self.isWaitingForSlot = false
+		self.pendingLootboxReward = nil
+		self.claimedReward = false
+	end
+	
 	-- Use TweenUI if available
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
 		self.Utilities.TweenUI.FadeOut(self.RewardsFrame, 0.3, function()
 			self.RewardsFrame.Visible = false
 			-- Reset state
-			self.currentReward = nil
-			self.isWaitingForSlot = false
-			self.pendingLootboxReward = nil
+			finalize()
 		end)
+		if self.Utilities and self.Utilities.Blur then
+			self.Utilities.Blur.Hide()
+		end
 	else
 		self.RewardsFrame.Visible = false
 		-- Reset state
-		self.currentReward = nil
-		self.isWaitingForSlot = false
-		self.pendingLootboxReward = nil
+		finalize()
+	end
+
+	if self.UI then
+		if self.UI.LeftPanel then
+			self.UI.LeftPanel.Visible = true
+		end
+		if self.UI.BottomPanel then
+			self.UI.BottomPanel.Visible = true
+		end
 	end
 end
 

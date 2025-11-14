@@ -21,7 +21,7 @@ local RATE_LIMIT = {
 	MAX_REQUESTS = 5 -- max requests per minute
 }
 
-local MAX_ROUNDS = 15 -- Maximum battle rounds
+local LOSS_SOFT_AMOUNT = 52
 
 -- Studio-only: keep the BUSY window long enough for the concurrency test
 local TEST_BUSY_DELAY_SEC = 0.75 -- was ~0.2; use 0.75s
@@ -1144,16 +1144,13 @@ function MatchService.ExecuteMatch(player, requestData)
 			LogInfo(player, "Victory reward generated: %s lootbox", rewardRarity)
 		end
 	else
-		-- Loss reward: soft currency (10-100)
-		local rewardRNG = SeededRNG.New(serverSeed + 9999)
-		local softAmount = SeededRNG.RandomInt(rewardRNG, 10, 100)
-		
+		-- Loss reward: soft currency
 		rewards = {
 			type = "soft",
-			amount = softAmount
+			amount = LOSS_SOFT_AMOUNT
 		}
 		
-		LogInfo(player, "Loss reward generated: %d soft currency", softAmount)
+		LogInfo(player, "Loss reward generated: %d soft currency", LOSS_SOFT_AMOUNT)
 	end
 	
 	-- Return success response

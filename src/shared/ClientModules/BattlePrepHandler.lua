@@ -829,7 +829,7 @@ function BattlePrepHandler:GetRarityColor(rarity)
 	return rarityColors[rarity] or Color3.fromRGB(255, 255, 255) -- White default
 end
 
-function BattlePrepHandler:CloseWindow()
+function BattlePrepHandler:CloseWindow(showHUD)
 	if self.isAnimating then return end
 	self.isAnimating = true
 
@@ -864,11 +864,13 @@ function BattlePrepHandler:CloseWindow()
 	self.currentPartName = nil
 
 	-- Show HUD panels
-	if self.UI.LeftPanel then
-		self.UI.LeftPanel.Visible = true
-	end
-	if self.UI.BottomPanel then
-		self.UI.BottomPanel.Visible = true
+	if showHUD and self.UI then
+		if self.UI.LeftPanel then
+			self.UI.LeftPanel.Visible = true
+		end
+		if self.UI.BottomPanel then
+			self.UI.BottomPanel.Visible = true
+		end
 	end
 	
 	-- Register with close button handler
@@ -1061,7 +1063,7 @@ function BattlePrepHandler:OnBattleResponse(response)
 	end
 	
 	-- Hide battle prep frame
-	self:CloseWindow()
+	self:CloseWindow(false)
 	
 	-- Get BattleHandler from controller
 	local battleHandler = self.Controller:GetBattleHandler()
@@ -1110,7 +1112,7 @@ end
 -- Close the battle prep frame (called by close button handler)
 function BattlePrepHandler:CloseFrame()
 	if self.StartBattleFrame and self.StartBattleFrame.Visible then
-		self:CloseWindow()
+		self:CloseWindow(true)
 	end
 end
 

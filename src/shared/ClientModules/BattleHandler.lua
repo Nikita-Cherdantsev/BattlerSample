@@ -45,7 +45,9 @@ function BattleHandler:Init(controller)
 		warn("BattleHandler: Could not load Utilities module: " .. tostring(utilities))
 		self.Utilities = {
 			CardCatalog = { GetCard = function() return nil end },
-			Manifest = { CardImages = {} }
+			Manifest = { CardImages = {} },
+			TweenUI = { FadeIn = function() end, FadeOut = function() end },
+			Blur = { Show = function() end, Hide = function() end }
 		}
 	end
 
@@ -257,6 +259,8 @@ function BattleHandler:ShowBattleFrame()
 	if not self.BattleFrame then
 		return
 	end
+	if self.isAnimating then return end
+	self.isAnimating = true
 	
 	self.BattleFrame.Visible = true
 	if self.SpeedUpButton then
@@ -264,8 +268,19 @@ function BattleHandler:ShowBattleFrame()
 	end
 	
 	-- Use TweenUI if available
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
-		self.Utilities.TweenUI.FadeIn(self.BattleFrame, 0.3)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
+			self.Utilities.TweenUI.FadeIn(self.BattleFrame, 0.3, function ()
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Show()
+		end
+	else
+		-- Fallback: no animation
+		self.BattleFrame.Visible = true
+		self.isAnimating = false
 	end
 end
 
@@ -273,14 +288,23 @@ function BattleHandler:HideBattleFrame()
 	if not self.BattleFrame then
 		return
 	end
+	if self.isAnimating then return end
+	self.isAnimating = true
 	
-	-- Use TweenUI if available
-	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
-		self.Utilities.TweenUI.FadeOut(self.BattleFrame, 0.3, function()
-			self.BattleFrame.Visible = false
-		end)
+	if self.Utilities then
+		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
+			self.Utilities.TweenUI.FadeOut(self.BattleFrame, .3, function () 
+				self.BattleFrame.Visible = false
+				self.isAnimating = false
+			end)
+		end
+		if self.Utilities.Blur then
+			self.Utilities.Blur.Hide()
+		end
 	else
+		-- Fallback: no animation
 		self.BattleFrame.Visible = false
+		self.isAnimating = false
 	end
 end
 
@@ -846,7 +870,7 @@ function BattleHandler:OnBattleEnd()
 	end
 	
 	-- Wait a moment then hide battle frame
-	task.wait(2)
+	task.wait(0.5)
 	self:HideBattleFrame()
 	
 	-- Show rewards if battle result is available
