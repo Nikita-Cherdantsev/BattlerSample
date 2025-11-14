@@ -470,10 +470,11 @@ function CardInfoHandler:UpdateRaritySection(cardData, rarityColors)
 	local raritySection = innerContent:FindFirstChild("Rarity")
 	if not raritySection then return end
 	
+	local rarityKey = cardData.rarity:gsub("^%l", string.upper)
+
 	-- Update rarity background color
 	local imgRarity = raritySection:FindFirstChild("ImgRarity")
 	if imgRarity then
-		local rarityKey = cardData.rarity:gsub("^%l", string.upper)
 		imgRarity.BackgroundColor3 = rarityColors[rarityKey] or Color3.new(1, 1, 1)
 	end
 	
@@ -534,6 +535,8 @@ function CardInfoHandler:UpdateParameter(paramName, currentValue, nextValue, can
 	
 	local paramSection = params:FindFirstChild(paramName)
 	if not paramSection then return end
+
+	self:SetParameterVisibility(paramName, true)
 	
 	local values = paramSection:FindFirstChild("Values")
 	if not values then return end
