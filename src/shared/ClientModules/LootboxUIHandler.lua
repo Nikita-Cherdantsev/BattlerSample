@@ -16,6 +16,7 @@ LootboxUIHandler._initialized = false
 LootboxUIHandler.currentProfile = nil
 LootboxUIHandler.lootboxPacks = {} -- Store references to Pack1, Pack2, Pack3, Pack4
 LootboxUIHandler.timerConnections = {} -- Store timer update connections
+LootboxUIHandler.isRewardClaimed = false -- True when reward has been claimed
 
 -- Configuration
 LootboxUIHandler.SPEED_UP_COST = 0 -- Hard currency cost for speed up (temporary for testing)
@@ -503,6 +504,21 @@ function LootboxUIHandler:UpdatePackStateForContainer(containerName, packIndex, 
 	local pack = containerData.packs[packIndex]
 	if not pack then return end
 	
+	-- Check if there's a free slot (for PackSelector only)
+	local hasFreeSlot = false
+	if containerName == "PackSelector" then
+		local lootboxCount = 0
+		if self.currentProfile and self.currentProfile.lootboxes then
+			lootboxCount = #self.currentProfile.lootboxes
+		elseif self.ClientState and self.ClientState.getProfile then
+			local profile = self.ClientState:getProfile()
+			if profile and profile.lootboxes then
+				lootboxCount = #profile.lootboxes
+			end
+		end
+		hasFreeSlot = lootboxCount < 4
+	end
+	
 	-- Use the original UpdatePackState logic but with the pack from the specified container
 	-- Hide all buttons and frames first
 	if pack.btnUnlock then pack.btnUnlock.Visible = false end
@@ -530,21 +546,28 @@ function LootboxUIHandler:UpdatePackStateForContainer(containerName, packIndex, 
 	end
 
 	-- Show appropriate UI based on state
+	-- Hide buttons if PackSelector has free slot OR if reward has been claimed
+	local shouldHideButtons = (containerName == "PackSelector" and (hasFreeSlot or self.isRewardClaimed))
+	
 	if state == "Idle" then
-		-- Show unlock button
-		if pack.btnUnlock then
-			pack.btnUnlock.Visible = true
-			pack.btnUnlock.Active = true
+		-- Show unlock button (unless PackSelector has free slot or reward has been claimed)
+		if not shouldHideButtons then
+			if pack.btnUnlock then
+				pack.btnUnlock.Visible = true
+				pack.btnUnlock.Active = true
+			end
 		end
 		pack.imgPack.Visible = true
 	elseif state == "Unlocking" then
-		-- Show speed up button and timer
-		if pack.btnSpeedUp then
-			pack.btnSpeedUp.Visible = true
-			pack.btnSpeedUp.Active = true
+		-- Show speed up button (unless PackSelector has free slot or reward has been claimed)
+		if not shouldHideButtons then
+			if pack.btnSpeedUp then
+				pack.btnSpeedUp.Visible = true
+				pack.btnSpeedUp.Active = true
+			end
 		end
 		if pack.timerFrame then
-			pack.timerFrame.Visible = true
+			pack.timerFrame.Visible = not shouldHideButtons
 			if containerName == "BottomPanel" then
 				self:StartTimer(packIndex, lootboxData)
 			else
@@ -560,16 +583,20 @@ function LootboxUIHandler:UpdatePackStateForContainer(containerName, packIndex, 
 			end
 		end
 	elseif state == "Ready" then
-		-- Show open button
-		if pack.btnOpen then
-			pack.btnOpen.Visible = true
-			pack.btnOpen.Active = true
+		-- Show open button (unless PackSelector has free slot or reward has been claimed)
+		if not shouldHideButtons then
+			if pack.btnOpen then
+				pack.btnOpen.Visible = true
+				pack.btnOpen.Active = true
+			end
 		end
 		pack.imgPack.Visible = true
 	elseif state == "Locked" then
 		-- Show locked frame (but keep lootbox image visible)
-		if pack.lockedFrame then
-			pack.lockedFrame.Visible = true
+		if not shouldHideButtons then
+			if pack.lockedFrame then
+				pack.lockedFrame.Visible = true
+			end
 		end
 		pack.imgPack.Visible = true
 	elseif state == "Empty" then

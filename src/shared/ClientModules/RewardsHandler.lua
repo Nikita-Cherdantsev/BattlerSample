@@ -18,10 +18,7 @@ RewardsHandler._initialized = false
 RewardsHandler.currentReward = nil -- {type = "soft" | "lootbox", amount = number, rarity = string (for lootbox)}
 RewardsHandler.isWaitingForSlot = false -- True when waiting for player to free up a slot
 RewardsHandler.pendingLootboxReward = nil -- Stores lootbox reward when no slots available
-
---// Constants
-local SOFT_CURRENCY_MIN = 10
-local SOFT_CURRENCY_MAX = 100
+RewardsHandler.pendingClaimUpdate = false -- True when waiting for ProfileUpdated after claiming reward
 
 --// Initialization
 function RewardsHandler:Init(controller)
@@ -183,6 +180,12 @@ function RewardsHandler:SetupRewardsUI()
 	-- Find PackSelector frame
 	self.PackSelectorFrame = self.RewardsFrame:FindFirstChild("PacksSelector")
 	
+	-- Find PackSelector text elements
+	if self.PackSelectorFrame then
+		self.TxtDescription = self.PackSelectorFrame:FindFirstChild("TxtDescription")
+		self.TxtOr = self.PackSelectorFrame:FindFirstChild("TxtOr")
+	end
+	
 	-- Setup button handlers
 	self:SetupButtonHandlers()
 	
@@ -222,35 +225,107 @@ function RewardsHandler:SetupProfileUpdatedHandler()
 				if self.LootboxHandler.UpdateLootboxStates then
 					self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
 				end
+				-- Update text visibility after state update
+				self:UpdatePackSelectorTextVisibility()
 			end)
 		end
 		
-		if not payload.error and self.isWaitingForSlot and self.pendingLootboxReward then
-			local currentCount = payload.lootboxes and #payload.lootboxes or 0
-			local previousCount = 0
-			if self.ClientState and self.ClientState.getProfile then
-				local profile = self.ClientState:getProfile()
-				if profile and profile.lootboxes then
-					previousCount = #profile.lootboxes
+		if not payload.error then
+			-- Handle pending claim update - wait for panel update, then close
+			if self.pendingClaimUpdate then
+				self.pendingClaimUpdate = false
+				
+				-- Check if this is a victory (lootbox reward) or loss (soft reward)
+				local isVictory = self.currentReward and self.currentReward.type == "lootbox"
+				
+				-- Update PackSelectorFrame to show the new lootbox (only for victory)
+				if isVictory and self.PackSelectorFrame and self.PackSelectorFrame.Visible and self.LootboxHandler then
+					-- Victory case: update panel and wait before closing
+					task.spawn(function()
+						-- Wait a bit for the update to complete
+						task.wait(0.1)
+						if self.LootboxHandler.UpdateLootboxStates then
+							self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
+						end
+						
+						-- Update text visibility after state update
+						self:UpdatePackSelectorTextVisibility()
+						
+						-- Wait a bit more so user can see the update
+						task.wait(0.8)
+						
+						-- Close rewards window
+						self:CloseRewards()
+					end)
+				else
+					-- Loss case: close immediately without delay
+					self:CloseRewards()
 				end
+				return
 			end
 			
-			if currentCount < previousCount then
-				-- Slot was freed - update UI immediately
-				if self.BtnDestroy then
-					self.BtnDestroy.Visible = false
-					self.BtnDestroy.Active = false
-				end
-				if self.BtnClaim then
-					self.BtnClaim.Visible = true
-					self.BtnClaim.Active = true
-				end
-				if self.PackSelectorFrame then
-					self.PackSelectorFrame.Visible = false
+			-- Check if a lootbox was opened (has rewards)
+			if payload.rewards and self.isWaitingForSlot and self.pendingLootboxReward then
+				-- A lootbox was opened successfully - show Claim button and update panel
+				task.spawn(function()
+					-- Show Claim button, hide Destroy button
+					if self.BtnDestroy then
+						self.BtnDestroy.Visible = false
+						self.BtnDestroy.Active = false
+					end
+					if self.BtnClaim then
+						self.BtnClaim.Visible = true
+						self.BtnClaim.Active = true
+					end
+					
+					-- Update PackSelectorFrame to reflect the opened slot
+					if self.LootboxHandler and self.LootboxHandler.UpdateLootboxStates then
+						self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
+					end
+					
+					-- Update text visibility after slot was freed
+					self:UpdatePackSelectorTextVisibility()
+					
+					-- Set currentReward so it can be claimed when user clicks Claim
+					-- Don't automatically grant the reward - wait for user to click Claim
+					self.currentReward = self.pendingLootboxReward
+					-- Keep isWaitingForSlot true until user clicks Claim
+				end)
+			elseif self.isWaitingForSlot and self.pendingLootboxReward then
+				-- Check if slot was freed (lootbox count decreased)
+				local currentCount = payload.lootboxes and #payload.lootboxes or 0
+				local previousCount = 0
+				if self.ClientState and self.ClientState.getProfile then
+					local profile = self.ClientState:getProfile()
+					if profile and profile.lootboxes then
+						previousCount = #profile.lootboxes
+					end
 				end
 				
-				-- Grant the pending lootbox reward
-				self:AddPendingLootboxReward()
+				if currentCount < previousCount then
+					-- Slot was freed - show Claim button and update panel
+					if self.BtnDestroy then
+						self.BtnDestroy.Visible = false
+						self.BtnDestroy.Active = false
+					end
+					if self.BtnClaim then
+						self.BtnClaim.Visible = true
+						self.BtnClaim.Active = true
+					end
+					
+					-- Update PackSelectorFrame
+					if self.LootboxHandler and self.LootboxHandler.UpdateLootboxStates then
+						self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
+					end
+					
+					-- Update text visibility after slot was freed
+					self:UpdatePackSelectorTextVisibility()
+					
+					-- Set currentReward so it can be claimed when user clicks Claim
+					-- Don't automatically grant the reward - wait for user to click Claim
+					self.currentReward = self.pendingLootboxReward
+					-- Keep isWaitingForSlot true until user clicks Claim
+				end
 			end
 		end
 	end)
@@ -371,18 +446,19 @@ function RewardsHandler:ShowVictoryRewards(battleResult)
 		self.VictoryTxtValue.Text = "1"
 	end
 	
+	-- Always show PackSelectorFrame, but configure buttons based on slot availability
 	if hasFreeSlot then
-		-- Player has free slot - simple claim
+		-- Player has free slot - show PackSelectorFrame with Claim button
 		self:ShowVictoryRewardsFreeSlot()
 	else
-		-- Player has no free slots - show pack selector
+		-- Player has no free slots - show PackSelectorFrame with Destroy button
 		self:ShowVictoryRewardsNoSlot()
 	end
 end
 
 function RewardsHandler:ShowVictoryRewardsFreeSlot()
-	-- Hide PackSelector, enable BtnClaim, disable BtnDestroy
-	if self.PackSelectorFrame then self.PackSelectorFrame.Visible = false end
+	-- Show PackSelectorFrame, enable BtnClaim, disable BtnDestroy
+	if self.PackSelectorFrame then self.PackSelectorFrame.Visible = true end
 	if self.BtnClaim then
 		self.BtnClaim.Visible = true
 		self.BtnClaim.Active = true
@@ -391,6 +467,12 @@ function RewardsHandler:ShowVictoryRewardsFreeSlot()
 		self.BtnDestroy.Visible = false
 		self.BtnDestroy.Active = false
 	end
+	
+	-- Setup PackSelector if not already set up
+	self:SetupPackSelector()
+	
+	-- Update text visibility (hide texts when there's a free slot)
+	self:UpdatePackSelectorTextVisibility()
 	
 	-- Show Rewards frame
 	self:ShowRewardsFrame()
@@ -408,6 +490,10 @@ function RewardsHandler:ShowVictoryRewardsNoSlot()
 	end
 	
 	self:SetupPackSelector()
+	
+	-- Update text visibility (show texts when there's no free slot)
+	self:UpdatePackSelectorTextVisibility()
+	
 	self:ShowRewardsFrame()
 	
 	self.isWaitingForSlot = true
@@ -521,9 +607,32 @@ function RewardsHandler:OnClaimButtonClicked()
 		return
 	end
 	
+	-- Prevent multiple clicks
+	if self.pendingClaimUpdate then
+		return
+	end
+	
+	-- Hide Claim button immediately to prevent repeated clicks
+	if self.BtnClaim then
+		self.BtnClaim.Visible = false
+	end
+	
+	-- Set flag in LootboxUIHandler that reward has been claimed
+	if self.LootboxHandler then
+		self.LootboxHandler.isRewardClaimed = true
+	end
+	
 	-- Request server to grant reward
 	if not self.NetworkClient then
 		warn("RewardsHandler: NetworkClient not available")
+		-- Reset flag on error
+		if self.LootboxHandler then
+			self.LootboxHandler.isRewardClaimed = false
+		end
+		-- Show button again on error
+		if self.BtnClaim then
+			self.BtnClaim.Visible = true
+		end
 		return
 	end
 	
@@ -536,6 +645,14 @@ function RewardsHandler:OnClaimButtonClicked()
 		requestData.rarity = self.currentReward.rarity
 	else
 		warn("RewardsHandler: Unknown reward type:", self.currentReward.type)
+		-- Reset flag on error
+		if self.LootboxHandler then
+			self.LootboxHandler.isRewardClaimed = false
+		end
+		-- Show button again on error
+		if self.BtnClaim then
+			self.BtnClaim.Visible = true
+		end
 		return
 	end
 	
@@ -543,12 +660,36 @@ function RewardsHandler:OnClaimButtonClicked()
 	if self.NetworkClient.requestClaimBattleReward then
 		local success = self.NetworkClient.requestClaimBattleReward(requestData)
 		if not success then
+			-- Reset flag on error
+			if self.LootboxHandler then
+				self.LootboxHandler.isRewardClaimed = false
+			end
+			-- Show button again on error
+			if self.BtnClaim then
+				self.BtnClaim.Visible = true
+			end
 			return
 		end
-		-- Close rewards and complete battle
-		self:CloseRewards()
+		
+		-- Reset waiting state when claiming
+		if self.isWaitingForSlot then
+			self.isWaitingForSlot = false
+			self.pendingLootboxReward = nil
+		end
+		
+		-- Set flag to wait for ProfileUpdated event
+		-- The ProfileUpdated handler will update the panel and close the window
+		self.pendingClaimUpdate = true
 	else
 		warn("RewardsHandler: NetworkClient.requestClaimBattleReward not available")
+		-- Reset flag on error
+		if self.LootboxHandler then
+			self.LootboxHandler.isRewardClaimed = false
+		end
+		-- Show button again on error
+		if self.BtnClaim then
+			self.BtnClaim.Visible = true
+		end
 	end
 end
 
@@ -632,7 +773,12 @@ function RewardsHandler:CloseRewards()
 		self.currentReward = nil
 		self.isWaitingForSlot = false
 		self.pendingLootboxReward = nil
+		self.pendingClaimUpdate = false
 		self.claimedReward = false
+		-- Clear flag in LootboxUIHandler that reward has been claimed
+		if self.LootboxHandler then
+			self.LootboxHandler.isRewardClaimed = false
+		end
 	end
 	
 	-- Use TweenUI if available
@@ -658,6 +804,49 @@ function RewardsHandler:CloseRewards()
 		if self.UI.BottomPanel then
 			self.UI.BottomPanel.Visible = true
 		end
+	end
+end
+
+function RewardsHandler:UpdatePackSelectorTextVisibility()
+	if not self.PackSelectorFrame or not self.PackSelectorFrame.Visible then
+		return
+	end
+	
+	-- Check if there's a free slot and count free slots
+	local hasFreeSlot = false
+	local freeSlotCount = 0
+	local profile = self.ClientState:getProfile()
+	if profile and profile.lootboxes then
+		local lootboxCount = #profile.lootboxes
+		hasFreeSlot = lootboxCount < 4
+		freeSlotCount = 4 - lootboxCount
+	end
+	
+	-- Check if reward has been claimed
+	local isRewardClaimed = false
+	if self.LootboxHandler then
+		isRewardClaimed = self.LootboxHandler.isRewardClaimed or false
+	end
+	
+	-- Hide texts if there's a free slot OR if reward has been claimed
+	-- Show texts only if no free slots AND reward hasn't been claimed
+	local shouldHideTexts = hasFreeSlot or isRewardClaimed
+	
+	-- Update TxtDescription text instead of hiding it
+	if self.TxtDescription then
+		if shouldHideTexts then
+			-- Show free slots count when there are free slots or reward is claimed
+			self.TxtDescription.Text = "Free slots available: " .. tostring(freeSlotCount)
+		else
+			-- Show instruction text when no free slots and reward not claimed
+			self.TxtDescription.Text = "Speed up or open any pack to claim a reward:"
+		end
+		self.TxtDescription.Visible = true -- Always visible, just text changes
+	end
+	
+	-- Hide TxtOr if there's a free slot OR if reward has been claimed
+	if self.TxtOr then
+		self.TxtOr.Visible = not shouldHideTexts
 	end
 end
 
