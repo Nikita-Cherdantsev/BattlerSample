@@ -29,6 +29,10 @@ ShopService.ErrorCodes = {
 -- Receipt ledger to prevent double-crediting
 local processedReceipts = {}
 
+-- Regional prices (per player, fetched once on join)
+-- Format: regionalPrices[userId] = { packId -> price }
+local regionalPrices = {}
+
 local function generateReceiptKey(receiptInfo)
 	if receiptInfo.PurchaseId and receiptInfo.PurchaseId ~= "" then
 		return receiptInfo.PurchaseId
@@ -127,15 +131,70 @@ function ShopService.ProcessReceipt(receiptInfo)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
--- Get shop packs for client
-function ShopService.GetShopPacks()
+-- Fetch regional prices for all packs (async, called once per player session)
+function ShopService.FetchRegionalPricesForPlayer(player)
+	if not player then
+		return
+	end
+	
+	local userId = player.UserId
+	
+	-- Check if already fetched
+	if regionalPrices[userId] then
+		return -- Already fetched, no need to fetch again
+	end
+	
+	-- Fetch product info for all packs (async, non-blocking)
+	task.spawn(function()
+		local prices = {}
+		local allPacks = ShopPacksCatalog.AllPacks()
+		
+		for _, pack in ipairs(allPacks) do
+			if pack.devProductId then
+				local success, productInfo = pcall(function()
+					return MarketplaceService:GetProductInfo(pack.devProductId, Enum.InfoType.Product)
+				end)
+				
+				if success and productInfo then
+					-- Use PriceInRobux if available (regional pricing)
+					-- Fall back to hardcoded price if not available
+					prices[pack.id] = productInfo.PriceInRobux or pack.robuxPrice
+				else
+					-- Fall back to hardcoded price on error
+					prices[pack.id] = pack.robuxPrice
+				end
+			else
+				-- No product ID, use hardcoded price
+				prices[pack.id] = pack.robuxPrice
+			end
+		end
+		
+		-- Store prices for this player
+		regionalPrices[userId] = prices
+		
+		Logger.info("Fetched regional prices for player %d", userId)
+	end)
+end
+
+-- Get shop packs for client (with regional pricing)
+function ShopService.GetShopPacks(player)
 	local packs = {}
+	
+	-- Get stored regional prices (fetched once when player joined)
+	local playerPrices = player and regionalPrices[player.UserId] or nil
+	
 	for _, pack in pairs(ShopPacksCatalog.Packs) do
+		-- Use regional price if available, otherwise fall back to hardcoded price
+		local price = pack.robuxPrice
+		if playerPrices and playerPrices[pack.id] then
+			price = playerPrices[pack.id]
+		end
+		
 		table.insert(packs, {
 			id = pack.id,
 			hardAmount = pack.hardAmount,
 			additionalHard = pack.additionalHard or 0,
-			robuxPrice = pack.robuxPrice,
+			robuxPrice = price, -- Regional price or fallback
 			hasDevProductId = pack.devProductId ~= nil
 		})
 	end
@@ -220,10 +279,20 @@ function ShopService.BuyLootbox(playerId, rarity)
 	return { ok = true, cost = cost, rewards = openResult.rewards }
 end
 
+-- Clean up regional prices when player leaves
+local function onPlayerRemoving(player)
+	if player then
+		regionalPrices[player.UserId] = nil
+	end
+end
+
 -- Initialize MarketplaceService receipt processing
 function ShopService.Initialize()
 	MarketplaceService.ProcessReceipt = ShopService.ProcessReceipt
 	Logger.info("ShopService initialized with MarketplaceService.ProcessReceipt")
+	
+	-- Clean up price cache when players leave
+	Players.PlayerRemoving:Connect(onPlayerRemoving)
 	
 	-- Check for live product IDs and warn if none found
 	local hasLiveProducts = ShopPacksCatalog.hasLiveProductIds()

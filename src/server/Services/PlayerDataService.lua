@@ -166,6 +166,12 @@ local function OnPlayerAdded(player)
 	-- Start autosave
 	StartAutosave(player)
 	
+	-- Fetch regional prices for shop (async, non-blocking)
+	local ShopService = require(script.Parent.ShopService)
+	if ShopService and ShopService.FetchRegionalPricesForPlayer then
+		ShopService.FetchRegionalPricesForPlayer(player)
+	end
+	
 	local stats = ProfileManager.GetProfileStats(player.UserId)
 	LogInfo(player, "Profile loaded successfully. Collection: %d unique cards, Deck: %d cards", 
 		stats and stats.uniqueCards or 0, profile and #profile.deck or 0)

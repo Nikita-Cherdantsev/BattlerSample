@@ -890,7 +890,7 @@ local function HandleRequestGetShopPacks(player, requestData)
 		return
 	end
 	
-	local result = ShopService.GetShopPacks()
+	local result = ShopService.GetShopPacks(player)
 	
 	local payload = {
 		shopPacks = result.packs,
