@@ -298,6 +298,8 @@ function BattleHandler:HideBattleFrame()
 			self.Utilities.TweenUI.FadeOut(self.BattleFrame, .3, function () 
 				self.BattleFrame.Visible = false
 				self.isAnimating = false
+				-- Note: Don't clear currentBattle here - it will be cleared when rewards window closes
+				-- This ensures battle data is available for rewards display
 			end)
 		end
 		if self.Utilities.Blur then
@@ -307,6 +309,7 @@ function BattleHandler:HideBattleFrame()
 		-- Fallback: no animation
 		self.BattleFrame.Visible = false
 		self.isAnimating = false
+		-- Note: Don't clear currentBattle here - it will be cleared when rewards window closes
 	end
 end
 
@@ -666,11 +669,6 @@ function BattleHandler:AnimateAttack(logEntry, round, onComplete)
 	local defenderKO = logEntry.k
 	local defenceReduced = logEntry.dr
 	
-	-- Debug: Log attack info
-	warn(string.format("AnimateAttack: %s slot %d → %s slot %d, health: %s", 
-		attackerPlayer, attackerSlot, defenderPlayer, defenderSlot, 
-		defenderHealth and tostring(defenderHealth) or "nil"))
-	
 	-- Get attacker and defender card frames
 	local attackerFrame = self:GetCardFrame(attackerPlayer, attackerSlot)
 	local defenderFrame = self:GetCardFrame(defenderPlayer, defenderSlot)
@@ -838,14 +836,6 @@ function BattleHandler:UpdateCardHealth(cardFrame, actualHealth, player, slot)
 				if txtValue then
 					-- Always update the text to ensure it's visible
 					txtValue.Text = tostring(newHealth)
-					
-					-- Debug: Log health update with player/slot info
-					local identifier = (player and slot) and string.format("%s slot %d", player, slot) or "unknown"
-					if oldHealth ~= newHealth then
-						warn(string.format("Health updated: %d → %d (%s)", oldHealth, newHealth, identifier))
-					else
-						warn(string.format("Health check: %d (no change, %s)", newHealth, identifier))
-					end
 				else
 					warn("BattleHandler: TxtValue not found in health frame")
 				end

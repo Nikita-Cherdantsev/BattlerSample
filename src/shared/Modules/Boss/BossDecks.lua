@@ -14,11 +14,11 @@ local BossDecks = {}
 BossDecks["1"] = {
 	["easy"] = {
 		deck = {
-			"card_600", -- Uncommon
-			"card_700", -- Uncommon
-			"card_1100" -- Uncommon
+			"card_700",
+			"card_1100",
+			"card_1300"
 		},
-		levels = { 1, 1, 1 }, -- All level 1 for easy
+		levels = { 1, 1, 1 },
 		reward = {
 			type = "lootbox",
 			rarity = "onepiece",
@@ -27,12 +27,12 @@ BossDecks["1"] = {
 	},
 	["normal"] = {
 		deck = {
-			"card_500", -- Rare
-			"card_600", -- Uncommon
-			"card_700", -- Uncommon
-			"card_900" -- Rare
+			"card_500",
+			"card_700",
+			"card_1100",
+			"card_1300"
 		},
-		levels = { 2, 1, 1, 2 }, -- Mix of levels
+		levels = { 1, 3, 3, 3 },
 		reward = {
 			type = "lootbox",
 			rarity = "onepiece",
@@ -41,13 +41,14 @@ BossDecks["1"] = {
 	},
 	["hard"] = {
 		deck = {
-			"card_300", -- Epic
-			"card_400", -- Epic
-			"card_500", -- Rare
-			"card_900", -- Rare
-			"card_1200" -- Epic
+			"card_100",
+			"card_200",
+			"card_500",
+			"card_700",
+			"card_1100",
+			"card_1300"
 		},
-		levels = { 3, 3, 2, 2, 3 },
+		levels = { 1, 1, 5, 10, 10, 10 },
 		reward = {
 			type = "lootbox",
 			rarity = "onepiece",
@@ -56,14 +57,14 @@ BossDecks["1"] = {
 	},
 	["nightmare"] = {
 		deck = {
-			"card_100", -- Legendary
-			"card_200", -- Legendary
-			"card_300", -- Epic
-			"card_400", -- Epic
-			"card_800", -- Legendary
-			"card_1000" -- Legendary
+			"card_100",
+			"card_200",
+			"card_500",
+			"card_700",
+			"card_1100",
+			"card_1300"
 		},
-		levels = { 5, 5, 4, 4, 5, 5 },
+		levels = { 3, 3, 7, 10, 10, 10 },
 		reward = {
 			type = "lootbox",
 			rarity = "onepiece",
@@ -72,14 +73,14 @@ BossDecks["1"] = {
 	},
 	["hell"] = {
 		deck = {
-			"card_100", -- Legendary
-			"card_200", -- Legendary
-			"card_800", -- Legendary
-			"card_1000", -- Legendary
-			"card_300", -- Epic
-			"card_1200" -- Epic
+			"card_100",
+			"card_200",
+			"card_500",
+			"card_700",
+			"card_1100",
+			"card_1300"
 		},
-		levels = { 10, 10, 10, 10, 8, 8 }, -- Max levels for hell difficulty
+		levels = { 5, 5, 10, 10, 10, 10 },
 		reward = {
 			type = "lootbox",
 			rarity = "onepiece",

@@ -858,12 +858,44 @@ function BattlePrepHandler:CloseWindow(showHUD)
 	-- If prep window is closed without starting battle, the deck will persist
 	-- until next battle or server restart (this is acceptable for simplicity)
 
+	-- Helper function to clear battle active flag (called after animation completes)
+	local function clearBattleActiveFlag()
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler then
+			-- Check if a battle is actually running (currentBattle exists)
+			local hasActiveBattle = battleHandler.currentBattle ~= nil
+			
+			-- Also check if battle frame is visible (indicates battle UI is showing)
+			local battleFrameVisible = battleHandler.BattleFrame and battleHandler.BattleFrame.Visible or false
+			
+			-- Check if rewards window is open
+			local rewardsHandler = self.Controller and self.Controller:GetRewardsHandler()
+			local rewardsFrameVisible = false
+			if rewardsHandler and rewardsHandler.RewardsFrame then
+				rewardsFrameVisible = rewardsHandler.RewardsFrame.Visible or false
+			end
+			
+			-- If no battle is running and no battle UI is showing, clear the flag
+			-- (When a battle starts, currentBattle will be set, so we won't clear it then)
+			if not hasActiveBattle and not battleFrameVisible and not rewardsFrameVisible then
+				-- No active battle or battle UI, safe to clear flag
+				battleHandler.isBattleActive = false
+				-- Also ensure currentBattle is nil (defensive cleanup)
+				if battleHandler.currentBattle ~= nil then
+					battleHandler.currentBattle = nil
+				end
+			end
+		end
+	end
+	
 	-- Hide battle prep gui
 	if self.Utilities then
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
 			self.Utilities.TweenUI.FadeOut(self.StartBattleFrame, .3, function () 
 				self.StartBattleFrame.Visible = false
 				self.isAnimating = false
+				-- Clear battle active flag after animation completes
+				clearBattleActiveFlag()
 			end)
 		end
 		if self.Utilities.Blur then
@@ -873,6 +905,8 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		-- Fallback: no animation
 		self.StartBattleFrame.Visible = false
 		self.isAnimating = false
+		-- Clear battle active flag immediately for fallback case
+		clearBattleActiveFlag()
 	end
 	
 	if self.TxtDifficultyLabel then
@@ -889,14 +923,6 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		if self.UI.BottomPanel then
 			self.UI.BottomPanel.Visible = true
 		end
-	end
-	
-	-- Clear battle active flag if battle wasn't started (window closed without starting)
-	-- If battle was started, flag will be cleared when rewards window closes
-	local battleHandler = self.Controller and self.Controller:GetBattleHandler()
-	if battleHandler and not battleHandler.currentBattle then
-		-- No active battle, safe to clear flag
-		battleHandler.isBattleActive = false
 	end
 	
 	-- Register with close button handler

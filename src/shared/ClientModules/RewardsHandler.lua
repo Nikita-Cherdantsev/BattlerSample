@@ -780,10 +780,11 @@ function RewardsHandler:CloseRewards()
 			self.LootboxHandler.isRewardClaimed = false
 		end
 
-		-- Clear battle active flag now that battle is fully complete
+		-- Clear battle active flag and current battle now that battle is fully complete
 		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
 		if battleHandler then
 			battleHandler.isBattleActive = false
+			battleHandler.currentBattle = nil -- Clear battle data since battle is fully complete
 		end
 	end
 	

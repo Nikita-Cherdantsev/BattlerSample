@@ -384,13 +384,19 @@ function ProfileSchema.CreateProfile(playerId)
 		["card_1800"] = { count = 1, level = 1 }
 	}
 	
+	-- Starter deck: add the starter cards to the deck
+	local starterDeck = {
+		"card_600",
+		"card_1800"
+	}
+	
 	local profile = {
 		playerId = tostring(playerId),
 		createdAt = now,
 		lastLoginAt = now,
 		loginStreak = 0,
 		collection = starterCollection,
-		deck = {},  -- Empty deck - player will build their own
+		deck = starterDeck,  -- Starter deck with card_600 and card_1800
 		currencies = {
 			soft = 100,  -- Starting soft currency
 			hard = 150   -- Starting hard currency
