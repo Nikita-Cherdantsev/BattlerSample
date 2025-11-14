@@ -233,11 +233,11 @@ Types.LootboxState.Idle, Types.LootboxState.Unlocking, Types.LootboxState.Ready
 Maps error codes to user-facing messages:
 
 ```lua
-local userMessage = ErrorMap.toUserMessage("RATE_LIMITED")
--- Returns: { title = "Too Many Requests", message = "Please wait a moment before trying again." }
+local userMessage = ErrorMap.toUserMessage("INVALID_REQUEST")
+-- Returns: { title = "Invalid Request", message = "The request format is not valid." }
 
 -- Available error codes:
--- RATE_LIMITED, INVALID_REQUEST, DECK_UPDATE_FAILED, PROFILE_LOAD_FAILED
+-- INVALID_REQUEST, DECK_UPDATE_FAILED, PROFILE_LOAD_FAILED
 -- NO_DECK, INVALID_DECK, BUSY, INTERNAL, CARD_NOT_FOUND, INSUFFICIENT_CARDS
 -- LOOTBOX_NOT_FOUND, LOOTBOX_ALREADY_OPENING
 ```
@@ -634,7 +634,6 @@ The following error codes can be returned from level-up requests:
 | `LEVEL_MAXED` | Card already at max level | "Card is already at maximum level" |
 | `INSUFFICIENT_COPIES` | Not enough card copies | "Need X more copies" |
 | `INSUFFICIENT_SOFT` | Not enough soft currency | "Need X more soft currency" |
-| `RATE_LIMITED` | Too many requests | "Please wait before trying again" |
 | `INTERNAL` | Server error | "An error occurred, please try again" |
 
 Use ErrorMap to convert codes to user-friendly messages:

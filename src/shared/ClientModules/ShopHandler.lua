@@ -533,8 +533,7 @@ function ShopHandler:SetupProfileUpdatedHandler()
 
 				button.BackgroundTransparency = 0.25
 				local messages = {
-					[ "INSUFFICIENT_HARD" ] = "Not enough coins...",
-					[ "RATE_LIMITED" ] = "Too many requests, please wait!"
+					[ "INSUFFICIENT_HARD" ] = "Not enough coins..."
 				}
 				button.Text = messages[ payload.error.code ] or payload.error.code
 

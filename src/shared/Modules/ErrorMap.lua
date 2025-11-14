@@ -9,12 +9,6 @@ local ErrorMap = {}
 
 -- Error code to user message mapping
 local ERROR_MESSAGES = {
-	-- Rate limiting
-	RATE_LIMITED = {
-		title = "Too Many Requests",
-		message = "Please wait a moment before trying again."
-	},
-	
 	-- Request validation
 	INVALID_REQUEST = {
 		title = "Invalid Request",

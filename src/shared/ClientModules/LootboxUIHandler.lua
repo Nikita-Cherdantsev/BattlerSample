@@ -17,6 +17,7 @@ LootboxUIHandler.currentProfile = nil
 LootboxUIHandler.lootboxPacks = {} -- Store references to Pack1, Pack2, Pack3, Pack4
 LootboxUIHandler.timerConnections = {} -- Store timer update connections
 LootboxUIHandler.isRewardClaimed = false -- True when reward has been claimed
+LootboxUIHandler._pendingRequests = {} -- Track pending requests per slot to prevent duplicate clicks
 
 -- Configuration
 LootboxUIHandler.SPEED_UP_COST = 0 -- Hard currency cost for speed up (temporary for testing)
@@ -324,16 +325,29 @@ function LootboxUIHandler:OnUnlockButtonClicked(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
+	-- Prevent duplicate requests (concurrency guard)
+	if self._pendingRequests[pack.slotIndex] then
+		return -- Request already in progress for this slot
+	end
+	
 	-- Check current lootbox state before attempting unlock
 	local currentLootbox = self.currentProfile and self.currentProfile.lootboxes and self.currentProfile.lootboxes[pack.slotIndex]
 	if not currentLootbox or currentLootbox.state ~= "Idle" then
 		return -- Can only unlock Idle lootboxes
 	end
 	
+	-- Mark request as pending
+	self._pendingRequests[pack.slotIndex] = true
+	
 	-- Request unlock from server
 	if NetworkClient and NetworkClient.requestStartUnlock then
 		NetworkClient.requestStartUnlock(pack.slotIndex)
 	end
+	
+	-- Clear pending flag after a short delay (request should complete quickly)
+	task.delay(1, function()
+		self._pendingRequests[pack.slotIndex] = nil
+	end)
 end
 
 function LootboxUIHandler:OnOpenButtonClicked(packIndex)
@@ -455,6 +469,11 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 				)
 
 				if hasLootbox then
+					-- Clear pending request flag if lootbox state changed (request completed)
+					if self._pendingRequests[slotIndex] and lootbox.state ~= "Idle" then
+						self._pendingRequests[slotIndex] = nil
+					end
+					
 					-- This slot has a real lootbox
 					if lootbox.state == "Unlocking" then
 						-- Check if timer has completed

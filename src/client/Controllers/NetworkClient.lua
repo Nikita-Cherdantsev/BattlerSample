@@ -44,24 +44,6 @@ local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward"
 
 -- State
 local lastServerNow = 0
-local lastProfileRequest = 0
-local lastSetDeckRequest = 0
-local lastLevelUpRequest = 0
-local lastLootStateRequest = 0
-local lastAddBoxRequest = 0
-local lastResolvePendingDiscardRequest = 0
-local lastResolvePendingReplaceRequest = 0
-local lastStartUnlockRequest = 0
-local lastOpenNowRequest = 0
-local lastCompleteUnlockRequest = 0
-local lastGetShopPacksRequest = 0
-local lastStartPackPurchaseRequest = 0
-local lastBuyLootboxRequest = 0
-local lastPlaytimeDataRequest = 0
-local lastClaimPlaytimeRewardRequest = 0
-local lastDailyDataRequest = 0
-local lastClaimDailyRewardRequest = 0
-local DEBOUNCE_MS = 300
 
 -- Utility functions
 local function log(message, ...)
@@ -69,24 +51,10 @@ local function log(message, ...)
 	-- print(string.format("[NetworkClient] %s", string.format(message, ...)))
 end
 
-local function debounce(lastRequestTime)
-	local now = tick() * 1000
-	if now - lastRequestTime < DEBOUNCE_MS then
-		return true
-	end
-	return false
-end
-
 -- Public API
 
 -- Request profile from server
 function NetworkClient.requestProfile()
-	if debounce(lastProfileRequest) then
-		log("Debouncing profile request")
-		return
-	end
-	
-	lastProfileRequest = tick() * 1000
 	log("Requesting profile")
 	RequestProfile:FireServer({})
 end
@@ -97,12 +65,6 @@ function NetworkClient.requestSetDeck(deckIds)
 		return false, "Invalid deck: must have between 0 and 6 cards"
 	end
 	
-	if debounce(lastSetDeckRequest) then
-		log("Debouncing deck update request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastSetDeckRequest = tick() * 1000
 	log("Requesting deck update: %s", table.concat(deckIds, ", "))
 	RequestSetDeck:FireServer({deck = deckIds})
 	
@@ -148,12 +110,6 @@ function NetworkClient.requestLevelUpCard(cardId)
 		return false, "Invalid card ID"
 	end
 	
-	if debounce(lastLevelUpRequest) then
-		log("Debouncing level-up request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastLevelUpRequest = tick() * 1000
 	log("Requesting level-up for card: %s", cardId)
 	RequestLevelUpCard:FireServer({cardId = cardId})
 	
@@ -222,12 +178,6 @@ end
 
 -- Request loot state from server
 function NetworkClient.requestLootState()
-	if debounce(lastLootStateRequest) then
-		log("Debouncing loot state request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastLootStateRequest = tick() * 1000
 	log("Requesting loot state")
 	RequestLootState:FireServer({})
 	
@@ -240,12 +190,6 @@ function NetworkClient.requestAddBox(rarity, source)
 		return false, "Invalid rarity"
 	end
 	
-	if debounce(lastAddBoxRequest) then
-		log("Debouncing add box request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastAddBoxRequest = tick() * 1000
 	log("Requesting add box: %s", rarity)
 	RequestAddBox:FireServer({rarity = rarity, source = source})
 	
@@ -254,12 +198,6 @@ end
 
 -- Request resolve pending discard
 function NetworkClient.requestResolvePendingDiscard()
-	if debounce(lastResolvePendingDiscardRequest) then
-		log("Debouncing resolve pending discard request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastResolvePendingDiscardRequest = tick() * 1000
 	log("Requesting resolve pending discard")
 	RequestResolvePendingDiscard:FireServer({})
 	
@@ -272,12 +210,6 @@ function NetworkClient.requestResolvePendingReplace(slotIndex)
 		return false, "Invalid slot index"
 	end
 	
-	if debounce(lastResolvePendingReplaceRequest) then
-		log("Debouncing resolve pending replace request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastResolvePendingReplaceRequest = tick() * 1000
 	log("Requesting resolve pending replace: slot %d", slotIndex)
 	RequestResolvePendingReplace:FireServer({slotIndex = slotIndex})
 	
@@ -290,12 +222,6 @@ function NetworkClient.requestStartUnlock(slotIndex)
 		return false, "Invalid slot index"
 	end
 	
-	if debounce(lastStartUnlockRequest) then
-		log("Debouncing start unlock request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastStartUnlockRequest = tick() * 1000
 	log("Requesting start unlock: slot %d", slotIndex)
 	RequestStartUnlock:FireServer({slotIndex = slotIndex})
 	
@@ -307,13 +233,6 @@ function NetworkClient.requestSpeedUp(slotIndex)
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return false, "Invalid slot index"
 	end
-	
-	if debounce(lastOpenNowRequest) then
-		log("Debouncing speed up request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastOpenNowRequest = os.time()
 	
 	log("Requesting speed up: slot %d", slotIndex)
 	RequestSpeedUp:FireServer({slotIndex = slotIndex})
@@ -327,12 +246,6 @@ function NetworkClient.requestOpenNow(slotIndex)
 		return false, "Invalid slot index"
 	end
 	
-	if debounce(lastOpenNowRequest) then
-		log("Debouncing open now request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastOpenNowRequest = tick() * 1000
 	log("Requesting open now: slot %d", slotIndex)
 	RequestOpenNow:FireServer({slotIndex = slotIndex})
 	
@@ -357,12 +270,6 @@ function NetworkClient.requestCompleteUnlock(slotIndex)
 		return false, "Invalid slot index"
 	end
 	
-	if debounce(lastCompleteUnlockRequest) then
-		log("Debouncing complete unlock request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastCompleteUnlockRequest = tick() * 1000
 	log("Requesting complete unlock: slot %d", slotIndex)
 	RequestCompleteUnlock:FireServer({slotIndex = slotIndex})
 	
@@ -371,12 +278,6 @@ end
 
 -- Shop methods
 function NetworkClient.requestGetShopPacks()
-	if debounce(lastGetShopPacksRequest) then
-		log("Debouncing get shop packs request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastGetShopPacksRequest = tick() * 1000
 	log("Requesting shop packs")
 	RequestGetShopPacks:FireServer({})
 	
@@ -388,12 +289,6 @@ function NetworkClient.requestStartPackPurchase(packId)
 		return false, "Invalid pack ID"
 	end
 	
-	if debounce(lastStartPackPurchaseRequest) then
-		log("Debouncing start pack purchase request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastStartPackPurchaseRequest = tick() * 1000
 	log("Requesting start pack purchase: %s", packId)
 	RequestStartPackPurchase:FireServer({packId = packId})
 	
@@ -405,12 +300,6 @@ function NetworkClient.requestBuyLootbox(rarity)
 		return false, "Invalid rarity"
 	end
 	
-	if debounce(lastBuyLootboxRequest) then
-		log("Debouncing buy lootbox request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastBuyLootboxRequest = tick() * 1000
 	log("Requesting buy lootbox: %s", rarity)
 	RequestBuyLootbox:FireServer({rarity = rarity})
 	
@@ -419,12 +308,6 @@ end
 
 -- Playtime methods
 function NetworkClient.requestPlaytimeData()
-	if debounce(lastPlaytimeDataRequest) then
-		log("Debouncing playtime data request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastPlaytimeDataRequest = tick() * 1000
 	log("Requesting playtime data")
 	RequestPlaytimeData:FireServer({})
 	
@@ -436,12 +319,6 @@ function NetworkClient.requestClaimPlaytimeReward(rewardIndex)
 		return false, "Invalid reward index"
 	end
 	
-	if debounce(lastClaimPlaytimeRewardRequest) then
-		log("Debouncing claim playtime reward request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastClaimPlaytimeRewardRequest = tick() * 1000
 	log("Requesting claim playtime reward: %d", rewardIndex)
 	RequestClaimPlaytimeReward:FireServer({rewardIndex = rewardIndex})
 	
@@ -450,12 +327,6 @@ end
 
 -- Daily methods
 function NetworkClient.requestDailyData()
-	if debounce(lastDailyDataRequest) then
-		log("Debouncing daily data request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastDailyDataRequest = tick() * 1000
 	log("Requesting daily data")
 	RequestDailyData:FireServer({})
 	
@@ -467,40 +338,15 @@ function NetworkClient.requestClaimDailyReward(rewardIndex)
 		return false, "Invalid reward index"
 	end
 	
-	if debounce(lastClaimDailyRewardRequest) then
-		log("Debouncing claim daily reward request")
-		return false, "Request too frequent, please wait"
-	end
-	
-	lastClaimDailyRewardRequest = tick() * 1000
 	log("Requesting claim daily reward: %d", rewardIndex)
 	RequestClaimDailyReward:FireServer({rewardIndex = rewardIndex})
 	
 	return true
 end
 
--- Check if any request is currently in flight
+-- Check if any request is currently in flight (always returns false now - no rate limiting)
 function NetworkClient.isBusy()
-	local now = tick() * 1000
-	local recentThreshold = DEBOUNCE_MS * 2  -- Consider busy if request was made within 2x debounce time
-	
-	return (now - lastProfileRequest < recentThreshold) or
-		   (now - lastSetDeckRequest < recentThreshold) or
-		   (now - lastLevelUpRequest < recentThreshold) or
-		   (now - lastLootStateRequest < recentThreshold) or
-		   (now - lastAddBoxRequest < recentThreshold) or
-		   (now - lastResolvePendingDiscardRequest < recentThreshold) or
-		   (now - lastResolvePendingReplaceRequest < recentThreshold) or
-		   (now - lastStartUnlockRequest < recentThreshold) or
-		   (now - lastOpenNowRequest < recentThreshold) or
-		   (now - lastCompleteUnlockRequest < recentThreshold) or
-		   (now - lastGetShopPacksRequest < recentThreshold) or
-		   (now - lastStartPackPurchaseRequest < recentThreshold) or
-		   (now - lastBuyLootboxRequest < recentThreshold) or
-		   (now - lastPlaytimeDataRequest < recentThreshold) or
-		   (now - lastClaimPlaytimeRewardRequest < recentThreshold) or
-		   (now - lastDailyDataRequest < recentThreshold) or
-		   (now - lastClaimDailyRewardRequest < recentThreshold)
+	return false
 end
 
 -- Reinitialize NetworkClient (for mock toggle)
@@ -509,23 +355,6 @@ function NetworkClient.reinitialize()
 	
 	-- Reset state
 	lastServerNow = 0
-	lastProfileRequest = 0
-	lastSetDeckRequest = 0
-	lastLevelUpRequest = 0
-	lastLootStateRequest = 0
-	lastAddBoxRequest = 0
-	lastResolvePendingDiscardRequest = 0
-	lastResolvePendingReplaceRequest = 0
-	lastStartUnlockRequest = 0
-	lastOpenNowRequest = 0
-	lastCompleteUnlockRequest = 0
-	lastGetShopPacksRequest = 0
-	lastStartPackPurchaseRequest = 0
-	lastBuyLootboxRequest = 0
-	lastPlaytimeDataRequest = 0
-	lastClaimPlaytimeRewardRequest = 0
-	lastDailyDataRequest = 0
-	lastClaimDailyRewardRequest = 0
 	
 	log("NetworkClient reinitialized")
 end

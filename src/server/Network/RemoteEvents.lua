@@ -44,112 +44,6 @@ local RequestClaimFollowReward = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
 
--- Rate limiting configuration (explicit, module-scoped)
-local RATE_LIMITS = {
-	RequestSetDeck = {
-		cooldownSec = 2,
-		maxPerMinute = 5
-	},
-	RequestProfile = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestStartMatch = {
-		cooldownSec = 1,
-		maxPerMinute = 5
-	},
-	RequestLevelUpCard = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	OpenLootbox = {
-		cooldownSec = 2,
-		maxPerMinute = 5
-	},
-	RequestLootState = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestAddBox = {
-		cooldownSec = 1,
-		maxPerMinute = 5
-	},
-	RequestResolvePendingDiscard = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestResolvePendingReplace = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestStartUnlock = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestSpeedUp = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestOpenNow = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestCompleteUnlock = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestGetShopPacks = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestStartPackPurchase = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestBuyLootbox = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestClearLoot = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestPlaytimeData = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestClaimPlaytimeReward = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestDailyData = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestClaimDailyReward = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	},
-	RequestClaimFollowReward = {
-		cooldownSec = 1,
-		maxPerMinute = 5
-	},
-	RequestClaimBattleReward = {
-		cooldownSec = 1,
-		maxPerMinute = 10
-	}
-}
-
--- Safe default configuration for missing entries
-local DEFAULT_RATE_LIMIT = {
-	cooldownSec = 1,
-	maxPerMinute = 5
-}
-
--- Rate limiting state (module-scoped)
-local playerRateLimits = {} -- player -> rate limit data
-local rateLimitWarnings = {} -- track warnings to avoid spam
-
 -- Utility functions
 local function LogInfo(player, message, ...)
 	local playerName = player and player.Name or "Unknown"
@@ -169,181 +63,6 @@ local function LogError(player, message, ...)
 	error(string.format("[RemoteEvents] %s: %s", playerName, formattedMessage))
 end
 
-local function InitializeRateLimit(player)
-	if not playerRateLimits[player] then
-		playerRateLimits[player] = {
-			RequestSetDeck = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestProfile = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestStartMatch = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestLevelUpCard = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			OpenLootbox = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestLootState = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestAddBox = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestResolvePendingDiscard = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestResolvePendingReplace = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestStartUnlock = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestSpeedUp = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestOpenNow = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestCompleteUnlock = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestGetShopPacks = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestStartPackPurchase = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestBuyLootbox = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestPlaytimeData = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestClaimPlaytimeReward = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestDailyData = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestClaimDailyReward = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestClaimFollowReward = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			},
-			RequestClaimBattleReward = {
-				lastRequest = 0,
-				requestCount = 0,
-				resetTime = os.time() + 60
-			}
-		}
-	end
-end
-
-local function CheckRateLimit(player, requestType)
-	InitializeRateLimit(player)
-	
-	-- Ensure the specific request type is initialized (for new request types added later)
-	if not playerRateLimits[player][requestType] then
-		playerRateLimits[player][requestType] = {
-			lastRequest = 0,
-			requestCount = 0,
-			resetTime = os.time() + 60
-		}
-	end
-	
-	local rateLimit = playerRateLimits[player][requestType]
-	
-	-- Get configuration with safe fallback
-	local config = RATE_LIMITS[requestType]
-	if not config then
-		-- Log warning once per request type
-		if not rateLimitWarnings[requestType] then
-			LogWarning(nil, "No rate limit config for '%s', using defaults", requestType)
-			rateLimitWarnings[requestType] = true
-		end
-		config = DEFAULT_RATE_LIMIT
-	end
-	
-	local now = os.time()
-	
-	-- Guard against nil timestamps
-	if not rateLimit.lastRequest then
-		rateLimit.lastRequest = 0
-	end
-	
-	-- Reset counter if minute has passed
-	if now >= rateLimit.resetTime then
-		rateLimit.requestCount = 0
-		rateLimit.resetTime = now + 60
-	end
-	
-	-- Check cooldown
-	if now - rateLimit.lastRequest < config.cooldownSec then
-		return false, "Request too frequent, please wait"
-	end
-	
-	-- Check request count limit
-	if rateLimit.requestCount >= config.maxPerMinute then
-		return false, "Too many requests, please wait"
-	end
-	
-	-- Update rate limit state
-	rateLimit.lastRequest = now
-	rateLimit.requestCount = rateLimit.requestCount + 1
-	
-	return true
-end
-
-local function CleanupRateLimit(player)
-	playerRateLimits[player] = nil
-end
 
 local function SendProfileUpdate(player, overrides, options)
 	options = options or {}
@@ -443,13 +162,6 @@ end
 local function HandleRequestSetDeck(player, requestData)
 	LogInfo(player, "Processing deck update request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestSetDeck")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestSetDeck.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Validate request data
 	if not requestData or not requestData.deck then
 		SendErrorUpdate(player, "RequestSetDeck.invalidRequest", "INVALID_REQUEST", "Missing deck data")
@@ -475,13 +187,6 @@ end
 local function HandleRequestProfile(player, requestData)
 	LogInfo(player, "Processing profile request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestProfile")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestProfile.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Get profile data via PlayerDataService (with lazy loading)
 	local profile, errorCode, profileErrorMessage = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
@@ -505,22 +210,6 @@ end
 
 local function HandleRequestStartMatch(player, requestData)
 	LogInfo(player, "Processing match request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartMatch")
-	if not canProceed then
-		if RequestStartMatch then
-			RequestStartMatch:FireClient(player, {
-				ok = false,
-				error = {
-					code = "RATE_LIMITED",
-					message = errorMessage
-				},
-				serverNow = os.time()
-			})
-		end
-		return
-	end
 	
 	-- Extract seed, variant, and partName from request data (optional)
 	local matchRequestData = {
@@ -551,13 +240,6 @@ end
 local function HandleRequestLevelUpCard(player, requestData)
 	LogInfo(player, "Processing level-up request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestLevelUpCard")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestLevelUpCard.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Validate request data
 	if not requestData or not requestData.cardId then
 		SendErrorUpdate(player, "RequestLevelUpCard.invalidRequest", "INVALID_REQUEST", "Missing cardId")
@@ -584,13 +266,6 @@ end
 local function HandleRequestLootState(player, requestData)
 	LogInfo(player, "Processing loot state request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestLootState")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestLootState.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Ensure profile is available
 	local profile, errorCode, loadError = PlayerDataService.EnsureProfileLoaded(player)
 	if not profile then
@@ -611,13 +286,6 @@ local function HandleRequestAddBox(player, requestData)
 	-- Dev gating: Allow in Studio or when explicitly enabled
 	if not RunService:IsStudio() then
 		SendErrorUpdate(player, "RequestAddBox.forbidden", "FORBIDDEN_DEV_ONLY", "RequestAddBox is only available in Studio for development")
-		return
-	end
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestAddBox")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestAddBox.rateLimited", "RATE_LIMITED", errorMessage)
 		return
 	end
 	
@@ -643,13 +311,6 @@ end
 local function HandleRequestResolvePendingDiscard(player, requestData)
 	LogInfo(player, "Processing resolve pending discard request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingDiscard")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestResolvePendingDiscard.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Call LootboxService
 	local result = LootboxService.ResolvePendingDiscard(player.UserId)
 	
@@ -666,13 +327,6 @@ end
 
 local function HandleRequestResolvePendingReplace(player, requestData)
 	LogInfo(player, "Processing resolve pending replace request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestResolvePendingReplace")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestResolvePendingReplace.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
@@ -703,13 +357,6 @@ end
 local function HandleRequestStartUnlock(player, requestData)
 	LogInfo(player, "Processing start unlock request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartUnlock")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestStartUnlock.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
 		SendErrorUpdate(player, "RequestStartUnlock.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
@@ -738,13 +385,6 @@ end
 
 local function HandleRequestSpeedUp(player, requestData)
 	LogInfo(player, "Processing speed up request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestSpeedUp")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestSpeedUp.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
@@ -795,13 +435,6 @@ end
 local function HandleRequestOpenNow(player, requestData)
 	LogInfo(player, "Processing open now request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestOpenNow")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestOpenNow.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
 		SendErrorUpdate(player, "RequestOpenNow.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
@@ -837,13 +470,6 @@ end
 
 local function HandleRequestCompleteUnlock(player, requestData)
 	LogInfo(player, "Processing complete unlock request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestCompleteUnlock")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestCompleteUnlock.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
@@ -882,14 +508,6 @@ end
 local function HandleRequestGetShopPacks(player, requestData)
 	LogInfo(player, "Processing get shop packs request")
 	
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestGetShopPacks")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestGetShopPacks.rateLimited", "RATE_LIMITED", errorMessage, {
-			snapshot = false,
-		})
-		return
-	end
-	
 	local result = ShopService.GetShopPacks(player)
 	
 	local payload = {
@@ -915,14 +533,6 @@ end
 
 local function HandleRequestStartPackPurchase(player, requestData)
 	LogInfo(player, "Processing start pack purchase request")
-	
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestStartPackPurchase")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestStartPackPurchase.rateLimited", "RATE_LIMITED", errorMessage, {
-			snapshot = false,
-		})
-		return
-	end
 	
 	-- Validate request
 	if not requestData or not requestData.packId then
@@ -961,13 +571,6 @@ end
 local function HandleRequestPlaytimeData(player, requestData)
 	LogInfo(player, "Processing playtime data request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestPlaytimeData")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestPlaytimeData.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Ensure playtime data is available
 	local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
 	if not playtimeData then
@@ -984,13 +587,6 @@ end
 
 local function HandleRequestClaimPlaytimeReward(player, requestData)
 	LogInfo(player, "Processing claim playtime reward request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimPlaytimeReward")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestClaimPlaytimeReward.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate request
 	if not requestData or type(requestData.rewardIndex) ~= "number" then
@@ -1022,13 +618,6 @@ end
 local function HandleRequestDailyData(player, requestData)
 	LogInfo(player, "Processing daily data request")
 	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestDailyData")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestDailyData.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Ensure daily data exists
 	local dailyData = DailyService.GetDailyData(player.UserId)
 	if not dailyData then
@@ -1045,13 +634,6 @@ end
 
 local function HandleRequestClaimDailyReward(player, requestData)
 	LogInfo(player, "Processing claim daily reward request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimDailyReward")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestClaimDailyReward.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate request
 	if not requestData or type(requestData.rewardIndex) ~= "number" then
@@ -1082,12 +664,6 @@ end
 
 local function HandleRequestClaimFollowReward(player)
 	LogInfo(player, "Processing follow reward request")
-
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimFollowReward")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestClaimFollowReward.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 
 	local result = FollowRewardService.GrantFollowReward(player)
 	if result.ok then
@@ -1123,12 +699,6 @@ end
 local function HandleRequestBuyLootbox(player, requestData)
 	LogInfo(player, "Processing buy lootbox request")
 	
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestBuyLootbox")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestBuyLootbox.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
-	
 	-- Validate request
 	if not requestData or not requestData.rarity then
 		SendErrorUpdate(player, "RequestBuyLootbox.invalidRequest", "INVALID_REQUEST", "Missing rarity")
@@ -1161,13 +731,6 @@ end
 
 local function HandleRequestClaimBattleReward(player, requestData)
 	LogInfo(player, "Processing claim battle reward request")
-	
-	-- Rate limiting
-	local canProceed, errorMessage = CheckRateLimit(player, "RequestClaimBattleReward")
-	if not canProceed then
-		SendErrorUpdate(player, "RequestClaimBattleReward.rateLimited", "RATE_LIMITED", errorMessage)
-		return
-	end
 	
 	-- Validate payload
 	if not requestData or not requestData.rewardType then
@@ -1353,45 +916,6 @@ function RemoteEvents.Init()
 	RequestClaimBattleReward.Name = "RequestClaimBattleReward"
 	RequestClaimBattleReward.Parent = NetworkFolder
 	
-	-- Validate rate limit configuration
-	local function ValidateRateLimitConfig()
-		print("🔒 Rate Limiter Configuration:")
-		local remoteEvents = {
-			{name = "RequestSetDeck", instance = RequestSetDeck},
-			{name = "RequestProfile", instance = RequestProfile},
-			{name = "RequestStartMatch", instance = RequestStartMatch},
-			{name = "RequestLevelUpCard", instance = RequestLevelUpCard},
-			{name = "OpenLootbox", instance = OpenLootbox},
-			{name = "RequestLootState", instance = RequestLootState},
-			{name = "RequestAddBox", instance = RequestAddBox},
-			{name = "RequestResolvePendingDiscard", instance = RequestResolvePendingDiscard},
-			{name = "RequestResolvePendingReplace", instance = RequestResolvePendingReplace},
-			{name = "RequestStartUnlock", instance = RequestStartUnlock},
-			{name = "RequestOpenNow", instance = RequestOpenNow},
-			{name = "RequestCompleteUnlock", instance = RequestCompleteUnlock},
-			{name = "RequestGetShopPacks", instance = RequestGetShopPacks},
-			{name = "RequestStartPackPurchase", instance = RequestStartPackPurchase},
-			{name = "RequestBuyLootbox", instance = RequestBuyLootbox},
-			{name = "RequestPlaytimeData", instance = RequestPlaytimeData},
-			{name = "RequestClaimPlaytimeReward", instance = RequestClaimPlaytimeReward},
-			{name = "RequestDailyData", instance = RequestDailyData},
-			{name = "RequestClaimDailyReward", instance = RequestClaimDailyReward},
-			{name = "RequestClaimFollowReward", instance = RequestClaimFollowReward},
-			{name = "RequestClaimBattleReward", instance = RequestClaimBattleReward}
-		}
-		
-		for _, event in ipairs(remoteEvents) do
-			local config = RATE_LIMITS[event.name]
-			if config then
-				print(string.format("  ✅ %s: %ds cooldown, %d/min", 
-					event.name, config.cooldownSec, config.maxPerMinute))
-			else
-				warn(string.format("  ⚠️ %s: No config (using defaults)", event.name))
-			end
-		end
-	end
-	
-	ValidateRateLimitConfig()
 	
 	-- Connect RemoteEvents to handlers
 	RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
@@ -1431,7 +955,7 @@ function RemoteEvents.Init()
 	
 	-- Player cleanup
 	Players.PlayerRemoving:Connect(function(player)
-		CleanupRateLimit(player)
+		-- Cleanup handled by individual services
 	end)
 	
 	-- Initialize ShopService
@@ -1517,22 +1041,6 @@ function RemoteEvents.SendProfileUpdate(player, payload)
 	SendProfileUpdate(player, payload)
 end
 
-function RemoteEvents.GetRateLimitStatus(player)
-	if not playerRateLimits[player] then
-		return nil
-	end
-	
-	local status = {}
-	for requestType, data in pairs(playerRateLimits[player]) do
-		status[requestType] = {
-			lastRequest = data.lastRequest,
-			requestCount = data.requestCount,
-			resetTime = data.resetTime
-		}
-	end
-	
-	return status
-end
 
 return RemoteEvents
 

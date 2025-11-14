@@ -1024,7 +1024,7 @@ function BattlePrepHandler:SetupStartButton()
 end
 
 function BattlePrepHandler:OnStartButtonClicked()
-	-- Prevent multiple clicks (debounce)
+	-- Prevent duplicate battle requests (concurrency guard)
 	if self._isRequestingBattle then
 		warn("BattlePrepHandler: Battle request already in progress")
 		return

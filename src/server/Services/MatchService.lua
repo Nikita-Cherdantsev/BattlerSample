@@ -16,10 +16,6 @@ local BossDecks = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitFor
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 
 -- Configuration
-local RATE_LIMIT = {
-	COOLDOWN = 1, -- seconds between match requests
-	MAX_REQUESTS = 5 -- max requests per minute
-}
 
 local LOSS_SOFT_AMOUNT = 52
 
@@ -39,10 +35,10 @@ end
 local IS_DEV_MODE = RunService:IsStudio()
 
 -- Test mode tracking (Studio-only)
-local testModeUsers = {} -- Set of userIds in test mode (bypasses rate limits)
+local testModeUsers = {} -- Set of userIds in test mode (for test delays)
 
 -- Match state tracking
-local playerMatchState = {} -- player -> { lastRequest, requestCount, resetTime, isInMatch }
+local playerMatchState = {} -- player -> { isInMatch }
 local matchCounter = 0 -- For generating unique match IDs
 
 -- NPC deck storage: player -> partName -> { deck, levels, seed }
@@ -207,9 +203,6 @@ end
 local function InitializePlayerState(player)
 	if not playerMatchState[player] then
 		playerMatchState[player] = {
-			lastRequest = 0,
-			requestCount = 0,
-			resetTime = os.time() + 60,
 			isInMatch = false
 		}
 	end
@@ -240,42 +233,17 @@ local function TestDelay(seconds)
 	task.wait(seconds or 0.1)
 end
 
-local function CheckRateLimit(player)
+-- Check if player can start a match (concurrency guard only)
+local function CheckCanStartMatch(player)
 	InitializePlayerState(player)
 	local state = playerMatchState[player]
-	local now = os.time()
 	
 	-- Check if player is already in a match (concurrency guard)
 	if state.isInMatch then
 		return false, "BUSY", "Player already in match"
 	end
 	
-	-- Skip rate limiting for test mode users
-	if testModeUsers[player.UserId] then
-		-- Still set isInMatch to prevent concurrent matches
-		state.isInMatch = true
-		return true
-	end
-	
-	-- Reset counter if minute has passed
-	if now >= state.resetTime then
-		state.requestCount = 0
-		state.resetTime = now + 60
-	end
-	
-	-- Check cooldown
-	if now - state.lastRequest < RATE_LIMIT.COOLDOWN then
-		return false, "RATE_LIMITED", "Request too frequent, please wait"
-	end
-	
-	-- Check request count limit
-	if state.requestCount >= RATE_LIMIT.MAX_REQUESTS then
-		return false, "RATE_LIMITED", "Too many requests, please wait"
-	end
-	
-	-- Update rate limit state
-	state.lastRequest = now
-	state.requestCount = state.requestCount + 1
+	-- Set isInMatch to prevent concurrent matches
 	state.isInMatch = true
 	
 	return true
@@ -798,8 +766,8 @@ end
 function MatchService.ExecuteMatch(player, requestData)
 	LogInfo(player, "Processing match request")
 	
-	-- Rate limiting and concurrency check
-	local canProceed, errorCode, errorMessage = CheckRateLimit(player)
+	-- Concurrency check (prevent multiple simultaneous battles)
+	local canProceed, errorCode, errorMessage = CheckCanStartMatch(player)
 	if not canProceed then
 		LogWarning(player, "Match request rejected: %s", errorMessage)
 		return {
@@ -1171,16 +1139,12 @@ end
 function MatchService.GetPlayerStatus(player)
 	if not playerMatchState[player] then
 		return {
-			isInMatch = false,
-			lastRequest = 0,
-			requestCount = 0
+			isInMatch = false
 		}
 	end
 	
 	return {
-		isInMatch = playerMatchState[player].isInMatch,
-		lastRequest = playerMatchState[player].lastRequest,
-		requestCount = playerMatchState[player].requestCount
+		isInMatch = playerMatchState[player].isInMatch
 	}
 end
 

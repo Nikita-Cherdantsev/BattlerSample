@@ -449,15 +449,6 @@ LootboxService.OpenNow(userId, slotIndex, serverNow)
 }
 ```
 
-**Rate Limits:**
-- `RequestLootState`: 1s cooldown, 10/min
-- `RequestAddBox`: 1s cooldown, 5/min  
-- `RequestResolvePending*`: 1s cooldown, 10/min
-- `RequestStartUnlock/CompleteUnlock/OpenNow`: 1s cooldown, 10/min
-- `RequestGetShopPacks`: 1s cooldown, 10/min
-- `RequestStartPackPurchase`: 1s cooldown, 10/min
-- `RequestBuyLootbox`: 1s cooldown, 10/min
-
 **Array Compaction:** After `CompleteUnlock` or `OpenNow`, slots are removed and array is packed (no `Consumed` state kept).
 
 **Testing:**
@@ -621,26 +612,7 @@ ProfileUpdated with hard currency credit
 }
 ```
 
-### Rate Limiting & Guards
-
-**Per-Endpoint Limits:**
-- **RequestSetDeck**: 2s cooldown, 5/minute
-- **RequestProfile**: 1s cooldown, 10/minute  
-- **RequestStartMatch**: 1s cooldown, 5/minute
-- **RequestLevelUpCard**: 1s cooldown, 10/minute
-- **RequestLootState**: 1s cooldown, 10/minute
-- **RequestAddBox**: 1s cooldown, 5/minute
-- **RequestResolvePendingDiscard**: 1s cooldown, 10/minute
-- **RequestResolvePendingReplace**: 1s cooldown, 10/minute
-- **RequestStartUnlock**: 1s cooldown, 10/minute
-- **RequestOpenNow**: 1s cooldown, 10/minute
-- **RequestCompleteUnlock**: 1s cooldown, 10/minute
-- **RequestGetShopPacks**: 1s cooldown, 10/minute
-- **RequestStartPackPurchase**: 1s cooldown, 10/minute
-- **RequestBuyLootbox**: 1s cooldown, 10/minute
-- **OpenLootbox**: 2s cooldown, 5/minute (legacy)
-
-**Concurrency Guards:**
+### Concurrency Guards
 - **Per-Player State**: `isInMatch` flag prevents overlapping matches
 - **Studio Testing**: Extended busy window (0.75s) for deterministic testing
 
@@ -648,7 +620,6 @@ ProfileUpdated with hard currency credit
 
 | Code | Meaning |
 |------|---------|
-| `RATE_LIMITED` | Request frequency exceeded |
 | `INVALID_REQUEST` | Malformed request payload |
 | `DECK_UPDATE_FAILED` | Deck validation failed |
 | `PROFILE_LOAD_FAILED` | Profile data corruption |
@@ -1158,9 +1129,9 @@ Client UI  ──(RemoteEvents)──► Server Services ──► Persistence (
 
 **Match response** (успех/ошибка) — тоже с `serverNow`; лог боя — компактный.&#x20;
 
-**Рейт-лимиты и конкуренция:** token-bucket и флаг «занят» на игрока (например, при матчах) уже описаны и реализованы.&#x20;
+**Конкуренция:** флаг «занят» на игрока (например, при матчах) уже описан и реализован.&#x20;
 
-**Коды ошибок** (канонический набор в документации): `RATE_LIMITED`, `INVALID_REQUEST`, `DECK_UPDATE_FAILED`, `PROFILE_LOAD_FAILED`, `NO_DECK`, `INVALID_DECK`, `BUSY`, `INTERNAL`, + клиентский ErrorMap покрывает и карточные/моковые варианты. &#x20;
+**Коды ошибок** (канонический набор в документации): `INVALID_REQUEST`, `DECK_UPDATE_FAILED`, `PROFILE_LOAD_FAILED`, `NO_DECK`, `INVALID_DECK`, `BUSY`, `INTERNAL`, + клиентский ErrorMap покрывает и карточные/моковые варианты. &#x20;
 
 ## 7) Клиентская интеграция (слой для UI)
 
