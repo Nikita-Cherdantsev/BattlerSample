@@ -20,6 +20,7 @@ BattleHandler.isAnimating = false
 BattleHandler.currentBattle = nil
 BattleHandler.battleState = nil
 BattleHandler.battleResult = nil -- Store battle result for rewards
+BattleHandler.isBattleActive = false -- Track if any battle window is open (prep, battle, or rewards)
 BattleHandler.originalCardSizes = {} -- Store original sizes to prevent accumulation
 BattleHandler.cardHealthValues = {} -- Store current health values for each card frame
 
@@ -237,6 +238,7 @@ function BattleHandler:StartBattle(battleData)
 	
 	-- Store battle data
 	self.currentBattle = battleData
+	self.isBattleActive = true
 	
 	-- Reset all effects before battle starts
 	if self.BattleAnimationHandler then
@@ -903,10 +905,9 @@ function BattleHandler:OnBattleEnd()
 		end
 	end
 	
-	-- Clean up
-	self.currentBattle = nil
-	self.battleState = nil
-	self.battleResult = nil
+	-- Note: Don't set isBattleActive = false here
+	-- Rewards window is still open, so battle is still active
+	-- isBattleActive will be set to false when rewards window closes
 end
 
 --// Cleanup

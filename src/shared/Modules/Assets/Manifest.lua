@@ -171,6 +171,7 @@ Manifest.Lootbox = {
 	epic = "rbxassetid://126842532670644",
 	legendary = "rbxassetid://97529044228503",
 	onepiece = "rbxassetid://102889022061002",
+	beginner = "rbxassetid://89282766853868",  -- Using uncommon image for now (same as uncommon)
 }
 
 -- Lootbox anim assets
@@ -199,6 +200,11 @@ Manifest.LootboxAnim = {
 		Top = "rbxassetid://140304271996250",
 		Bottom = "rbxassetid://122770685979106",
 		Effect = { "rbxassetid://71127879203094", "rbxassetid://128775506748334", "rbxassetid://136387718516229", "rbxassetid://135375027049840", "rbxassetid://77753992317045", "rbxassetid://117664848542301", "rbxassetid://87544241404428", "rbxassetid://81477979577034", "rbxassetid://77530158252992" }
+	},
+	beginner = {
+		Top = "rbxassetid://130178701444824",  -- Using uncommon animation assets
+		Bottom = "rbxassetid://134916852758166",
+		Effect = { "rbxassetid://138609239917929", "rbxassetid://138152724119273", "rbxassetid://78217260112507", "rbxassetid://130256116979758", "rbxassetid://78997569604723", "rbxassetid://93793895260312", "rbxassetid://130044734420001", "rbxassetid://125085367368860", "rbxassetid://132486347800696" }
 	},
 }
 

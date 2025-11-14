@@ -779,6 +779,12 @@ function RewardsHandler:CloseRewards()
 		if self.LootboxHandler then
 			self.LootboxHandler.isRewardClaimed = false
 		end
+
+		-- Clear battle active flag now that battle is fully complete
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler then
+			battleHandler.isBattleActive = false
+		end
 	end
 	
 	-- Use TweenUI if available

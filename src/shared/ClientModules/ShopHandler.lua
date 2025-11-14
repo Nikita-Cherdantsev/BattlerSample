@@ -374,6 +374,12 @@ function ShopHandler:SetupModelClickHandler()
 
 	if prompt then
 		local connection = prompt.Triggered:Connect(function(player)
+			-- Check if battle is active
+			local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+			if battleHandler and battleHandler.isBattleActive then
+				return -- Don't allow interaction during battle
+			end
+			
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)

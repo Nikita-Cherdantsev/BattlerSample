@@ -63,42 +63,7 @@ local function ValidateDeck(deck)
 	return true
 end
 
-local function AssignStarterDeckIfNeeded(profile, userId)
-	-- Note: Since we updated validation to allow 1-6 cards, we need to check if deck is completely empty
-	-- For now, keep the old check for decks with exactly 6 cards, but also allow decks with any cards
-	if profile.deck and #profile.deck >= 6 then
-		return true -- Already has full deck
-	elseif profile.deck and #profile.deck > 0 then
-		-- Has some cards but not 6 - this is now valid, don't assign starter deck
-		return true
-	end
-	
-	LogInfo(nil, "Assigning starter deck for user %d", userId)
-	
-	-- Use the default deck from ProfileManager
-	local success = ProfileManager.UpdateDeck(userId, ProfileManager.DEFAULT_DECK)
-	if success then
-		-- Get the updated profile with the sorted deck from ProfileManager
-		local updatedProfile = ProfileManager.GetCachedProfile(userId)
-		if updatedProfile then
-			profile.deck = (function()
-				local cloned = {}
-				for i, v in ipairs(updatedProfile.deck) do
-					cloned[i] = v
-				end
-				return cloned
-			end)()
-			LogInfo(nil, "Assigned starter deck: %s", table.concat(profile.deck, ", "))
-			return true
-		else
-			LogWarning(nil, "Failed to get updated profile after deck assignment")
-			return false
-		end
-	else
-		LogWarning(nil, "Failed to assign starter deck for user %d", userId)
-		return false
-	end
-end
+-- Note: Starter deck assignment removed - players now start with empty deck
 
 local function SafeSaveProfile(player)
 	if not player or not playerProfiles[player] then
@@ -196,8 +161,7 @@ local function OnPlayerAdded(player)
 		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
 	end
 	
-	-- Ensure valid default deck if missing
-	AssignStarterDeckIfNeeded(profile, player.UserId)
+	-- Note: No longer assigning starter deck - players start with empty deck
 	
 	-- Start autosave
 	StartAutosave(player)
@@ -643,10 +607,7 @@ function PlayerDataService.EnsureProfileLoaded(player)
 	else
 		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
 	end
-	
-	-- Ensure valid default deck if missing
-	AssignStarterDeckIfNeeded(profile, player.UserId)
-	
+		
 	-- Start autosave if not already running
 	if not autosaveTasks[player] then
 		StartAutosave(player)

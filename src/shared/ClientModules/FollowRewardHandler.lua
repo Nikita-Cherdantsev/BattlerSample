@@ -8,15 +8,11 @@ local TweenService = game:GetService("TweenService")
 local localPlayer = Players.LocalPlayer
 
 local STATUS_MESSAGES = {
-	GRANTED = "Thank you for following! Reward delivered.",
+	GRANTED = "Thank you for joining the community! Reward delivered.",
 	ALREADY_CLAIMED = "You already got the reward.",
-	NOT_FOLLOWING = "You should like and follow the game to get the reward.",
-	HTTP_DISABLED = "Follow check unavailable. Please try again later.",
-	HTTP_ERROR = "Unable to verify follow. Please try again later.",
-	HTTP_FORBIDDEN = "Follow check unavailable. Please try again later.",
-	JSON_ERROR = "Unable to verify follow. Please try again later.",
-	INVALID_RESPONSE = "Unable to verify follow. Please try again later.",
-	UNIVERSE_ID_UNKNOWN = "Follow reward unavailable. Please try again later."
+	NOT_IN_GROUP = "You should join the community group to get the reward.",
+	GROUP_ID_NOT_CONFIGURED = "Community reward unavailable. Please try again later.",
+	INVALID_RESPONSE = "Unable to verify group membership. Please try again later."
 }
 
 local function messageForStatus(status)
@@ -28,10 +24,6 @@ local function messageForStatus(status)
 
 	if STATUS_MESSAGES[upper] then
 		return STATUS_MESSAGES[upper]
-	end
-
-	if upper:find("^HTTP_ERROR_") then
-		return STATUS_MESSAGES.HTTP_ERROR
 	end
 
 	return STATUS_MESSAGES.INVALID_RESPONSE
@@ -53,7 +45,9 @@ local function waitForChildRecursive(parent, childName, timeout)
 	return child
 end
 
-function FollowRewardHandler:Init()
+function FollowRewardHandler:Init(controller)
+	self.Controller = controller
+	
 	local rootContainer = Workspace:FindFirstChild("Folder")
 	if not rootContainer then
 		warn("[FollowRewardHandler] Workspace/Folder container not found")
@@ -134,7 +128,7 @@ function FollowRewardHandler:Init()
 	end
 
 	local function showStatus(message)
-		currentMessageToken += 1
+		currentMessageToken = currentMessageToken + 1
 		local token = currentMessageToken
 
 		followLabel.Text = message
@@ -172,7 +166,13 @@ function FollowRewardHandler:Init()
 			return
 		end
 
-		showStatus("Checking follow status...")
+		-- Check if battle is active
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler and battleHandler.isBattleActive then
+			return -- Don't allow interaction during battle
+		end
+
+		showStatus("Checking group membership...")
 		followRewardRemote:FireServer()
 	end)
 

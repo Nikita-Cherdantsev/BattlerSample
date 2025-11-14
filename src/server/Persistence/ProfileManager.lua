@@ -352,13 +352,28 @@ function ProfileManager.LoadProfile(userId)
 	-- Create new profile if loading failed or profile was invalid
 	local newProfile = ProfileSchema.CreateProfile(userId)
 	
-	-- Initialize with default deck
-	newProfile.deck = ProfileManager.DEFAULT_DECK
+	-- Grant beginner lootbox to new players (add directly to profile before saving)
+	local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+	local BoxRoller = require(game.ReplicatedStorage.Modules.Loot.BoxRoller)
 	
-	-- Add starter cards to collection (v2 format)
-	for _, cardId in ipairs(ProfileManager.DEFAULT_DECK) do
-		ProfileSchema.AddCardsToCollection(newProfile, cardId, 1)
+	-- Ensure lootboxes array exists
+	if not newProfile.lootboxes then
+		newProfile.lootboxes = {}
 	end
+	
+	-- Add beginner lootbox to first slot (already ready to open)
+	local now = os.time()
+	local beginnerBox = {
+		id = BoxRoller.GenerateBoxId(),
+		rarity = BoxTypes.BoxRarity.BEGINNER,
+		state = BoxTypes.BoxState.READY,  -- Ready to open immediately
+		seed = BoxRoller.GenerateSeed(),
+		source = "starter",
+		startedAt = now,
+		unlocksAt = now  -- Already unlocked
+	}
+	newProfile.lootboxes[1] = beginnerBox
+	print("✅ Granted beginner lootbox (ready to open) to new player:", userId)
 	
 	-- Compute initial squad power
 	newProfile.squadPower = ComputeSquadPower(newProfile)

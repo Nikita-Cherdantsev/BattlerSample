@@ -366,7 +366,7 @@ end
 
 -- Validate lootbox rarity
 function ProfileSchema.IsValidLootboxRarity(rarity)
-	return rarity == "uncommon" or rarity == "rare" or rarity == "epic" or rarity == "legendary" or rarity == "onepiece"
+	return rarity == "uncommon" or rarity == "rare" or rarity == "epic" or rarity == "legendary" or rarity == "onepiece" or rarity == "beginner"
 end
 
 -- Validate lootbox state
@@ -378,18 +378,11 @@ end
 function ProfileSchema.CreateProfile(playerId)
 	local now = os.time()
 	
-	-- Default starter cards (from CardCatalog) - 6 unique cards for deck
-	local starterCards = {
-		"card_100", "card_200", "card_300",  -- 3 unique starter cards (Luffy, Zoro, Rock Lee)
-		"card_500", "card_600", "card_700"   -- 3 more unique cards (Sanji, Tenten, Koby)
+	-- Starter collection: only card_600 x1 and card_1800 x1
+	local starterCollection = {
+		["card_600"] = { count = 1, level = 1 },
+		["card_1800"] = { count = 1, level = 1 }
 	}
-	
-	-- Create starter collection with default cards (v2 format)
-	-- Give player 2 copies of each card so they can form a valid deck
-	local starterCollection = {}
-	for _, cardId in ipairs(starterCards) do
-		starterCollection[cardId] = { count = 2, level = 1 }
-	end
 	
 	local profile = {
 		playerId = tostring(playerId),
@@ -397,10 +390,10 @@ function ProfileSchema.CreateProfile(playerId)
 		lastLoginAt = now,
 		loginStreak = 0,
 		collection = starterCollection,
-		deck = starterCards,  -- Use the same 6 cards as the deck
+		deck = {},  -- Empty deck - player will build their own
 		currencies = {
-			soft = 1000,  -- Starting soft currency
-			hard = 0      -- No starting hard currency
+			soft = 100,  -- Starting soft currency
+			hard = 150   -- Starting hard currency
 		},
 		favoriteLastSeen = nil,
 		tutorialStep = 0,

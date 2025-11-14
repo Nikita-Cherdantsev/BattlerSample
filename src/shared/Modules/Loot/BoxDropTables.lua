@@ -122,6 +122,21 @@ BoxDropTables.ONEPIECE = {
 	}
 }
 
+-- Drop table for Beginner boxes (tutorial/starter box)
+BoxDropTables.BEGINNER = {
+	softRange = { min = 80, max = 120 },
+	hardChance = 0, -- 0% chance
+	hardAmount = 0,
+	characterRewards = {
+		{
+			rarity = BoxTypes.BoxRarity.UNCOMMON,
+			probability = 1.00, -- 100% - always gives card_600
+			copiesRange = { min = 3, max = 3 }, -- Exactly 3 copies
+			cardPool = { "card_600" } -- Only card_600
+		}
+	}
+}
+
 -- Get drop table for a specific rarity
 function BoxDropTables.GetTable(rarity)
 	if rarity == BoxTypes.BoxRarity.UNCOMMON then
@@ -134,6 +149,8 @@ function BoxDropTables.GetTable(rarity)
 		return BoxDropTables.LEGENDARY
 	elseif rarity == BoxTypes.BoxRarity.ONEPIECE then
 		return BoxDropTables.ONEPIECE
+	elseif rarity == BoxTypes.BoxRarity.BEGINNER then
+		return BoxDropTables.BEGINNER
 	else
 		error("Invalid rarity: " .. tostring(rarity))
 	end

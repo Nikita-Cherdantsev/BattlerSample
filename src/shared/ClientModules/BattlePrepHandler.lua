@@ -229,6 +229,12 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 	
 	-- Connect interaction (use original part name for battle logic)
 	local connection = proximityPrompt.Triggered:Connect(function()
+		-- Check if battle is already active
+		local battleHandler = handler.Controller and handler.Controller:GetBattleHandler()
+		if battleHandler and battleHandler.isBattleActive then
+			return -- Don't allow interaction during battle
+		end
+		
 		handler.currentPartName = originalPartName -- Use original name (e.g., "BossMode1Head") not "HumanoidRootPart"
 		handler:OpenBattlePrep()
 	end)
@@ -304,6 +310,12 @@ function BattlePrepHandler:SetupPartInteraction()
 		
 		-- Default to NPC mode if part name doesn't match
 		local connection = proximityPrompt.Triggered:Connect(function()
+			-- Check if battle is already active
+			local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+			if battleHandler and battleHandler.isBattleActive then
+				return -- Don't allow interaction during battle
+			end
+			
 			self.currentPartName = "NPCMode1Trigger" -- Default NPC mode
 			self:OpenBattlePrep()
 		end)
@@ -321,6 +333,12 @@ end
 function BattlePrepHandler:OpenBattlePrep()
 	if self.isAnimating then return end
 	self.isAnimating = true
+
+	-- Mark battle as active (prevents other interactions)
+	local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+	if battleHandler then
+		battleHandler.isBattleActive = true
+	end
 
 	-- Determine battle mode from part name
 	local isNPCMode = self.currentPartName and self.currentPartName:match("^NPCMode")
@@ -871,6 +889,14 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		if self.UI.BottomPanel then
 			self.UI.BottomPanel.Visible = true
 		end
+	end
+	
+	-- Clear battle active flag if battle wasn't started (window closed without starting)
+	-- If battle was started, flag will be cleared when rewards window closes
+	local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+	if battleHandler and not battleHandler.currentBattle then
+		-- No active battle, safe to clear flag
+		battleHandler.isBattleActive = false
 	end
 	
 	-- Register with close button handler
