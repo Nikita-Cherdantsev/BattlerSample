@@ -30,6 +30,40 @@ local function preserveProfileInvariants(profile, userId)
 	return profile
 end
 
+-- Helper function to compact lootbox array (remove nils and shift elements)
+local function compactLootboxArray(lootboxes)
+	local compacted = {}
+	local index = 1
+	for i = 1, BoxTypes.MAX_SLOTS do
+		if lootboxes[i] then
+			compacted[index] = lootboxes[i]
+			index = index + 1
+		end
+	end
+	return compacted
+end
+
+-- Helper function to grant rewards to profile
+local function grantRewards(profile, rewards)
+	-- Grant currency
+	profile.currencies.soft = profile.currencies.soft + rewards.softDelta
+	if rewards.hardDelta > 0 then
+		profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
+	end
+	
+	-- Grant card copies
+	if rewards.card then
+		local cardId = rewards.card.cardId
+		local copies = rewards.card.copies
+		
+		if profile.collection[cardId] then
+			profile.collection[cardId].count = profile.collection[cardId].count + copies
+		else
+			profile.collection[cardId] = { count = copies, level = 1 }
+		end
+	end
+end
+
 -- Error codes
 LootboxService.ErrorCodes = {
 	BOX_DECISION_REQUIRED = "BOX_DECISION_REQUIRED",
@@ -387,45 +421,11 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		local rewards = BoxRoller.RollRewards(rng, lootbox.rarity, { excludeCards = excludeCards })
 		
 		-- Grant rewards
-		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
-		if rewards.hardDelta > 0 then
-			profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
-		end
+		grantRewards(profile, rewards)
 		
-		-- Grant card copies
-		if rewards.card then
-			local cardId = rewards.card.cardId
-			local copies = rewards.card.copies
-			
-			if profile.collection[cardId] then
-				profile.collection[cardId].count = profile.collection[cardId].count + copies
-				print("🎁 [LootboxService.CompleteUnlock] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
-			else
-				profile.collection[cardId] = { count = copies, level = 1 }
-				print("🎁 [LootboxService.CompleteUnlock] NEW CARD unlocked:", cardId, "with", copies, "copies")
-			end
-			
-			-- Debug: Show all cards in collection
-			local collectionCount = 0
-			for _ in pairs(profile.collection) do
-				collectionCount = collectionCount + 1
-			end
-			print("🎁 [LootboxService.CompleteUnlock] Total unique cards in collection:", collectionCount)
-		end
-		
-		-- Free the slot (remove the lootbox)
+		-- Free the slot and compact array
 		profile.lootboxes[slotIndex] = nil
-		
-		-- Compact the array (shift remaining boxes to fill gaps)
-		local compacted = {}
-		local index = 1
-		for i = 1, BoxTypes.MAX_SLOTS do
-			if profile.lootboxes[i] then
-				compacted[index] = profile.lootboxes[i]
-				index = index + 1
-			end
-		end
-		profile.lootboxes = compacted
+		profile.lootboxes = compactLootboxArray(profile.lootboxes)
 		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, rewards = rewards }
 		return preserveProfileInvariants(profile, userId)
@@ -507,45 +507,11 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		rewards.rarity = lootbox.rarity
 		
 		-- Grant rewards
-		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
-		if rewards.hardDelta > 0 then
-			profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
-		end
+		grantRewards(profile, rewards)
 		
-		-- Grant card copies
-		if rewards.card then
-			local cardId = rewards.card.cardId
-			local copies = rewards.card.copies
-			
-			if profile.collection[cardId] then
-				profile.collection[cardId].count = profile.collection[cardId].count + copies
-				print("🎁 [LootboxService.OpenNow] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
-			else
-				profile.collection[cardId] = { count = copies, level = 1 }
-				print("🎁 [LootboxService.OpenNow] NEW CARD unlocked:", cardId, "with", copies, "copies")
-			end
-			
-			-- Debug: Show all cards in collection
-			local collectionCount = 0
-			for _ in pairs(profile.collection) do
-				collectionCount = collectionCount + 1
-			end
-			print("🎁 [LootboxService.OpenNow] Total unique cards in collection:", collectionCount)
-		end
-		
-		-- Free the slot (remove the lootbox)
+		-- Free the slot and compact array
 		profile.lootboxes[slotIndex] = nil
-		
-		-- Compact the array (shift remaining boxes to fill gaps)
-		local compacted = {}
-		local index = 1
-		for i = 1, BoxTypes.MAX_SLOTS do
-			if profile.lootboxes[i] then
-				compacted[index] = profile.lootboxes[i]
-				index = index + 1
-			end
-		end
-		profile.lootboxes = compacted
+		profile.lootboxes = compactLootboxArray(profile.lootboxes)
 		
 		-- Preserve profile invariants
 		profile = preserveProfileInvariants(profile, userId)
@@ -660,14 +626,42 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 			error("Profile validation failed: " .. errorMsg)
 		end
 		
-		local lootbox = profile.lootboxes[slotIndex]
-		if not lootbox then
-			error("No lootbox at slot " .. slotIndex)
+		-- Auto-repair expired unlocking boxes first (before state checks)
+		for i = 1, BoxTypes.MAX_SLOTS do
+			local box = profile.lootboxes[i]
+			if box and box.state == BoxTypes.BoxState.UNLOCKING then
+				if box.unlocksAt then
+					if box.unlocksAt <= serverNow then
+						-- Timer expired, transition to Ready state
+						box.state = BoxTypes.BoxState.READY
+					end
+				else
+					-- Invalid state: UNLOCKING without unlocksAt - auto-repair to READY
+					box.state = BoxTypes.BoxState.READY
+				end
+			end
 		end
 		
-		-- SpeedUp only works on Unlocking boxes
+		local lootbox = profile.lootboxes[slotIndex]
+		
+		-- Idempotency: if box already opened/removed, return success (no-op)
+		-- This handles duplicate requests gracefully
+		if not lootbox then
+			profile._lootboxResult = { ok = true, rewards = nil, instantCost = 0, message = "Box already opened" }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
+		-- Save lootbox ID for verification (race condition protection)
+		local lootboxId = lootbox.id
+		
+		-- SpeedUp only works on Unlocking boxes (after auto-repair)
 		if lootbox.state ~= BoxTypes.BoxState.UNLOCKING then
-			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.BOX_NOT_UNLOCKING }
+			if lootbox.state == BoxTypes.BoxState.READY then
+				profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INVALID_STATE, message = "Lootbox is ready, use CompleteUnlock instead" }
+			else
+				-- IDLE state likely means race condition - return idempotent success
+				profile._lootboxResult = { ok = true, rewards = nil, instantCost = 0, message = "Box already processed (race condition)" }
+			end
 			return preserveProfileInvariants(profile, userId)
 		end
 		
@@ -679,6 +673,15 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 		-- Check if player has enough hard currency
 		if profile.currencies.hard < instantCost then
 			profile._lootboxResult = { ok = false, error = LootboxService.ErrorCodes.INSUFFICIENT_HARD }
+			return preserveProfileInvariants(profile, userId)
+		end
+		
+		-- Double-check: verify lootbox still exists and is still UNLOCKING (race condition protection)
+		-- This check happens after currency validation but before modifying the lootbox
+		local currentLootbox = profile.lootboxes[slotIndex]
+		if not currentLootbox or currentLootbox.id ~= lootboxId or currentLootbox.state ~= BoxTypes.BoxState.UNLOCKING then
+			-- Lootbox was modified by another request - return idempotent success
+			profile._lootboxResult = { ok = true, rewards = nil, instantCost = 0, message = "Box already processed by another request" }
 			return preserveProfileInvariants(profile, userId)
 		end
 		
@@ -695,48 +698,12 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 		
 		rewards.rarity = lootbox.rarity
 		
-		print("🎁 [LootboxService.SpeedUp] Rewards rolled - softDelta:", rewards.softDelta, "hardDelta:", rewards.hardDelta, "card:", rewards.card and rewards.card.cardId or "none")
-		
 		-- Grant rewards
-		profile.currencies.soft = profile.currencies.soft + rewards.softDelta
-		if rewards.hardDelta > 0 then
-			profile.currencies.hard = profile.currencies.hard + rewards.hardDelta
-		end
+		grantRewards(profile, rewards)
 		
-		-- Grant card copies
-		if rewards.card then
-			local cardId = rewards.card.cardId
-			local copies = rewards.card.copies
-			
-			if profile.collection[cardId] then
-				profile.collection[cardId].count = profile.collection[cardId].count + copies
-				print("🎁 [LootboxService.SpeedUp] Added", copies, "copies to existing card:", cardId, "-> new count:", profile.collection[cardId].count)
-			else
-				profile.collection[cardId] = { count = copies, level = 1 }
-				print("🎁 [LootboxService.SpeedUp] NEW CARD unlocked:", cardId, "with", copies, "copies")
-			end
-			
-			-- Debug: Show all cards in collection
-			local collectionCount = 0
-			for _ in pairs(profile.collection) do
-				collectionCount = collectionCount + 1
-			end
-			print("🎁 [LootboxService.SpeedUp] Total unique cards in collection:", collectionCount)
-		end
-		
-		-- Free the slot (remove the lootbox)
+		-- Free the slot and compact array
 		profile.lootboxes[slotIndex] = nil
-		
-		-- Compact the array (shift remaining boxes to fill gaps)
-		local compacted = {}
-		local index = 1
-		for i = 1, BoxTypes.MAX_SLOTS do
-			if profile.lootboxes[i] then
-				compacted[index] = profile.lootboxes[i]
-				index = index + 1
-			end
-		end
-		profile.lootboxes = compacted
+		profile.lootboxes = compactLootboxArray(profile.lootboxes)
 		
 		-- Preserve profile invariants
 		profile = preserveProfileInvariants(profile, userId)
@@ -746,7 +713,7 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 	end)
 	
 	if not success then
-		print("❌ [LootboxService.SpeedUp] ProfileManager.UpdateProfile failed:", result)
+		Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Opened result=ERROR:INTERNAL", tostring(userId), slotIndex)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
