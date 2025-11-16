@@ -168,7 +168,27 @@ local function HandleRequestSetDeck(player, requestData)
 		return
 	end
 	
-	-- Validate deck via PlayerDataService
+	-- Ensure profile exists in ProfileManager (single source of truth)
+	-- This ensures we're working with the latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		profile = ProfileManager.LoadProfile(player.UserId)
+	end
+	
+	if not profile then
+		SendErrorUpdate(player, "RequestSetDeck.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load profile")
+		return
+	end
+	
+	-- Synchronize PlayerDataService cache with ProfileManager
+	-- PlayerDataService.SetDeck requires profile to be in playerProfiles[player]
+	local cachedProfile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	if not cachedProfile then
+		SendErrorUpdate(player, "RequestSetDeck.syncFailed", errorCode or "PROFILE_LOAD_FAILED", errorMessage or "Failed to sync profile cache")
+		return
+	end
+	
+	-- Validate deck via PlayerDataService (it uses ProfileManager internally)
 	local success, setDeckError = PlayerDataService.SetDeck(player, requestData.deck)
 	
 	if success then
@@ -187,14 +207,19 @@ end
 local function HandleRequestProfile(player, requestData)
 	LogInfo(player, "Processing profile request")
 	
-	-- Get profile data via PlayerDataService (with lazy loading)
-	local profile, errorCode, profileErrorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	-- Get profile directly from ProfileManager (single source of truth)
+	-- This ensures we always have the latest data after any ProfileManager.UpdateProfile calls
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
 	if not profile then
-		SendErrorUpdate(player, "RequestProfile.loadFailed", errorCode or "PROFILE_LOAD_FAILED", profileErrorMessage or "Failed to load profile data", {
+		profile = ProfileManager.LoadProfile(player.UserId)
+	end
+	
+	if not profile then
+		SendErrorUpdate(player, "RequestProfile.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load profile data", {
 			snapshot = false,
 		})
 		
-		LogWarning(player, "Failed to load profile data: %s", profileErrorMessage or "Unknown error")
+		LogWarning(player, "Failed to load profile data")
 		return
 	end
 	
@@ -246,7 +271,27 @@ local function HandleRequestLevelUpCard(player, requestData)
 		return
 	end
 	
-	-- Execute level-up via PlayerDataService
+	-- Ensure profile exists in ProfileManager (single source of truth)
+	-- This ensures we're working with the latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		profile = ProfileManager.LoadProfile(player.UserId)
+	end
+	
+	if not profile then
+		SendErrorUpdate(player, "RequestLevelUpCard.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load profile")
+		return
+	end
+	
+	-- Synchronize PlayerDataService cache with ProfileManager
+	-- PlayerDataService.LevelUpCard requires profile to be in playerProfiles[player]
+	local cachedProfile, errorCode, errorMessage = PlayerDataService.EnsureProfileLoaded(player)
+	if not cachedProfile then
+		SendErrorUpdate(player, "RequestLevelUpCard.syncFailed", errorCode or "PROFILE_LOAD_FAILED", errorMessage or "Failed to sync profile cache")
+		return
+	end
+	
+	-- Execute level-up via PlayerDataService (it uses ProfileManager internally)
 	local success, levelError = PlayerDataService.LevelUpCard(player, requestData.cardId)
 	
 	if success then
@@ -266,10 +311,14 @@ end
 local function HandleRequestLootState(player, requestData)
 	LogInfo(player, "Processing loot state request")
 	
-	-- Ensure profile is available
-	local profile, errorCode, loadError = PlayerDataService.EnsureProfileLoaded(player)
+	-- Get profile directly from ProfileManager (single source of truth)
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
 	if not profile then
-		SendErrorUpdate(player, "RequestLootState.loadFailed", errorCode or "PROFILE_LOAD_FAILED", loadError or "Failed to load profile data", {
+		profile = ProfileManager.LoadProfile(player.UserId)
+	end
+	
+	if not profile then
+		SendErrorUpdate(player, "RequestLootState.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load profile data", {
 			snapshot = false,
 		})
 		return
@@ -383,9 +432,23 @@ local function HandleRequestStartUnlock(player, requestData)
 	LogInfo(player, "Unlock started successfully")
 end
 
+-- Helper function to check if result is idempotent
+local function isIdempotentResult(result)
+	if not result.message then return false end
+	local idempotentMessages = {
+		"Box already opened",
+		"Box already processed by another request",
+		"Box already processed (race condition)"
+	}
+	for _, msg in ipairs(idempotentMessages) do
+		if result.message == msg then
+			return true
+		end
+	end
+	return false
+end
+
 local function HandleRequestSpeedUp(player, requestData)
-	LogInfo(player, "Processing speed up request")
-	
 	-- Validate payload
 	if not requestData or not requestData.slotIndex then
 		SendErrorUpdate(player, "RequestSpeedUp.invalidRequest", "INVALID_REQUEST", "Missing slotIndex field")
@@ -402,34 +465,49 @@ local function HandleRequestSpeedUp(player, requestData)
 	local result = LootboxService.SpeedUp(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
+		-- Handle BOX_NOT_UNLOCKING: check if lootbox was already opened (idempotency)
+		if result.error == LootboxService.ErrorCodes.BOX_NOT_UNLOCKING then
+			local profile = ProfileManager.GetCachedProfile(player.UserId)
+			if profile and profile.lootboxes and not profile.lootboxes[requestData.slotIndex] then
+				-- Lootbox was already opened - return success (idempotent)
+				SendSnapshot(player, "RequestSpeedUp.success", nil, { includeCollection = false })
+				return
+			end
+		end
+		
+		-- Handle INVALID_STATE with "ready" message: try CompleteUnlock instead
+		if result.error == LootboxService.ErrorCodes.INVALID_STATE and result.message and result.message:find("ready") then
+			local completeResult = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
+			if completeResult.ok then
+				local overrides = completeResult.rewards and { rewards = completeResult.rewards } or {}
+				SendSnapshot(player, "RequestSpeedUp.success", overrides, {
+					includeCollection = completeResult.rewards ~= nil,
+				})
+				return
+			end
+		end
+		
 		SendErrorUpdate(player, "RequestSpeedUp.failure", result.error or "INTERNAL", tostring(result.error))
 		return
 	end
 	
-	local overrides = {}
-	if result.rewards then
-		overrides.rewards = result.rewards
+	-- Success case: skip idempotent response if lootbox was already opened by first request
+	if not result.rewards and isIdempotentResult(result) then
+		local profile = ProfileManager.GetCachedProfile(player.UserId)
+		if profile and profile.lootboxes and requestData.slotIndex > #profile.lootboxes then
+			-- Lootbox was removed by first request - skip response to avoid overwriting rewards
+			return
+		end
 	end
 	
-	local payload = SendSnapshot(player, "RequestSpeedUp.success", overrides, {
+	-- Send success response
+	local overrides = result.rewards and { rewards = result.rewards } or {}
+	SendSnapshot(player, "RequestSpeedUp.success", overrides, {
 		includeCollection = result.rewards ~= nil,
 	})
 	
-	if result.rewards then
-		LogInfo(player, "SpeedUp: Sending rewards - softDelta=%d, hardDelta=%d, card=%s", 
-			result.rewards.softDelta or 0, 
-			result.rewards.hardDelta or 0,
-			result.rewards.card and result.rewards.card.cardId or "none")
-	else
-		LogWarning(player, "SpeedUp: No rewards in result! This should not happen.")
-	end
-	
-	if payload and payload.lootboxes then
-		LogInfo(player, "SpeedUp: Lootboxes after speed-up: %d boxes", #payload.lootboxes)
-	end
-	
-	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Opened result=OK", tostring(player.UserId), requestData.slotIndex)
-	LogInfo(player, "Speed up and open completed successfully")
+	Logger.debug("lootboxes: op=speedUp userId=%s slot=%d state=Unlocking->Opened result=OK", 
+		tostring(player.UserId), requestData.slotIndex)
 end
 
 local function HandleRequestOpenNow(player, requestData)
