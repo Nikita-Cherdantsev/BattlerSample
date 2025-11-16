@@ -27,6 +27,108 @@ CardInfoHandler.currentProfile = nil
 CardInfoHandler.currentCardId = nil
 CardInfoHandler.currentSlotIndex = nil
 
+-- Local helper to show small notifications using GameUI.FollowText
+function CardInfoHandler:ShowDeckNotification(message)
+	-- Cache references
+	if not self._notif then
+		local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+		if playerGui then
+			local gameUI = playerGui:FindFirstChild("GameUI")
+			local followFrame = gameUI and gameUI:FindFirstChild("FollowText")
+			local followLabel = followFrame and followFrame:FindFirstChildOfClass("TextLabel")
+			
+			if followFrame and followLabel then
+				self._notif = {
+					frame = followFrame,
+					label = followLabel,
+					token = 0
+				}
+			else
+				-- Fallback: build a lightweight toast ScreenGui if FollowText is unavailable or hidden
+				local toastGui = Instance.new("ScreenGui")
+				toastGui.Name = "DeckToastGui"
+				toastGui.ResetOnSpawn = false
+				toastGui.IgnoreGuiInset = true
+				toastGui.DisplayOrder = 1000
+				toastGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+				toastGui.Parent = playerGui
+				
+				local frame = Instance.new("Frame")
+				frame.Name = "Toast"
+				frame.Size = UDim2.new(0, 420, 0, 52)
+				frame.Position = UDim2.new(0.5, 0, 0.12, 0)
+				frame.AnchorPoint = Vector2.new(0.5, 0)
+				frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+				frame.BackgroundTransparency = 0.2
+				frame.BorderSizePixel = 0
+				frame.ZIndex = 1000
+				frame.Visible = false
+				frame.Parent = toastGui
+				
+				local corner = Instance.new("UICorner")
+				corner.CornerRadius = UDim.new(0, 10)
+				corner.Parent = frame
+				
+				local label = Instance.new("TextLabel")
+				label.Name = "Text"
+				label.Size = UDim2.new(1, -24, 1, -12)
+				label.Position = UDim2.new(0, 12, 0, 6)
+				label.BackgroundTransparency = 1
+				label.TextColor3 = Color3.fromRGB(255, 255, 255)
+				label.TextScaled = true
+				label.Font = Enum.Font.GothamBold
+				label.ZIndex = 1001
+				label.Text = ""
+				label.Parent = frame
+				
+				self._notif = {
+					frame = frame,
+					label = label,
+					token = 0,
+					_isFallback = true
+				}
+			end
+		else
+			return
+		end
+	end
+	
+	local frame = self._notif.frame
+	local label = self._notif.label
+	self._notif.token = (self._notif.token or 0) + 1
+	local token = self._notif.token
+	
+	-- Prepare (ensure it renders above Deck UI just like FollowReward)
+	frame.ZIndex = 1000
+	label.ZIndex = 1001
+	frame.Visible = true
+	frame.BackgroundTransparency = 1
+	label.TextTransparency = 1
+	label.Text = message
+	
+	-- Fade in using TweenService (match FollowRewardHandler behaviour)
+	local TweenService = game:GetService("TweenService")
+	local fadeInInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(frame, fadeInInfo, { BackgroundTransparency = 0.2 }):Play()
+	TweenService:Create(label, fadeInInfo, { TextTransparency = 0 }):Play()
+	
+	-- Auto fade out
+	task.delay(2.5, function()
+		if self._notif and self._notif.token == token then
+			local fadeOutInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			local tween1 = TweenService:Create(frame, fadeOutInfo, { BackgroundTransparency = 1 })
+			local tween2 = TweenService:Create(label, fadeOutInfo, { TextTransparency = 1 })
+			tween1:Play()
+			tween2:Play()
+			tween2.Completed:Connect(function()
+				if self._notif and self._notif.token == token then
+					frame.Visible = false
+				end
+			end)
+		end
+	end)
+end
+
 --// Initialization
 function CardInfoHandler:Init(controller)
 	self.Controller = controller
@@ -790,6 +892,7 @@ function CardInfoHandler:AddCardToDeck(cardId)
 	-- Check if deck is full (max 6 cards)
 	if #currentDeck >= 6 then
 		warn("CardInfoHandler: Deck is full (6/6 cards). Cannot add more cards.")
+		self:ShowDeckNotification("Your deck can contain at most 6 cards")
 		return false
 	end
 	
@@ -803,11 +906,24 @@ function CardInfoHandler:AddCardToDeck(cardId)
 	-- Sort the deck by slotNumber to maintain proper slot assignment
 	local newDeck = self:SortDeckBySlotNumber(tempDeck)
 	
+	-- Hard cap before validation: max 6 cards
+	if #newDeck > 6 then
+		self:ShowDeckNotification("Your deck can contain at most 6 cards")
+		return false
+	end
+	
 	-- Validate the new deck using DeckValidator
 	local DeckValidator = require(game.ReplicatedStorage.Modules.Cards.DeckValidator)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(newDeck)
 	if not isValid then
 		warn("CardInfoHandler: New deck would be invalid:", errorMessage)
+		-- Notify: bounds messages
+		local msg = tostring(errorMessage)
+		if msg:find("at most 6") or #newDeck > 6 then
+			self:ShowDeckNotification("Your deck can contain at most 6 cards")
+		elseif msg:find("1 and 6") or msg:find("at least 1") then
+			self:ShowDeckNotification("Your deck must have at least 1 card")
+		end
 		return false
 	end
 	
@@ -867,6 +983,10 @@ function CardInfoHandler:RemoveCardFromDeck(cardId)
 	local isValid, errorMessage = DeckValidator.ValidateDeck(newDeck)
 	if not isValid then
 		warn("CardInfoHandler: New deck would be invalid:", errorMessage)
+		-- Notify: require at least 1 card
+		if tostring(errorMessage):find("1 and 6") or tostring(errorMessage):find("at least 1") then
+			self:ShowDeckNotification("Your deck must have at least 1 card")
+		end
 		return false
 	end
 	
@@ -878,7 +998,13 @@ function CardInfoHandler:RemoveCardFromDeck(cardId)
 			return true
 		else
 			warn("CardInfoHandler: Failed to request deck update:", error)
-			-- TODO: Show user-friendly error message
+			-- Map error message to user notification
+			local err = tostring(error)
+			if #newDeck > 6 or err:find("at most 6") then
+				self:ShowDeckNotification("Your deck can contain at most 6 cards")
+			elseif err:find("1 and 6") or err:find("at least 1") then
+				self:ShowDeckNotification("Your deck must have at least 1 card")
+			end
 			return false
 		end
 	else

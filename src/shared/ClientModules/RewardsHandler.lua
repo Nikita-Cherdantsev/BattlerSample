@@ -97,6 +97,12 @@ function RewardsHandler:SetupRewardsUI()
 		return
 	end
 	
+	-- Debug: print all GameUI children
+	print("RewardsHandler: Searching for Rewards frame in GameUI...")
+	for _, child in pairs(gameGui:GetChildren()) do
+		print("RewardsHandler: GameUI child:", child.Name, child.ClassName)
+	end
+	
 	-- Find Rewards frame (could be named "Rewards" or check alternative names)
 	self.RewardsFrame = gameGui:FindFirstChild("Rewards")
 	
@@ -329,20 +335,20 @@ end
 
 -- Show rewards after battle
 function RewardsHandler:ShowRewards(battleResult, isVictory, battleRewards)
+	print("🎁 RewardsHandler:ShowRewards called")
+	print("🎁 RewardsHandler: _initialized =", self._initialized)
+	print("🎁 RewardsHandler: isVictory =", isVictory)
+	print("🎁 RewardsHandler: battleRewards =", battleRewards and "present" or "nil")
+	
 	if not self._initialized then
 		warn("RewardsHandler: Not initialized")
 		return
 	end
 	
-	-- CRITICAL: Reset isRewardClaimed flag when opening rewards window
-	-- This ensures buttons are visible on subsequent opens
-	if self.LootboxHandler then
-		self.LootboxHandler.isRewardClaimed = false
-	end
-	
 	-- Store rewards from server (generated server-side)
 	if battleRewards then
 		self.currentReward = battleRewards
+		print("🎁 RewardsHandler: Stored reward - type =", battleRewards.type, "amount/rarity =", battleRewards.amount or battleRewards.rarity)
 	else
 		-- Fallback: should not happen if server sends rewards
 		warn("RewardsHandler: No rewards in battle result, using fallback")
@@ -361,19 +367,26 @@ function RewardsHandler:ShowRewards(battleResult, isVictory, battleRewards)
 	end
 	
 	if isVictory then
+		print("🎁 RewardsHandler: Showing victory rewards")
 		self:ShowVictoryRewards(battleResult)
 	else
+		print("🎁 RewardsHandler: Showing loss rewards")
 		self:ShowLossRewards(battleResult)
 	end
 end
 
 function RewardsHandler:ShowLossRewards(battleResult)
+	print("🎁 RewardsHandler:ShowLossRewards called")
 	-- Use reward from server
 	local softAmount = self.currentReward.amount or 50
+	print("🎁 RewardsHandler: Soft currency amount =", softAmount)
 	
 	-- Show Loss frame, hide others
 	if self.LossFrame then 
 		self.LossFrame.Visible = true 
+		print("🎁 RewardsHandler: Loss frame set to visible")
+	else
+		warn("🎁 RewardsHandler: LossFrame not found!")
 	end
 	if self.VictoryFrame then self.VictoryFrame.Visible = false end
 	if self.PackSelectorFrame then self.PackSelectorFrame.Visible = false end
@@ -382,6 +395,9 @@ function RewardsHandler:ShowLossRewards(battleResult)
 	if self.BtnClaim then
 		self.BtnClaim.Visible = true
 		self.BtnClaim.Active = true
+		print("🎁 RewardsHandler: BtnClaim enabled")
+	else
+		warn("🎁 RewardsHandler: BtnClaim not found!")
 	end
 	if self.BtnDestroy then
 		self.BtnDestroy.Visible = false
@@ -391,12 +407,19 @@ function RewardsHandler:ShowLossRewards(battleResult)
 	-- Fill Loss frame with reward info
 	if self.LossImgReward then
 		self.LossImgReward.Image = self.Manifest.Currency.Soft.Big
+		print("🎁 RewardsHandler: Set LossImgReward image")
+	else
+		warn("🎁 RewardsHandler: LossImgReward not found!")
 	end
 	if self.LossTxtValue then
 		self.LossTxtValue.Text = tostring(softAmount)
+		print("🎁 RewardsHandler: Set LossTxtValue to", softAmount)
+	else
+		warn("🎁 RewardsHandler: LossTxtValue not found!")
 	end
 	
 	-- Show Rewards frame
+	print("🎁 RewardsHandler: Calling ShowRewardsFrame")
 	self:ShowRewardsFrame()
 end
 
@@ -447,10 +470,6 @@ function RewardsHandler:ShowVictoryRewardsFreeSlot()
 	
 	-- Setup PackSelector if not already set up
 	self:SetupPackSelector()
-
-	if self.LootboxHandler and self.LootboxHandler.UpdateLootboxStates then
-		self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
-	end
 	
 	-- Update text visibility (hide texts when there's a free slot)
 	self:UpdatePackSelectorTextVisibility()
@@ -472,10 +491,6 @@ function RewardsHandler:ShowVictoryRewardsNoSlot()
 	
 	self:SetupPackSelector()
 	
-	if self.LootboxHandler and self.LootboxHandler.UpdateLootboxStates then
-		self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
-	end
-	
 	-- Update text visibility (show texts when there's no free slot)
 	self:UpdatePackSelectorTextVisibility()
 	
@@ -486,6 +501,8 @@ function RewardsHandler:ShowVictoryRewardsNoSlot()
 end
 
 function RewardsHandler:SetupPackSelector()
+	print("🎁 RewardsHandler: Setting up PackSelector")
+	
 	-- Get LootboxUIHandler to reuse its logic
 	if not self.LootboxHandler then
 		self.LootboxHandler = self.Controller:GetLootboxHandler()
@@ -494,24 +511,6 @@ function RewardsHandler:SetupPackSelector()
 	if not self.LootboxHandler then
 		warn("RewardsHandler: LootboxHandler not available")
 		return
-	end
-	
-	-- Prevent multiple setups - check if PackSelector handlers already exist
-	local containerData = self.LootboxHandler.packContainers["PackSelector"]
-	if containerData and containerData.packs then
-		local hasHandlers = false
-		for i = 1, 4 do
-			local pack = containerData.packs[i]
-			if pack and pack._buttonConnections then
-				if pack._buttonConnections.btnSpeedUp or pack._buttonConnections.btnOpen or pack._buttonConnections.btnUnlock then
-					hasHandlers = true
-					break
-				end
-			end
-		end
-		if hasHandlers then
-			return
-		end
 	end
 	
 	-- Find packs container in PackSelector (same structure as BottomPanel)
@@ -546,69 +545,45 @@ function RewardsHandler:SetupPackSelector()
 		return
 	end
 	
+	print("🎁 RewardsHandler: Found PackSelector packs container")
+	
 	-- Use LootboxUIHandler's reusable setup method
 	if self.LootboxHandler.SetupPacksForContainer then
 		local success = self.LootboxHandler:SetupPacksForContainer("PackSelector", packsContainer)
 		if success then
+			print("🎁 RewardsHandler: PackSelector packs initialized via LootboxUIHandler")
+			
 			-- Setup button handlers for PackSelector (since SetupPacksForContainer only sets up BottomPanel buttons)
-			-- CRITICAL: Check if handlers already exist to prevent duplicates
 			local containerData = self.LootboxHandler.packContainers["PackSelector"]
 			if containerData then
 				for i = 1, 4 do
 					local pack = containerData.packs[i]
 					if pack then
-						-- Initialize button connections storage if not exists
-						if not pack._buttonConnections then
-							pack._buttonConnections = {}
-						end
-						
-						-- Disconnect old handlers if they exist
-						if pack._buttonConnections.btnUnlock then
-							pack._buttonConnections.btnUnlock:Disconnect()
-							pack._buttonConnections.btnUnlock = nil
-						end
-						if pack._buttonConnections.btnOpen then
-							pack._buttonConnections.btnOpen:Disconnect()
-							pack._buttonConnections.btnOpen = nil
-						end
-						if pack._buttonConnections.btnSpeedUp then
-							pack._buttonConnections.btnSpeedUp:Disconnect()
-							pack._buttonConnections.btnSpeedUp = nil
-						end
-						
-						-- CRITICAL: Check if this button is also used by BottomPanel before creating handler
-						-- If so, we should not create a duplicate handler
-						local bottomPanelPack = self.LootboxHandler and self.LootboxHandler.lootboxPacks and self.LootboxHandler.lootboxPacks[pack.slotIndex]
-						local isSameButton = bottomPanelPack and bottomPanelPack.btnSpeedUp == pack.btnSpeedUp
-						
-						-- Setup button handlers only if buttons exist and handlers don't and button is not shared with BottomPanel
-						if pack.btnUnlock and pack.btnUnlock:IsA("TextButton") and not pack._buttonConnections.btnUnlock and not (bottomPanelPack and bottomPanelPack.btnUnlock == pack.btnUnlock) then
+						-- Setup button handlers
+						if pack.btnUnlock and pack.btnUnlock:IsA("TextButton") then
 							local connection = pack.btnUnlock.MouseButton1Click:Connect(function()
 								if self.NetworkClient then
 									self.NetworkClient.requestStartUnlock(pack.slotIndex)
 								end
 							end)
-							pack._buttonConnections.btnUnlock = connection
 							table.insert(self.Connections, connection)
 						end
 						
-						if pack.btnOpen and pack.btnOpen:IsA("TextButton") and not pack._buttonConnections.btnOpen and not (bottomPanelPack and bottomPanelPack.btnOpen == pack.btnOpen) then
+						if pack.btnOpen and pack.btnOpen:IsA("TextButton") then
 							local connection = pack.btnOpen.MouseButton1Click:Connect(function()
 								if self.NetworkClient then
 									self.NetworkClient.requestOpenNow(pack.slotIndex)
 								end
 							end)
-							pack._buttonConnections.btnOpen = connection
 							table.insert(self.Connections, connection)
 						end
 						
-						if pack.btnSpeedUp and pack.btnSpeedUp:IsA("TextButton") and not pack._buttonConnections.btnSpeedUp and not isSameButton then
+						if pack.btnSpeedUp and pack.btnSpeedUp:IsA("TextButton") then
 							local connection = pack.btnSpeedUp.MouseButton1Click:Connect(function()
 								if self.NetworkClient then
 									self.NetworkClient.requestSpeedUp(pack.slotIndex)
 								end
 							end)
-							pack._buttonConnections.btnSpeedUp = connection
 							table.insert(self.Connections, connection)
 						end
 					end
@@ -623,6 +598,8 @@ function RewardsHandler:SetupPackSelector()
 	if self.LootboxHandler.UpdateLootboxStates then
 		self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
 	end
+	
+	print("🎁 RewardsHandler: PackSelector setup completed")
 end
 
 function RewardsHandler:OnClaimButtonClicked()
@@ -765,16 +742,21 @@ function RewardsHandler:AddPendingLootboxReward()
 end
 
 function RewardsHandler:ShowRewardsFrame()
+	print("🎁 RewardsHandler:ShowRewardsFrame called")
 	if not self.RewardsFrame then
-		warn("RewardsHandler: RewardsFrame not found!")
+		warn("🎁 RewardsHandler: RewardsFrame not found!")
 		return
 	end
 	
+	print("🎁 RewardsHandler: Setting RewardsFrame visible")
 	self.RewardsFrame.Visible = true
 	
 	-- Use TweenUI if available
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
+		print("🎁 RewardsHandler: Using TweenUI.FadeIn")
 		self.Utilities.TweenUI.FadeIn(self.RewardsFrame, 0.3)
+	else
+		print("🎁 RewardsHandler: TweenUI not available, just setting visible")
 	end
 	
 	if self.Utilities and self.Utilities.Blur then

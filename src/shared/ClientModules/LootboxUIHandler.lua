@@ -19,25 +19,11 @@ LootboxUIHandler.timerConnections = {} -- Store timer update connections
 LootboxUIHandler.isRewardClaimed = false -- True when reward has been claimed
 LootboxUIHandler._pendingRequests = {} -- Track pending requests per slot to prevent duplicate clicks
 
--- Helper function to get server time with fallback
-local function getServerTime(clientState)
-	if clientState and clientState.getState then
-		local state = clientState.getState()
-		if state and state.serverNow and state.serverNow > 0 then
-			return state.serverNow
-		end
-	end
-	return os.time() -- Fallback to client time
-end
+-- Configuration
+LootboxUIHandler.SPEED_UP_COST = 0 -- Hard currency cost for speed up (temporary for testing)
 
 --// Initialization
 function LootboxUIHandler:Init(controller)
-	-- Prevent multiple initializations
-	if self._initialized then
-		print("⚠️ LootboxUIHandler already initialized, skipping")
-		return true
-	end
-	
 	self.Controller = controller
 	self.ClientState = controller:GetClientState()
 	
@@ -202,42 +188,11 @@ function LootboxUIHandler:ApplyProfileSnapshot(profile)
 	self.currentProfile.pendingLootbox = profile.pendingLootbox
 	self.currentProfile.currencies = profile.currencies or { soft = 0, hard = 0 }
 	
-	-- Clear pending requests for slots that no longer have lootboxes or changed state
-	if profile.lootboxes then
-		for slotIndex, _ in pairs(self._pendingRequests) do
-			local lootbox = profile.lootboxes[slotIndex]
-			-- Clear flag if lootbox was removed (opened) or state changed from Unlocking
-			if not lootbox then
-				self._pendingRequests[slotIndex] = nil
-			elseif lootbox.state ~= "Unlocking" then
-				-- State changed from Unlocking (e.g., to Ready or Idle) - clear flag
-				self._pendingRequests[slotIndex] = nil
-			end
-		end
-	end
-	
 	self:UpdateLootboxStates()
 end
 
 
 function LootboxUIHandler:SetupLootboxPacks()
-	-- Prevent multiple setups - if packs already exist and have handlers, skip
-	if self.lootboxPacks and #self.lootboxPacks > 0 then
-		local hasHandlers = false
-		for i = 1, 4 do
-			local pack = self.lootboxPacks[i]
-			if pack and pack._buttonConnections then
-				if pack._buttonConnections.btnSpeedUp or pack._buttonConnections.btnOpen or pack._buttonConnections.btnUnlock then
-					hasHandlers = true
-					break
-				end
-			end
-		end
-		if hasHandlers then
-			return
-		end
-	end
-	
 	-- Setup BottomPanel packs
 	local success = self:SetupPacksForContainer("BottomPanel", self.LootboxContainer)
 	if not success then
@@ -282,29 +237,6 @@ function LootboxUIHandler:SetupPacksForContainer(containerName, container)
 			container = container,
 			packs = {}
 		}
-	end
-	
-	-- CRITICAL: If packs already exist for this container, disconnect old handlers first
-	-- This prevents duplicate handlers when SetupPacksForContainer is called multiple times
-	if self.packContainers[containerName].packs and #self.packContainers[containerName].packs > 0 then
-		for i = 1, 4 do
-			local existingPack = self.packContainers[containerName].packs[i]
-			if existingPack and existingPack._buttonConnections then
-				-- Disconnect old button handlers
-				if existingPack._buttonConnections.btnUnlock then
-					existingPack._buttonConnections.btnUnlock:Disconnect()
-					existingPack._buttonConnections.btnUnlock = nil
-				end
-				if existingPack._buttonConnections.btnOpen then
-					existingPack._buttonConnections.btnOpen:Disconnect()
-					existingPack._buttonConnections.btnOpen = nil
-				end
-				if existingPack._buttonConnections.btnSpeedUp then
-					existingPack._buttonConnections.btnSpeedUp:Disconnect()
-					existingPack._buttonConnections.btnSpeedUp = nil
-				end
-			end
-		end
 	end
 	
 	-- Setup Pack1, Pack2, Pack3, Pack4
@@ -363,31 +295,11 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	-- Store button connections per pack to prevent duplicates
-	if not pack._buttonConnections then
-		pack._buttonConnections = {}
-	end
-	
-	-- Disconnect old connections if they exist
-	if pack._buttonConnections.btnUnlock then
-		pack._buttonConnections.btnUnlock:Disconnect()
-		pack._buttonConnections.btnUnlock = nil
-	end
-	if pack._buttonConnections.btnOpen then
-		pack._buttonConnections.btnOpen:Disconnect()
-		pack._buttonConnections.btnOpen = nil
-	end
-	if pack._buttonConnections.btnSpeedUp then
-		pack._buttonConnections.btnSpeedUp:Disconnect()
-		pack._buttonConnections.btnSpeedUp = nil
-	end
-	
 	-- Setup BtnUnlock
 	if pack.btnUnlock and pack.btnUnlock:IsA("TextButton") then
 		local connection = pack.btnUnlock.MouseButton1Click:Connect(function()
 			self:OnUnlockButtonClicked(packIndex)
 		end)
-		pack._buttonConnections.btnUnlock = connection
 		table.insert(self.Connections, connection)
 	end
 	
@@ -396,7 +308,6 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 		local connection = pack.btnOpen.MouseButton1Click:Connect(function()
 			self:OnOpenButtonClicked(packIndex)
 		end)
-		pack._buttonConnections.btnOpen = connection
 		table.insert(self.Connections, connection)
 	end
 	
@@ -405,7 +316,6 @@ function LootboxUIHandler:SetupPackButtons(packIndex)
 		local connection = pack.btnSpeedUp.MouseButton1Click:Connect(function()
 			self:OnSpeedUpButtonClicked(packIndex)
 		end)
-		pack._buttonConnections.btnSpeedUp = connection
 		table.insert(self.Connections, connection)
 	end
 end
@@ -454,59 +364,25 @@ function LootboxUIHandler:OnSpeedUpButtonClicked(packIndex)
 	local pack = self.lootboxPacks[packIndex]
 	if not pack then return end
 	
-	-- CRITICAL: Set pending flag IMMEDIATELY to prevent race conditions
-	-- This must be done BEFORE any checks to prevent duplicate requests
-	if self._pendingRequests[pack.slotIndex] then
-		return -- Request already in progress for this slot
-	end
 	
-	-- Set flag immediately to prevent race condition
-	self._pendingRequests[pack.slotIndex] = true
-	
-	-- Get current lootbox state
-	local currentLootbox = self.currentProfile and self.currentProfile.lootboxes and self.currentProfile.lootboxes[pack.slotIndex]
-	if not currentLootbox then
-		-- Clear flag if no lootbox
-		self._pendingRequests[pack.slotIndex] = nil
-		return -- No lootbox in this slot
-	end
-	
-	-- Use server time instead of client time
-	local serverNow = getServerTime(self.ClientState)
-	
-	-- Validate state: SpeedUp only works on UNLOCKING boxes with active timer
-	if currentLootbox.state ~= "Unlocking" then
-		-- If Ready, automatically use CompleteUnlock instead
-		if currentLootbox.state == "Ready" then
-			-- Flag already set, just call CompleteUnlock
-			if NetworkClient and NetworkClient.requestCompleteUnlock then
-				NetworkClient.requestCompleteUnlock(pack.slotIndex)
+	-- Check if player has enough hard currency
+	if self.currentProfile and self.currentProfile.currencies then
+		local hardCurrency = self.currentProfile.currencies.hard or 0
+		if hardCurrency >= self.SPEED_UP_COST then
+			-- Call backend to speed up (complete timer)
+			if NetworkClient and NetworkClient.requestSpeedUp then
+				local success, error = NetworkClient.requestSpeedUp(pack.slotIndex)
+				if success then
+				else
+					warn("LootboxUIHandler: Speed up request failed:", error)
+				end
+			else
+				warn("LootboxUIHandler: NetworkClient.requestOpenNow not available")
 			end
 		else
-			-- Clear flag if state is invalid
-			self._pendingRequests[pack.slotIndex] = nil
 		end
-		return -- Can only speed up unlocking lootboxes
-	end
-	
-	-- Check if timer is still active (not expired)
-	if currentLootbox.unlocksAt and currentLootbox.unlocksAt <= serverNow then
-		-- Timer expired, use CompleteUnlock instead
-		-- Flag already set, just call CompleteUnlock
-		if NetworkClient and NetworkClient.requestCompleteUnlock then
-			NetworkClient.requestCompleteUnlock(pack.slotIndex)
-		end
-		return
-	end
-	
-	-- Server will validate currency and calculate actual cost
-	-- No need to check on client since cost is dynamic and depends on remaining time
-	-- Flag already set, call backend to speed up (complete timer)
-	if NetworkClient and NetworkClient.requestSpeedUp then
-		NetworkClient.requestSpeedUp(pack.slotIndex)
 	else
-		warn("LootboxUIHandler: NetworkClient.requestSpeedUp not available")
-		self._pendingRequests[pack.slotIndex] = nil
+		warn("LootboxUIHandler: Profile or currencies not available")
 	end
 end
 
@@ -549,16 +425,13 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 	local lootboxes = latestProfile.lootboxes
 	local pendingLootbox = latestProfile.pendingLootbox
 	
-	-- Use server time instead of client time
-	local serverNow = getServerTime(self.ClientState)
-	
 	-- Update lootbox UI based on current player data
 	
 	-- First, check if any lootbox is currently unlocking (timer not completed)
 	local isAnyUnlocking = false
 	for i, lootbox in ipairs(lootboxes) do
 		-- Check if this lootbox is actively unlocking (has timer that hasn't completed)
-		if lootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > serverNow then
+		if lootbox and lootbox.state == "Unlocking" and lootbox.unlocksAt and lootbox.unlocksAt > os.time() then
 			isAnyUnlocking = true
 			break
 		end
@@ -586,17 +459,6 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 				local slotIndex = pack.slotIndex
 				local lootbox = lootboxes[slotIndex] -- slotIndex is 1-4, lootboxes array is 1-indexed
 				
-				-- Clear pending request flag if lootbox was removed or state changed
-				if self._pendingRequests[slotIndex] then
-					if not lootbox then
-						-- Lootbox was removed (opened) - clear flag
-						self._pendingRequests[slotIndex] = nil
-					elseif lootbox.state ~= "Unlocking" then
-						-- State changed from Unlocking (e.g., to Ready or Idle) - clear flag
-						self._pendingRequests[slotIndex] = nil
-					end
-				end
-				
 				-- Check if this slot actually has a lootbox
 				-- A lootbox exists if it has a valid state
 				local hasLootbox = lootbox and lootbox.state and (
@@ -607,10 +469,15 @@ function LootboxUIHandler:UpdateLootboxStates(error, containerName)
 				)
 
 				if hasLootbox then
+					-- Clear pending request flag if lootbox state changed (request completed)
+					if self._pendingRequests[slotIndex] and lootbox.state ~= "Idle" then
+						self._pendingRequests[slotIndex] = nil
+					end
+					
 					-- This slot has a real lootbox
 					if lootbox.state == "Unlocking" then
-						-- Check if timer has completed (using server time)
-						if lootbox.unlocksAt and lootbox.unlocksAt <= serverNow then
+						-- Check if timer has completed
+						if lootbox.unlocksAt and lootbox.unlocksAt <= os.time() then
 							-- Timer completed, lootbox is ready to open
 							self:UpdatePackStateForContainer(containerName, packIndex, "Ready", lootbox)
 						else
@@ -882,11 +749,6 @@ function LootboxUIHandler:StopAllTimers()
 end
 
 function LootboxUIHandler:SetupProfileUpdatedHandler()
-	-- Prevent duplicate handlers - check if handler already exists
-	if self._profileUpdatedConnection then
-		return
-	end
-	
 	-- Listen for ProfileUpdated events
 	local ProfileUpdated = game.ReplicatedStorage.Network:WaitForChild("ProfileUpdated")
 	
@@ -905,6 +767,7 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 			-- Update lootboxes
 			if payload.lootboxes then
 				self.currentProfile.lootboxes = payload.lootboxes
+				print("🎁 [LootboxUIHandler] ProfileUpdated: Updated lootboxes, count=" .. (payload.lootboxes and #payload.lootboxes or 0))
 			end
 			
 			-- Update pending lootbox
@@ -921,16 +784,45 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 			
 			-- Show rewards if any
 			if payload.rewards then
+				print("🎁 [LootboxUIHandler] ProfileUpdated received rewards payload:", 
+					"softDelta=" .. tostring(payload.rewards.softDelta or 0),
+					"hardDelta=" .. tostring(payload.rewards.hardDelta or 0),
+					"card=" .. (payload.rewards.card and payload.rewards.card.cardId or "none"),
+					"rarity=" .. tostring(payload.rewards.rarity or "none"))
+				
+				local rewardCount = 0
+				if payload.rewards.softDelta and payload.rewards.softDelta > 0 then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Soft currency reward:", payload.rewards.softDelta)
+				end
+				if payload.rewards.hardDelta and payload.rewards.hardDelta > 0 then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Hard currency reward:", payload.rewards.hardDelta)
+				end
+				if payload.rewards.card then
+					rewardCount = rewardCount + 1
+					print("🎁 [LootboxUIHandler] Card reward:", payload.rewards.card.cardId, "x" .. payload.rewards.card.copies)
+				end
+				print("🎁 [LootboxUIHandler] Total rewards received:", rewardCount, "items")
+				
 				-- Open lootbox UI with rewards (for shop purchases and speed-up)
+				print("🎁 [LootboxUIHandler] Calling OpenLootbox with rewards...")
 				self:OpenLootbox(payload.rewards)
 				
 				-- Delay UI update until after animation completes
+				-- The UpdateLootboxStates will be called when the lootbox animation completes
+				-- or we'll update it after a short delay to ensure animation has started
 				task.spawn(function()
+					-- Wait a bit for animation to start
 					task.wait(0.5)
+					-- Update UI after animation is playing (lootbox will be removed from profile)
+					-- Force update from ClientState to ensure we have latest data
 					self:UpdateLootboxStates()
 				end)
 			else
 				-- Update UI immediately if no rewards (normal state update)
+				-- Use currentProfile which was just updated from payload
+				print("🎁 [LootboxUIHandler] ProfileUpdated: No rewards, updating UI immediately with", #(self.currentProfile.lootboxes or {}), "lootboxes")
 				self:UpdateLootboxStates()
 			end
 		else
@@ -941,8 +833,7 @@ function LootboxUIHandler:SetupProfileUpdatedHandler()
 		end
 	end)
 	
-	-- Store connection to prevent duplicates
-	self._profileUpdatedConnection = connection
+	-- Store connection for cleanup
 	table.insert(self.Connections, connection)
 end
 
@@ -1289,11 +1180,6 @@ function LootboxUIHandler:Cleanup()
 	if self.profileReadyDisconnect then
 		self.profileReadyDisconnect()
 		self.profileReadyDisconnect = nil
-	end
-	
-	if self._profileUpdatedConnection then
-		self._profileUpdatedConnection:Disconnect()
-		self._profileUpdatedConnection = nil
 	end
 	
 	self._initialized = false

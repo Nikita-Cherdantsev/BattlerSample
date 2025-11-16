@@ -22,7 +22,7 @@ DeckValidator.BoardSlots = {
 
 -- Validation errors
 DeckValidator.Errors = {
-	INVALID_SIZE = "Deck must contain between 0 and 6 cards",
+	INVALID_SIZE = "Deck must contain between 1 and 6 cards",
 	UNKNOWN_CARD = "Card ID not found in catalog: %s",
 	INVALID_CARD_ID = "Invalid card ID format: %s",
 	DUPLICATE_CARD = "Duplicate card ID in deck: %s"
@@ -30,8 +30,8 @@ DeckValidator.Errors = {
 
 -- Validate deck composition (v2 rules)
 function DeckValidator.ValidateDeck(deck)
-	-- Check deck size (allow 0-6 cards for deck management, but require exactly 6 for battles)
-	if not deck or #deck > DeckValidator.TOTAL_SLOTS then
+	-- Check deck size (require 1-6 cards for any saved deck)
+	if not deck or #deck < 1 or #deck > DeckValidator.TOTAL_SLOTS then
 		return false, DeckValidator.Errors.INVALID_SIZE
 	end
 	
