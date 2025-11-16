@@ -9,7 +9,7 @@ local localPlayer = Players.LocalPlayer
 
 local STATUS_MESSAGES = {
 	GRANTED = "Thank you for joining the community! Reward delivered.",
-	ALREADY_CLAIMED = "You already got the reward.",
+	ALREADY_CLAIMED = "You already got the reward!",
 	NOT_IN_GROUP = "You should join the community group to get the reward.",
 	GROUP_ID_NOT_CONFIGURED = "Community reward unavailable. Please try again later.",
 	INVALID_RESPONSE = "Unable to verify group membership. Please try again later."
@@ -92,10 +92,16 @@ function FollowRewardHandler:Init(controller)
 		warn("[FollowRewardHandler] FollowText Label not found inside FollowText Frame")
 		return
 	end
+	local followStroke = followLabel:FindFirstChildOfClass("UIStroke")
+	if not followStroke then
+		warn("[FollowRewardHandler] FollowText Stroke not found inside FollowText Label")
+		return
+	end
 
 	followFrame.Visible = false
 	followFrame.BackgroundTransparency = 1
 	followLabel.TextTransparency = 1
+	followStroke.Transparency = 1
 
 	local followRewardRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("RequestClaimFollowReward")
 	local profileUpdatedRemote = ReplicatedStorage:WaitForChild("Network"):WaitForChild("ProfileUpdated")
@@ -106,19 +112,23 @@ function FollowRewardHandler:Init(controller)
 		followFrame.Visible = true
 		followFrame.BackgroundTransparency = 1
 		followLabel.TextTransparency = 1
+		followStroke.Transparency = 1
 
-		local frameTween = TweenService:Create(followFrame, TWEEN_INFO, { BackgroundTransparency = 0.2 })
+		local frameTween = TweenService:Create(followFrame, TWEEN_INFO, { BackgroundTransparency = 0.5 })
 		local labelTween = TweenService:Create(followLabel, TWEEN_INFO, { TextTransparency = 0 })
+		local strokeTween = TweenService:Create(followStroke, TWEEN_INFO, { Transparency = 0.5 })
 		frameTween:Play()
 		labelTween:Play()
+		strokeTween:Play()
 	end
 
 	local function fadeOut(token)
 		local frameTween = TweenService:Create(followFrame, TWEEN_INFO, { BackgroundTransparency = 1 })
 		local labelTween = TweenService:Create(followLabel, TWEEN_INFO, { TextTransparency = 1 })
-
+		local strokeTween = TweenService:Create(followStroke, TWEEN_INFO, { Transparency = 1 })
 		frameTween:Play()
 		labelTween:Play()
+		strokeTween:Play()
 
 		labelTween.Completed:Connect(function()
 			if currentMessageToken == token then
