@@ -49,6 +49,31 @@ local function log(message, ...)
 	end
 end
 
+-- Helper function to get server time with fallback and local offset
+local function getServerTime(clientState)
+	if clientState and clientState.getState then
+		local state = clientState.getState()
+		if state and state.serverNow and state.serverNow > 0 then
+			-- Calculate current server time using last known server time + local offset
+			-- This provides smooth updates between server syncs
+			local lastServerTime = state.serverNow
+			local lastClientTime = state._lastClientTime or os.time()
+			local currentClientTime = os.time()
+			
+			-- Calculate offset between client and server time
+			local timeOffset = lastServerTime - lastClientTime
+			
+			-- Update stored client time for next calculation
+			state._lastClientTime = currentClientTime
+			
+			-- Return estimated current server time
+			return currentClientTime + timeOffset
+		end
+	end
+	-- Fallback to client time if server time not available
+	return os.time()
+end
+
 -- Public API
 
 -- Initialize ClientState with NetworkClient
@@ -84,9 +109,10 @@ function ClientState.applyProfileUpdate(payload)
 	state.isLeveling = false
 	state.isLootOpInFlight = false
 	
-	-- Update server time
+	-- Update server time and store client time for offset calculation
 	if payload.serverNow then
 		state.serverNow = payload.serverNow
+		state._lastClientTime = os.time() -- Store client time when server time was received
 	end
 	
 	-- Update profile data (merge with existing if available)

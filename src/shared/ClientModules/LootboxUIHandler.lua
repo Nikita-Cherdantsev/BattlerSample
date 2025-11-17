@@ -19,15 +19,29 @@ LootboxUIHandler.timerConnections = {} -- Store timer update connections
 LootboxUIHandler.isRewardClaimed = false -- True when reward has been claimed
 LootboxUIHandler._pendingRequests = {} -- Track pending requests per slot to prevent duplicate clicks
 
--- Helper function to get server time with fallback
+-- Helper function to get server time with fallback and local offset
 local function getServerTime(clientState)
 	if clientState and clientState.getState then
 		local state = clientState.getState()
 		if state and state.serverNow and state.serverNow > 0 then
-			return state.serverNow
+			-- Calculate current server time using last known server time + local offset
+			-- This provides smooth updates between server syncs
+			local lastServerTime = state.serverNow
+			local lastClientTime = state._lastClientTime or os.time()
+			local currentClientTime = os.time()
+			
+			-- Calculate offset between client and server time
+			local timeOffset = lastServerTime - lastClientTime
+			
+			-- Update stored client time for next calculation
+			state._lastClientTime = currentClientTime
+			
+			-- Return estimated current server time
+			return currentClientTime + timeOffset
 		end
 	end
-	return os.time() -- Fallback to client time
+	-- Fallback to client time if server time not available
+	return os.time()
 end
 
 --// Initialization
@@ -773,7 +787,8 @@ function LootboxUIHandler:StartTimerForContainer(containerName, packIndex, lootb
 	local function updateTimer()
 		if not lootboxData.unlocksAt then return end
 		
-		local currentTime = os.time()
+		-- Use server time instead of client time
+		local currentTime = getServerTime(self.ClientState)
 		local remainingTime = math.max(0, lootboxData.unlocksAt - currentTime)
 
 		if remainingTime <= 0 then
@@ -825,7 +840,8 @@ function LootboxUIHandler:StartTimer(packIndex, lootboxData)
 	local connection
 	
 	local function updateTimer()
-		local currentTime = os.time()
+		-- Use server time instead of client time
+		local currentTime = getServerTime(self.ClientState)
 		local remainingTime = math.max(0, unlocksAt - currentTime)
 		
 		if remainingTime <= 0 then
