@@ -37,7 +37,8 @@ local listFrame = surfaceGui.Frame.List
 local itemsFrame = listFrame.ListContent.Items
 
 -- Internal state
-local cachedSecondsByUserId = {}
+local cachedSecondsByUserId = {}  -- userId -> last value written to DataStore
+local lastProfilePlaytime = {}    -- userId -> last totalTime from profile (for delta calculation)
 local sessionEntries = {}
 
 -- Utils
@@ -61,12 +62,20 @@ local function formatSeconds(seconds)
 	return string.format("%02d:%02d", minutes, secs)
 end
 
-local function writeSecondsToDataStore(userId, seconds)
+local function writeSecondsToDataStore(userId, seconds, delta)
 	seconds = roundNumber(seconds)
+	delta = roundNumber(delta or 0)
+	
 	for attempt = 1, DATASTORE_RETRIES do
 		local success, err = pcall(function()
-			dataStore:UpdateAsync(userId, function()
-				return seconds
+			dataStore:UpdateAsync(userId, function(currentValue)
+				local existing = tonumber(currentValue) or 0
+				
+				if delta > 0 then
+					return existing + delta
+				end
+				
+				return math.max(existing, seconds)
 			end)
 		end)
 
@@ -108,12 +117,42 @@ local function syncPlayerPlaytime(userId, forceWrite)
 
 	sessionEntries[userId] = playtimeSeconds
 
-	local lastRecorded = cachedSecondsByUserId[userId]
-	local delta = lastRecorded and math.abs(playtimeSeconds - lastRecorded) or math.huge
+	local lastProfileValue = lastProfilePlaytime[userId]
+	local delta = 0
+	
+	if lastProfileValue then
+		if playtimeSeconds >= lastProfileValue then
+			delta = playtimeSeconds - lastProfileValue
+		end
+	else
+		local lastRecorded = cachedSecondsByUserId[userId]
+		if lastRecorded then
+			if playtimeSeconds < lastRecorded * 0.5 then
+				delta = 0
+			else
+				delta = math.max(0, playtimeSeconds - (lastRecorded or 0))
+			end
+		else
+			-- First write ever - use current value
+			delta = playtimeSeconds
+		end
+	end
 
-	if forceWrite or delta >= MIN_DELTA_TO_SAVE then
-		if writeSecondsToDataStore(userId, playtimeSeconds) then
-			cachedSecondsByUserId[userId] = playtimeSeconds
+	local lastRecorded = cachedSecondsByUserId[userId]
+	local shouldWrite = false
+	
+	if forceWrite then
+		shouldWrite = true
+	elseif lastProfileValue then
+		shouldWrite = delta >= MIN_DELTA_TO_SAVE
+	else
+		shouldWrite = true
+	end
+
+	if shouldWrite then
+		if writeSecondsToDataStore(userId, playtimeSeconds, delta) then
+			cachedSecondsByUserId[userId] = (cachedSecondsByUserId[userId] or 0) + (delta > 0 and delta or 0)
+			lastProfilePlaytime[userId] = playtimeSeconds
 		end
 	end
 end
@@ -220,6 +259,7 @@ end
 
 Players.PlayerAdded:Connect(function(player)
 	cachedSecondsByUserId[player.UserId] = nil
+	lastProfilePlaytime[player.UserId] = nil  -- Reset on player join
 	sessionEntries[player.UserId] = 0
 	task.defer(function()
 		task.wait(5)
@@ -233,6 +273,7 @@ Players.PlayerRemoving:Connect(function(player)
 		task.wait(2)
 		syncPlayerPlaytime(player.UserId, true)
 		sessionEntries[player.UserId] = nil
+		lastProfilePlaytime[player.UserId] = nil  -- Clear on player leave
 		updateLeaderboardDisplay()
 	end)
 end)
