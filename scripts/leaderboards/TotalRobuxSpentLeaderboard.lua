@@ -16,6 +16,8 @@ local UPDATE_INTERVAL = 120 -- seconds (2 minutes)
 local MIN_DELTA_TO_SAVE = 1 -- Robux increments are whole numbers
 local DATASTORE_RETRIES = 3
 local RETRY_BACKOFF = 2 -- seconds
+local CACHE_DURATION = 30 -- Cache GetSorted results for 30 seconds
+local BUDGET_THRESHOLD = 0.5 -- Only make requests if budget > 50%
 
 -- Services
 local Players = game:GetService("Players")
@@ -34,6 +36,12 @@ local itemsFrame = listFrame.ListContent.Items
 -- Internal state
 local cachedTotalsByUserId = {}
 local sessionEntries = {}
+local cachedLeaderboardData = nil  -- Cached leaderboard rows
+local cacheTimestamp = 0  -- When cache was last updated
+
+-- Cache for usernames to avoid repeated API calls
+local usernameCache = {}
+local CACHE_USERNAME_DURATION = 300 -- Cache usernames for 5 minutes
 
 -- Helpers
 local function roundNumber(value)
@@ -67,6 +75,66 @@ local function getTotalRobuxSpent(userId)
 	end
 
 	return math.max(0, roundNumber(profile.totalRobuxSpent or 0))
+end
+
+-- Get username with caching and improved error handling
+local function getUsername(userId)
+	if not userId or userId == 0 then
+		return "User " .. tostring(userId or "Unknown")
+	end
+	
+	-- Check cache first
+	local cached = usernameCache[userId]
+	if cached and (os.time() - cached.timestamp) < CACHE_USERNAME_DURATION then
+		return cached.username
+	end
+	
+	-- Try to get player from current game session
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		local username = player.Name
+		-- Update cache
+		usernameCache[userId] = {
+			username = username,
+			timestamp = os.time()
+		}
+		return username
+	end
+	
+	-- Try to fetch from API (with better error handling)
+	local success, fetchedName = pcall(function()
+		-- Validate userId before calling API
+		if type(userId) ~= "number" or userId <= 0 then
+			return nil
+		end
+		return Players:GetNameFromUserIdAsync(userId)
+	end)
+	
+	if success and fetchedName and type(fetchedName) == "string" and fetchedName ~= "" then
+		-- Update cache
+		usernameCache[userId] = {
+			username = fetchedName,
+			timestamp = os.time()
+		}
+		return fetchedName
+	end
+	
+	-- Fallback: return userId as string if we can't get name
+	return "User " .. tostring(userId)
+end
+
+-- Check DataStore budget before making requests
+local function checkBudget()
+	local success, budget = pcall(function()
+		return DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetSortedAsync)
+	end)
+	
+	if success and budget then
+		return budget >= BUDGET_THRESHOLD
+	end
+	
+	-- If we can't check budget, allow request but with caution
+	return true
 end
 
 local function writeTotalToDataStore(userId, amount)
@@ -117,37 +185,55 @@ local function clearItems()
 end
 
 local function buildRows()
+	-- Use cached data if available and fresh
+	local now = os.time()
+	if cachedLeaderboardData and (now - cacheTimestamp) < CACHE_DURATION then
+		return cachedLeaderboardData
+	end
+	
 	local rows = {}
 	local usedDataStore = false
 
-	local success, sortedData = pcall(function()
-		return dataStore:GetSortedAsync(false, MAX_ITEMS, MIN_VALUE_DISPLAY, MAX_VALUE_DISPLAY)
-	end)
-
-	if success then
-		local page = sortedData:GetCurrentPage()
-		local indexByUserId = {}
-		for _, entry in ipairs(page) do
-			local userId = tonumber(entry.key)
-			local total = tonumber(entry.value) or 0
-			table.insert(rows, {
-				userId = userId,
-				total = total
-			})
-			indexByUserId[userId] = #rows
+	-- Check budget before making request
+	if not checkBudget() then
+		warn("[RobuxLeaderboard] DataStore budget too low, using cached data or session entries")
+		if cachedLeaderboardData then
+			return cachedLeaderboardData
 		end
-
-		for userId, total in pairs(sessionEntries) do
-			if indexByUserId[userId] and total > rows[indexByUserId[userId]].total then
-				rows[indexByUserId[userId]].total = total
-			elseif not indexByUserId[userId] then
-				table.insert(rows, { userId = userId, total = total })
-			end
-		end
-
-		usedDataStore = true
+		-- Fall through to session entries
 	else
-		warn("[RobuxLeaderboard] Failed to fetch leaderboard data: " .. tostring(sortedData))
+		local success, sortedData = pcall(function()
+			return dataStore:GetSortedAsync(false, MAX_ITEMS, MIN_VALUE_DISPLAY, MAX_VALUE_DISPLAY)
+		end)
+
+		if success then
+			local page = sortedData:GetCurrentPage()
+			local indexByUserId = {}
+			for _, entry in ipairs(page) do
+				local userId = tonumber(entry.key)
+				local total = tonumber(entry.value) or 0
+				table.insert(rows, {
+					userId = userId,
+					total = total
+				})
+				indexByUserId[userId] = #rows
+			end
+
+			for userId, total in pairs(sessionEntries) do
+				if indexByUserId[userId] and total > rows[indexByUserId[userId]].total then
+					rows[indexByUserId[userId]].total = total
+				elseif not indexByUserId[userId] then
+					table.insert(rows, { userId = userId, total = total })
+				end
+			end
+
+			usedDataStore = true
+			-- Update cache
+			cachedLeaderboardData = rows
+			cacheTimestamp = now
+		else
+			warn("[RobuxLeaderboard] Failed to fetch leaderboard data: " .. tostring(sortedData))
+		end
 	end
 
 	if not usedDataStore then
@@ -177,19 +263,7 @@ local function updateLeaderboardDisplay()
 	for index, entry in ipairs(rows) do
 		local userId = entry.userId
 		local total = entry.total or 0
-		local username = "[Not Available]"
-
-		local player = Players:GetPlayerByUserId(userId)
-		if player then
-			username = player.Name
-		else
-			local successName, fetchedName = pcall(function()
-				return Players:GetNameFromUserIdAsync(userId)
-			end)
-			if successName and fetchedName then
-				username = fetchedName
-			end
-		end
+		local username = getUsername(userId)
 
 		local color = Color3.fromRGB(38, 50, 56)
 		if index == 1 then
@@ -218,6 +292,7 @@ local function refresh()
 		syncPlayerTotal(player.UserId, false)
 	end
 
+	-- Only update display, don't force refresh from DataStore
 	updateLeaderboardDisplay()
 end
 
@@ -227,6 +302,8 @@ Players.PlayerAdded:Connect(function(player)
 	task.defer(function()
 		task.wait(5)
 		syncPlayerTotal(player.UserId, true)
+		-- Invalidate cache to force refresh
+		cacheTimestamp = 0
 		updateLeaderboardDisplay()
 	end)
 end)
@@ -236,6 +313,8 @@ Players.PlayerRemoving:Connect(function(player)
 		task.wait(2)
 		syncPlayerTotal(player.UserId, true)
 		sessionEntries[player.UserId] = nil
+		-- Invalidate cache to force refresh
+		cacheTimestamp = 0
 		updateLeaderboardDisplay()
 	end)
 end)
@@ -244,6 +323,10 @@ task.defer(function()
 	refresh()
 	updateLeaderboardDisplay()
 end)
+
+-- Add random offset to prevent all leaderboards updating at once
+local randomOffset = math.random(0, 30)  -- 0-30 second offset
+task.wait(randomOffset)
 
 while task.wait(UPDATE_INTERVAL) do
 	refresh()
