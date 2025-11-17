@@ -24,20 +24,26 @@ local function getServerTime(clientState)
 	if clientState and clientState.getState then
 		local state = clientState.getState()
 		if state and state.serverNow and state.serverNow > 0 then
-			-- Calculate current server time using last known server time + local offset
+			-- Calculate current server time using last known server time + elapsed time
 			-- This provides smooth updates between server syncs
 			local lastServerTime = state.serverNow
-			local lastClientTime = state._lastClientTime or os.time()
+			local lastClientTime = state._lastClientTime
+			
+			-- If _lastClientTime is not set, initialize it to current time
+			-- This handles the case when serverNow was set before _lastClientTime
+			if not lastClientTime or lastClientTime <= 0 then
+				lastClientTime = os.time()
+				state._lastClientTime = lastClientTime
+			end
+			
 			local currentClientTime = os.time()
 			
-			-- Calculate offset between client and server time
-			local timeOffset = lastServerTime - lastClientTime
+			-- Calculate elapsed time since last sync
+			local elapsedTime = currentClientTime - lastClientTime
 			
-			-- Update stored client time for next calculation
-			state._lastClientTime = currentClientTime
-			
-			-- Return estimated current server time
-			return currentClientTime + timeOffset
+			-- Return estimated current server time: lastServerTime + elapsedTime
+			-- This assumes client and server clocks run at the same rate
+			return lastServerTime + elapsedTime
 		end
 	end
 	-- Fallback to client time if server time not available
