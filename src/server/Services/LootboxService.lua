@@ -18,7 +18,7 @@ local Types = require(game.ReplicatedStorage.Modules.Types)
 
 -- Helper function to preserve profile invariants
 local function preserveProfileInvariants(profile, userId)
-	profile.updatedAt = os.time()
+	-- NOTE: updatedAt is set by ProfileManager.UpdateProfile, don't set it here
 	profile.playerId = tostring(userId)
 	profile.schemaVersion = profile.schemaVersion or 1
 	
@@ -176,7 +176,6 @@ function LootboxService.ResolvePendingDiscard(userId)
 		end
 		
 		profile.pendingLootbox = nil
-		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true }
 		return preserveProfileInvariants(profile, userId)
 	end)
@@ -232,7 +231,6 @@ function LootboxService.ResolvePendingReplace(userId, slotIndex)
 		}
 		
 		profile.pendingLootbox = nil
-		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, replacedBox = profile.lootboxes[slotIndex] }
 		return preserveProfileInvariants(profile, userId)
 	end)
@@ -356,7 +354,6 @@ function LootboxService.StartUnlock(userId, slotIndex, serverNow)
 		lootbox.startedAt = serverNow
 		lootbox.unlocksAt = serverNow + duration
 		
-		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, lootbox = lootbox }
 		return preserveProfileInvariants(profile, userId)
 	end)
@@ -426,7 +423,6 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		-- Free the slot and compact array
 		profile.lootboxes[slotIndex] = nil
 		profile.lootboxes = compactLootboxArray(profile.lootboxes)
-		profile.updatedAt = os.time()
 		profile._lootboxResult = { ok = true, rewards = rewards }
 		return preserveProfileInvariants(profile, userId)
 	end)

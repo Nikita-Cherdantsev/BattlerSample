@@ -166,12 +166,19 @@ function DataStoreWrapper.ProcessPendingWrites()
 					return DataStoreWrapper.UpdateAsync(write.storeName, write.key, write.updateFunction, write.maxRetries)
 				end)
 				
-				if success then
+				if success and result then
+					-- Write completed successfully
 					table.remove(pendingWrites, i)
 					processed = processed + 1
+				elseif success then
+					-- Write was queued again (budget still low) - keep in queue
+					-- Don't remove from pendingWrites, will retry later
 				else
+					-- Write failed with error
 					failed = failed + 1
 					LogError(write.storeName, write.key, "UpdateAsync", result, {pending = true})
+					-- Optionally remove failed writes after too many failures
+					-- For now, keep them to retry
 				end
 			end
 		end

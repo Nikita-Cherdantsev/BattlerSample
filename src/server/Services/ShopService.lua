@@ -78,7 +78,7 @@ function ShopService.ProcessReceipt(receiptInfo)
 				amountSpent = pack.robuxPrice or 0
 			end
 			profile.totalRobuxSpent = (profile.totalRobuxSpent or 0) + amountSpent
-			profile.updatedAt = os.time()
+			-- NOTE: updatedAt is set by ProfileManager.UpdateProfile, don't set it here
 			
 			return profile
 		end)
@@ -261,7 +261,7 @@ function ShopService.BuyLootbox(playerId, rarity)
 			
 			-- Deduct hard currency
 			profile.currencies.hard = (profile.currencies.hard or 0) - cost
-			profile.updatedAt = os.time()
+			-- NOTE: updatedAt is set by ProfileManager.UpdateProfile, don't set it here
 			
 			return profile
 		end)

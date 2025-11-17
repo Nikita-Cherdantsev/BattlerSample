@@ -552,19 +552,8 @@ end
 
 -- Increase boss difficulty after victory (cycles: easy -> normal -> hard -> nightmare -> hell -> easy)
 local function IncreaseBossDifficulty(player, bossId)
-	local profile = PlayerDataService.EnsureProfileLoaded(player)
-	if not profile then
-		LogWarning(player, "Failed to load profile for boss difficulty increase")
-		return false
-	end
-	
-	-- Initialize bossDifficulties if needed
-	if not profile.bossDifficulties then
-		profile.bossDifficulties = {}
-	end
-	
-	-- Get current difficulty
-	local currentDifficulty = profile.bossDifficulties[bossId] or "easy"
+	-- Update difficulty atomically using UpdateProfile (loads profile internally)
+	local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 	
 	-- Difficulty progression order
 	local difficultyOrder = {
@@ -575,21 +564,37 @@ local function IncreaseBossDifficulty(player, bossId)
 		["hell"] = "easy" -- Cycle back to easy after hell
 	}
 	
-	-- Get next difficulty
-	local nextDifficulty = difficultyOrder[currentDifficulty]
-	if not nextDifficulty then
-		-- Fallback: if current difficulty is invalid, set to normal
-		nextDifficulty = "normal"
-	end
+	local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+		-- Ensure bossDifficulties table exists
+		if not profile.bossDifficulties then
+			profile.bossDifficulties = {}
+		end
+		
+		-- Get current difficulty
+		local currentDifficulty = profile.bossDifficulties[bossId] or "easy"
+		
+		-- Get next difficulty
+		local nextDifficulty = difficultyOrder[currentDifficulty]
+		if not nextDifficulty then
+			-- Fallback: if current difficulty is invalid, set to normal
+			nextDifficulty = "normal"
+		end
+		
+		-- Update difficulty
+		profile.bossDifficulties[bossId] = nextDifficulty
+		return profile
+	end)
 	
-	-- Update difficulty
-	profile.bossDifficulties[bossId] = nextDifficulty
-	
-	-- Save profile
-	local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
-	local success = ProfileManager.SaveProfile(player.UserId, profile)
-	
-	if success then
+	if success and updatedProfile then
+		local currentDifficulty = (updatedProfile.bossDifficulties and updatedProfile.bossDifficulties[bossId]) or "easy"
+		local difficultyOrder = {
+			["easy"] = "normal",
+			["normal"] = "hard",
+			["hard"] = "nightmare",
+			["nightmare"] = "hell",
+			["hell"] = "easy"
+		}
+		local nextDifficulty = difficultyOrder[currentDifficulty] or "normal"
 		LogInfo(player, "Boss %s difficulty increased: %s -> %s", bossId, currentDifficulty, nextDifficulty)
 		return true
 	else

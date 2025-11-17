@@ -104,7 +104,7 @@ local function sanitizeProfileSnapshot(player, profile)
 		lootboxes = sanitizeLootboxes(profile.lootboxes or {}),
 		pendingLootbox = sanitizePendingLootbox(profile.pendingLootbox),
 		playtime = sanitizePlaytime(profile.playtime),
-		updatedAt = os.time(),
+		updatedAt = profile.updatedAt or os.time(),
 	}
 
 	-- Keep compatibility with systems expecting profile v2 format

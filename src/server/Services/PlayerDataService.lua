@@ -66,11 +66,22 @@ end
 -- Note: Starter deck assignment removed - players now start with empty deck
 
 local function SafeSaveProfile(player)
-	if not player or not playerProfiles[player] then
-		return false, "No profile to save"
+	if not player then
+		return false, "No player specified"
 	end
 	
-	local success = ProfileManager.SaveProfile(player.UserId, playerProfiles[player])
+	-- Use ProfileManager as single source of truth
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		-- Try to load if not cached
+		profile = ProfileManager.LoadProfile(player.UserId)
+		if not profile then
+			LogWarning(player, "No profile to save")
+			return false, "No profile to save"
+		end
+	end
+	
+	local success = ProfileManager.SaveProfile(player.UserId, profile)
 	if success then
 		LogInfo(player, "Profile saved successfully")
 		return true
@@ -86,10 +97,17 @@ StartAutosave = function(player)
 	end
 	
 	autosaveTasks[player] = spawn(function()
-		while player and playerProfiles[player] and not isShuttingDown do
+		while player and not isShuttingDown do
 			task.wait(AUTOSAVE_INTERVAL)
 			
-			if not player or not playerProfiles[player] then
+			if not player then
+				break
+			end
+			
+			-- Check if profile still exists in ProfileManager cache
+			local profile = ProfileManager.GetCachedProfile(player.UserId)
+			if not profile then
+				-- Profile not loaded, stop autosave
 				break
 			end
 			
@@ -149,13 +167,16 @@ local function OnPlayerAdded(player)
 	-- Store profile reference
 	playerProfiles[player] = profile
 	
-	-- Update profile with current player info
-	profile.playerId = tostring(player.UserId)
+	-- Update profile with current player info and login time atomically
+	local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+		profile.playerId = tostring(player.UserId)
+		ProfileSchema.UpdateLoginTime(profile)
+		return profile
+	end)
 	
-	-- Update login time and persist
-	ProfileSchema.UpdateLoginTime(profile)
-	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
-	if saveSuccess then
+	if success and updatedProfile then
+		-- Sync local cache with updated profile
+		playerProfiles[player] = updatedProfile
 		LogInfo(player, "Saved profile for user: %d", player.UserId)
 	else
 		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
@@ -172,9 +193,11 @@ local function OnPlayerAdded(player)
 		ShopService.FetchRegionalPricesForPlayer(player)
 	end
 	
+	-- Get final profile for logging (use updated profile if available)
+	local finalProfile = updatedProfile or profile
 	local stats = ProfileManager.GetProfileStats(player.UserId)
 	LogInfo(player, "Profile loaded successfully. Collection: %d unique cards, Deck: %d cards", 
-		stats and stats.uniqueCards or 0, profile and #profile.deck or 0)
+		stats and stats.uniqueCards or 0, finalProfile and #finalProfile.deck or 0)
 end
 
 local function OnPlayerRemoving(player)
@@ -234,8 +257,17 @@ function PlayerDataService.GetProfile(player)
 		return nil
 	end
 	
+	-- CRITICAL: Get profile from ProfileManager (single source of truth) to ensure latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		-- Fallback to playerProfiles if GetCachedProfile returns nil
+		profile = playerProfiles[player]
+		if not profile then
+			return nil
+		end
+	end
+	
 	-- Return a copy to prevent external modification
-	local profile = playerProfiles[player]
 	return {
 		playerId = profile.playerId,
 		createdAt = profile.createdAt,
@@ -287,21 +319,10 @@ function PlayerDataService.SetDeck(player, deckIds)
 	-- Update deck atomically (ProfileManager handles squad power computation)
 	local success = ProfileManager.UpdateDeck(player.UserId, deckIds)
 	if success then
-		-- Get the updated profile from ProfileManager (after sorting and validation)
+		-- Sync local cache with ProfileManager (single source of truth)
 		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
 		if updatedProfile then
-			-- Update local copy with the sorted deck from ProfileManager
-			playerProfiles[player].deck = (function()
-				local cloned = {}
-				for i, v in ipairs(updatedProfile.deck) do
-					cloned[i] = v
-				end
-				return cloned
-			end)()
-			
-			-- Update squad power in local cache
-			playerProfiles[player].squadPower = updatedProfile.squadPower
-			
+			playerProfiles[player] = updatedProfile
 			LogInfo(player, "Deck updated successfully, squad power: %.1f", updatedProfile.squadPower)
 		else
 			LogWarning(player, "Failed to get updated profile after deck update")
@@ -319,7 +340,16 @@ function PlayerDataService.LevelUpCard(player, cardId)
 		return false, "Player profile not loaded"
 	end
 	
-	local profile = playerProfiles[player]
+	-- CRITICAL: Get profile from ProfileManager (single source of truth) instead of playerProfiles
+	-- This ensures we always use the latest data, especially after GrantCards operations
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		-- Fallback to playerProfiles if GetCachedProfile returns nil
+		profile = playerProfiles[player]
+		if not profile then
+			return false, "Player profile not loaded"
+		end
+	end
 	
 	-- Validation 1: Card exists in catalog
 	local card = CardCatalog.GetCard(cardId)
@@ -358,38 +388,15 @@ function PlayerDataService.LevelUpCard(player, cardId)
 	-- Perform atomic level-up via ProfileManager
 	local success = ProfileManager.LevelUpCard(player.UserId, cardId, cost.requiredCount, cost.softAmount)
 	if success then
-		-- ProfileManager already updated the profile, just refresh local cache
-		profile = ProfileManager.GetCachedProfile(player.UserId)
-		if not profile then
+		-- Sync local cache with ProfileManager (single source of truth)
+		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
+		if not updatedProfile then
 			return false, "Failed to refresh profile after level-up"
 		end
-		-- Update the local cache reference
-		playerProfiles[player] = profile
-		
-		-- Check if this card is in the active deck and recompute squad power
-		local isInDeck = false
-		for _, deckCardId in ipairs(profile.deck) do
-			if deckCardId == cardId then
-				isInDeck = true
-				break
-			end
-		end
-		
-		if isInDeck then
-			-- Recompute squad power
-			local totalPower = 0
-			for _, deckCardId in ipairs(profile.deck) do
-				local deckCardEntry = profile.collection[deckCardId]
-				if deckCardEntry then
-					local stats = CardStats.ComputeStats(deckCardId, deckCardEntry.level)
-					totalPower = totalPower + CardStats.ComputePower(stats)
-				end
-			end
-			profile.squadPower = RoundToDecimals(totalPower, 1)
-		end
+		playerProfiles[player] = updatedProfile
 		
 		LogInfo(player, "Card %s leveled up to level %d (cost: %d copies, %d soft)", 
-			cardId, collectionEntry.level, cost.requiredCount, cost.softAmount)
+			cardId, updatedProfile.collection[cardId].level, cost.requiredCount, cost.softAmount)
 		return true
 	else
 		LogWarning(player, "Failed to persist level-up for card %s", cardId)
@@ -433,11 +440,10 @@ function PlayerDataService.GrantCards(player, rewards)
 	end
 	
 	if success then
-		-- Reload profile from DataStore to ensure local cache is in sync
-		-- We need to force a reload because the cached profile was modified in-place
-		local reloadedProfile = ProfileManager.LoadProfile(player.UserId)
-		if reloadedProfile then
-			playerProfiles[player] = reloadedProfile
+		-- Sync local cache with ProfileManager (single source of truth)
+		local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
+		if updatedProfile then
+			playerProfiles[player] = updatedProfile
 		end
 		
 		-- Count granted card types
@@ -459,8 +465,18 @@ function PlayerDataService.GetCollection(player)
 		return nil
 	end
 	
+	-- CRITICAL: Get profile from ProfileManager (single source of truth) to ensure latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		-- Fallback to playerProfiles if GetCachedProfile returns nil
+		profile = playerProfiles[player]
+		if not profile then
+			return nil
+		end
+	end
+	
 	-- Return a copy to prevent external modification
-	local collection = playerProfiles[player].collection
+	local collection = profile.collection
 	local copy = {}
 	for k, v in pairs(collection) do
 		copy[k] = v
@@ -474,7 +490,15 @@ function PlayerDataService.GetLoginInfo(player)
 		return nil
 	end
 	
-	local profile = playerProfiles[player]
+	-- CRITICAL: Get profile from ProfileManager (single source of truth) to ensure latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		-- Fallback to playerProfiles if GetCachedProfile returns nil
+		profile = playerProfiles[player]
+		if not profile then
+			return nil
+		end
+	end
 	return {
 		lastLoginAt = profile.lastLoginAt,
 		loginStreak = profile.loginStreak
@@ -488,11 +512,19 @@ end
 
 -- Bump login streak (v2: simplified logic without meta field)
 function PlayerDataService.BumpLoginStreak(player)
-	if not player or not playerProfiles[player] then
-		return false, "Player profile not loaded"
+	if not player then
+		return false, "Player not specified"
 	end
 	
-	local profile = playerProfiles[player]
+	-- Use ProfileManager as single source of truth
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
+	if not profile then
+		profile = ProfileManager.LoadProfile(player.UserId)
+		if not profile then
+			return false, "Player profile not loaded"
+		end
+	end
+	
 	local today = todayKeyUTC()
 	
 	LogInfo(player, "BumpLoginStreak called. Current streak: %d, last bump date: %s", 
@@ -507,23 +539,22 @@ function PlayerDataService.BumpLoginStreak(player)
 		end
 	end
 	
-	-- Update the streak directly in our local cache
+	-- Use atomic UpdateProfile to ensure consistency
 	local oldStreak = profile.loginStreak or 0
-	profile.loginStreak = oldStreak + 1
-	profile.favoriteLastSeen = os.time() -- Use current time as last bump date
+	local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+		profile.loginStreak = (profile.loginStreak or 0) + 1
+		profile.favoriteLastSeen = os.time() -- Use current time as last bump date
+		return profile
+	end)
 	
-	LogInfo(player, "Streak updated: %d -> %d, date set to: %s", oldStreak, profile.loginStreak, today)
-	
-	-- Save the profile to persist the changes
-	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
-	if saveSuccess then
-		LogInfo(player, "Login streak bumped to %d and saved successfully", profile.loginStreak)
-		return true, profile.loginStreak
+	if success and updatedProfile then
+		-- Sync local cache
+		playerProfiles[player] = updatedProfile
+		LogInfo(player, "Streak updated: %d -> %d, date set to: %s", oldStreak, updatedProfile.loginStreak, today)
+		LogInfo(player, "Login streak bumped to %d and saved successfully", updatedProfile.loginStreak)
+		return true, updatedProfile.loginStreak
 	else
 		LogWarning(player, "Failed to save profile after streak bump")
-		-- Revert the change since save failed
-		profile.loginStreak = profile.loginStreak - 1
-		profile.favoriteLastSeen = nil
 		return false
 	end
 end
@@ -605,15 +636,9 @@ function PlayerDataService.EnsureProfileLoaded(player)
 	-- Update profile with current player info
 	profile.playerId = tostring(player.UserId)
 	
-	-- Update login time and persist
-	ProfileSchema.UpdateLoginTime(profile)
-	local saveSuccess = ProfileManager.SaveProfile(player.UserId, profile)
-	if saveSuccess then
-		LogInfo(player, "Saved profile for user: %d", player.UserId)
-	else
-		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
-	end
-		
+	-- Note: Login time update and save is handled in OnPlayerAdded
+	-- Don't duplicate save here to avoid race conditions with cross-server sync
+	
 	-- Start autosave if not already running
 	if not autosaveTasks[player] then
 		StartAutosave(player)
