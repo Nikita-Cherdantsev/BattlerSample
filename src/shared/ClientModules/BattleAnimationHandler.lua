@@ -569,6 +569,7 @@ end
 function BattleAnimationHandler:Attack(attackerRole, attackerId, targetId, damageType, damageValue, isDeath, onComplete)
 	if not self._initialized then
 		warn("BattleAnimationHandler: Not initialized. Call Init() first.")
+		if onComplete then onComplete() end
 		return
 	end
 	
@@ -578,12 +579,14 @@ function BattleAnimationHandler:Attack(attackerRole, attackerId, targetId, damag
 	
 	if not attackerFrame or not targetFrame then
 		warn("BattleAnimationHandler: Could not find card frames")
+		if onComplete then onComplete() end
 		return
 	end
 	
 	local effectFrame = targetFrame:FindFirstChild("Effect")
 	if not effectFrame then
 		warn("BattleAnimationHandler: Effect frame not found in target card")
+		if onComplete then onComplete() end
 		return
 	end
 	

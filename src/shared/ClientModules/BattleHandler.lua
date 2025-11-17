@@ -23,6 +23,7 @@ BattleHandler.battleResult = nil -- Store battle result for rewards
 BattleHandler.isBattleActive = false -- Track if any battle window is open (prep, battle, or rewards)
 BattleHandler.originalCardSizes = {} -- Store original sizes to prevent accumulation
 BattleHandler.cardHealthValues = {} -- Store current health values for each card frame
+BattleHandler._notif = nil -- Notification UI reference
 
 --// Constants
 local ANIMATION_DURATION = 0.5
@@ -588,7 +589,132 @@ function BattleHandler:SimulateBattle(battleData)
 	self:ProcessBattleLog(battleData.battleLog)
 end
 
+-- Local helper to show notifications (reused from CardInfoHandler pattern)
+function BattleHandler:ShowNotification(message)
+	-- Cache references
+	if not self._notif then
+		local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
+		if playerGui then
+			local gameUI = playerGui:FindFirstChild("GameUI")
+			local followFrame = gameUI and gameUI:FindFirstChild("FollowText")
+			local followLabel = followFrame and followFrame:FindFirstChildOfClass("TextLabel")
+			local stroke = followLabel and followLabel:FindFirstChildOfClass("UIStroke")	
+
+			if followFrame and followLabel and stroke then
+				self._notif = {
+					frame = followFrame,
+					label = followLabel,
+					stroke = stroke,
+					token = 0
+				}
+			else
+				-- Fallback: build a lightweight toast ScreenGui if FollowText is unavailable or hidden
+				local toastGui = Instance.new("ScreenGui")
+				toastGui.Name = "BattleToastGui"
+				toastGui.ResetOnSpawn = false
+				toastGui.IgnoreGuiInset = true
+				toastGui.DisplayOrder = 1000
+				toastGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+				toastGui.Parent = playerGui
+				
+				local frame = Instance.new("Frame")
+				frame.Name = "Toast"
+				frame.Size = UDim2.new(0.5, 0, 0.05, 0)
+				frame.Position = UDim2.new(0.5, 0, 0.10, 0)
+				frame.AnchorPoint = Vector2.new(0.5, 0)
+				frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+				frame.BackgroundTransparency = 0.75
+				frame.BorderSizePixel = 0
+				frame.ZIndex = 1000
+				frame.Visible = false
+				frame.Parent = toastGui
+				
+				local corner = Instance.new("UICorner")
+				corner.CornerRadius = UDim.new(0.5, 0)
+				corner.Parent = frame
+				
+				local label = Instance.new("TextLabel")
+				label.Name = "Text"
+				label.Size = UDim2.new(1, -24, 1, -12)
+				label.Position = UDim2.new(0, 12, 0, 6)
+				label.BackgroundTransparency = 1
+				label.TextColor3 = Color3.fromRGB(255, 255, 255)
+				label.TextScaled = true
+				label.Font = Enum.Font.Montserrat
+				label.FontWeight = Enum.FontWeight.Bold
+				label.ZIndex = 1001
+				label.Text = ""
+				label.Parent = frame
+
+				local stroke = Instance.new("UIStroke")
+				stroke.Color = Color3.fromRGB(0, 0, 0)
+				stroke.Transparency = 0.75
+				stroke.Thickness = 0.02
+				stroke.Parent = label
+				
+				self._notif = {
+					frame = frame,
+					label = label,
+					token = 0,
+					_isFallback = true
+				}
+			end
+		else
+			return
+		end
+	end
+	
+	local frame = self._notif.frame
+	local label = self._notif.label
+	local stroke = self._notif.stroke
+	self._notif.token = (self._notif.token or 0) + 1
+	local token = self._notif.token
+	
+	-- Prepare (ensure it renders above battle UI)
+	frame.ZIndex = 1000
+	label.ZIndex = 1001
+	frame.Visible = true
+	frame.BackgroundTransparency = 1
+	label.TextTransparency = 1
+	if stroke then
+		stroke.Transparency = 1
+	end
+	label.Text = message
+
+	-- Fade in using TweenService (match CardInfoHandler behaviour)
+	local fadeInInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(frame, fadeInInfo, { BackgroundTransparency = 0.5 }):Play()
+	TweenService:Create(label, fadeInInfo, { TextTransparency = 0 }):Play()
+	if stroke then
+		TweenService:Create(stroke, fadeInInfo, { Transparency = 0.5 }):Play()
+	end
+
+	-- Auto fade out
+	task.delay(3.0, function()
+		if self._notif and self._notif.token == token then
+			local fadeOutInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			local tween1 = TweenService:Create(frame, fadeOutInfo, { BackgroundTransparency = 1 })
+			local tween2 = TweenService:Create(label, fadeOutInfo, { TextTransparency = 1 })
+			tween1:Play()
+			tween2:Play()
+			if stroke then
+				local tween3 = TweenService:Create(stroke, fadeOutInfo, { Transparency = 1 })
+				tween3:Play()
+			end
+			tween2.Completed:Connect(function()
+				if self._notif and self._notif.token == token then
+					frame.Visible = false
+				end
+			end)
+		end
+	end)
+end
+
 function BattleHandler:ProcessBattleLog(battleLog)
+	-- Initialize round damage tracking for stalemate detection
+	self._roundDamage = {} -- Track damage per round: roundNumber -> totalDamage
+	self._currentRound = 0
+	
 	-- Process battle log sequentially with delays
 	self:ProcessNextBattleAction(battleLog, 1)
 end
@@ -607,22 +733,84 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 	
 	local logEntry = battleLog[index]
 	
+	-- Safety check: if logEntry is nil or malformed, skip it
+	if not logEntry or not logEntry.t then
+		warn("BattleHandler: Invalid log entry at index", index, "- skipping")
+		task.wait(0.1)
+		self:ProcessNextBattleAction(battleLog, index + 1)
+		return
+	end
+	
 	-- Check if this is a round start (abbreviated: t = "r")
 	if logEntry.t == "r" then
+		local roundNumber = logEntry.r or 0
+		self._currentRound = roundNumber
+		
+		-- Initialize damage tracking for this round
+		if not self._roundDamage then
+			self._roundDamage = {}
+		end
+		self._roundDamage[roundNumber] = 0
+		
+		-- Check if last 2 rounds had no damage (stalemate detection)
+		if roundNumber > 2 then
+			local prevRound1 = self._roundDamage[roundNumber - 1] or 0
+			local prevRound2 = self._roundDamage[roundNumber - 2] or 0
+			
+			if prevRound1 == 0 and prevRound2 == 0 then
+				-- Last 2 rounds had no damage - skip remaining animations
+				warn("BattleHandler: Last 2 rounds had no damage, skipping remaining animations")
+				-- Show notification to player explaining the stalemate
+				self:ShowNotification("Your battle is infinite, you lose!")
+				-- Store battle result from current battle
+				if self.currentBattle and self.currentBattle.result then
+					self.battleResult = self.currentBattle.result
+				end
+				-- Small delay to show notification before ending
+				task.wait(1.0)
+				-- Battle ended
+				self:OnBattleEnd()
+				return
+			end
+		end
+		
 		-- Small delay for round start
 		task.wait(0.5)
 		self:ProcessNextBattleAction(battleLog, index + 1)
 		
 	-- Check if this is an attack (abbreviated: t = "a")
 	elseif logEntry.t == "a" then
+		-- Track damage for stalemate detection
+		local roundNumber = logEntry.r or self._currentRound
+		local damage = logEntry.d or 0
+		
+		if not self._roundDamage then
+			self._roundDamage = {}
+		end
+		if not self._roundDamage[roundNumber] then
+			self._roundDamage[roundNumber] = 0
+		end
+		-- Only count positive damage (not blocks)
+		if damage > 0 then
+			self._roundDamage[roundNumber] = self._roundDamage[roundNumber] + damage
+		end
+		
 		-- Animate attack and wait for completion
 		local animationComplete = false
-		self:AnimateAttack(logEntry, logEntry.r or 1, function()
+		local animationStartTime = tick()
+		local ANIMATION_TIMEOUT = 10 -- 10 second timeout per animation
+		
+		self:AnimateAttack(logEntry, roundNumber, function()
 			animationComplete = true
 		end)
 		
-		-- Wait for animation to actually complete
+		-- Wait for animation to actually complete, with timeout
 		while not animationComplete do
+			if tick() - animationStartTime > ANIMATION_TIMEOUT then
+				warn("BattleHandler: Animation timeout at index", index, "- forcing completion")
+				animationComplete = true
+				break
+			end
 			task.wait(0.1)
 		end
 		
@@ -860,6 +1048,10 @@ function BattleHandler:OnBattleEnd()
 			print("🎁 BattleHandler: reward type =", self.currentBattle.rewards.type)
 		end
 	end
+	
+	-- Clean up round damage tracking
+	self._roundDamage = nil
+	self._currentRound = 0
 	
 	-- Wait a moment then hide battle frame
 	task.wait(0.5)
