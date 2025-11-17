@@ -761,7 +761,7 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 				-- Last 2 rounds had no damage - skip remaining animations
 				warn("BattleHandler: Last 2 rounds had no damage, skipping remaining animations")
 				-- Show notification to player explaining the stalemate
-				self:ShowNotification("Your battle is infinite, you lose!")
+				self:ShowNotification("The forces are equal. The battle is over...")
 				-- Store battle result from current battle
 				if self.currentBattle and self.currentBattle.result then
 					self.battleResult = self.currentBattle.result
@@ -774,8 +774,7 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 			end
 		end
 		
-		-- Small delay for round start
-		task.wait(0.5)
+		-- Process next action
 		self:ProcessNextBattleAction(battleLog, index + 1)
 		
 	-- Check if this is an attack (abbreviated: t = "a")
