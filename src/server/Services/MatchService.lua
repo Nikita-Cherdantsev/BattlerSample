@@ -535,10 +535,15 @@ end
 
 -- Get current boss difficulty for a player (defaults to "easy" if not set)
 local function GetBossDifficulty(player, bossId)
-	local profile = PlayerDataService.EnsureProfileLoaded(player)
+	-- Use ProfileManager as single source of truth to ensure we get latest data
+	local profile = ProfileManager.GetCachedProfile(player.UserId)
 	if not profile then
-		LogWarning(player, "Failed to load profile for boss difficulty")
-		return "easy"
+		-- Fallback to PlayerDataService if ProfileManager cache is not available
+		profile = PlayerDataService.EnsureProfileLoaded(player)
+		if not profile then
+			LogWarning(player, "Failed to load profile for boss difficulty")
+			return "easy"
+		end
 	end
 	
 	-- Initialize bossDifficulties if needed
@@ -553,7 +558,6 @@ end
 -- Increase boss difficulty after victory (progression: easy -> normal -> hard -> nightmare -> hell, then stays at hell)
 local function IncreaseBossDifficulty(player, bossId)
 	-- Update difficulty atomically using UpdateProfile (loads profile internally)
-	local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 	
 	-- Difficulty progression order (no cycling - stays at hell after reaching it)
 	local difficultyOrder = {
@@ -606,10 +610,10 @@ local function IncreaseBossDifficulty(player, bossId)
 			local nextDifficulty = difficultyOrder[currentDifficulty] or "normal"
 			LogInfo(player, "Boss %s difficulty increased: %s -> %s", bossId, currentDifficulty, nextDifficulty)
 		end
-		return true
+		return true, updatedProfile
 	else
 		LogWarning(player, "Failed to save boss difficulty update")
-		return false
+		return false, nil
 	end
 end
 
@@ -1093,7 +1097,23 @@ function MatchService.ExecuteMatch(player, requestData)
 	
 	-- Increase boss difficulty after victory (boss mode only)
 	if isPlayerVictory and bossId then
-		IncreaseBossDifficulty(player, bossId)
+		local success, updatedProfile = IncreaseBossDifficulty(player, bossId)
+		if success and updatedProfile then
+			-- Sync local cache with updated profile from ProfileManager (single source of truth)
+			-- This ensures we have the latest profile including any cross-server updates
+			local cachedProfile = ProfileManager.GetCachedProfile(player.UserId)
+			if cachedProfile then
+				-- Update the entire profile reference to ensure consistency
+				-- playerProfile is a reference to playerProfiles[player] in PlayerDataService
+				-- We update the specific field to match the saved profile
+				if playerProfile then
+					playerProfile.bossDifficulties = cachedProfile.bossDifficulties
+				end
+			elseif playerProfile then
+				-- Fallback: if ProfileManager cache is not available, use the updated profile
+				playerProfile.bossDifficulties = updatedProfile.bossDifficulties
+			end
+		end
 	end
 	
 	-- Generate battle rewards based on outcome
