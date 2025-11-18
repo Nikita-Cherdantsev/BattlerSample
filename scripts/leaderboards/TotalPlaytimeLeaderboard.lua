@@ -127,39 +127,46 @@ local function syncPlayerPlaytime(userId, forceWrite)
 
 	local lastProfileValue = lastProfilePlaytime[userId]
 	local delta = 0
+	local useMaxComparison = false
 	
+	-- Calculate delta based on profile value tracking
 	if lastProfileValue then
 		if playtimeSeconds >= lastProfileValue then
+			-- Normal accumulation: time increased
 			delta = playtimeSeconds - lastProfileValue
+		else
+			-- Reset detected: totalTime was reset (after claiming all rewards)
+			-- Use math.max to preserve DataStore value, don't add delta
+			lastProfilePlaytime[userId] = nil
+			cachedSecondsByUserId[userId] = nil
+			useMaxComparison = true
 		end
 	else
-		local lastRecorded = cachedSecondsByUserId[userId]
-		if lastRecorded then
-			if playtimeSeconds < lastRecorded * 0.5 then
-				delta = 0
-			else
-				delta = math.max(0, playtimeSeconds - (lastRecorded or 0))
-			end
-		else
-			-- First write ever - use current value
-			delta = playtimeSeconds
-		end
+		-- First sync in session: sync with DataStore using math.max
+		useMaxComparison = true
 	end
 
-	local lastRecorded = cachedSecondsByUserId[userId]
-	local shouldWrite = false
-	
-	if forceWrite then
-		shouldWrite = true
-	elseif lastProfileValue then
+	-- Determine if we should write
+	local shouldWrite = forceWrite or useMaxComparison
+	if not shouldWrite and lastProfileValue then
 		shouldWrite = delta >= MIN_DELTA_TO_SAVE
-	else
-		shouldWrite = true
 	end
 
 	if shouldWrite then
-		if writeSecondsToDataStore(userId, playtimeSeconds, delta) then
-			cachedSecondsByUserId[userId] = (cachedSecondsByUserId[userId] or 0) + (delta > 0 and delta or 0)
+		if writeSecondsToDataStore(userId, playtimeSeconds, useMaxComparison and 0 or delta) then
+			-- Read back actual value from DataStore to update cache
+			local success, actualValue = pcall(function()
+				return dataStore:GetAsync(userId)
+			end)
+			
+			if success and actualValue then
+				cachedSecondsByUserId[userId] = tonumber(actualValue) or 0
+			else
+				-- Fallback: update cache based on delta
+				cachedSecondsByUserId[userId] = (cachedSecondsByUserId[userId] or 0) + (delta > 0 and delta or 0)
+			end
+			
+			-- Always track from current profile value for next delta calculation
 			lastProfilePlaytime[userId] = playtimeSeconds
 		end
 	end
