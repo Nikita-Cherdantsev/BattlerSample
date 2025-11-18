@@ -188,7 +188,7 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 		proximityPrompt = Instance.new("ProximityPrompt")
 		proximityPrompt.ActionText = "Start Battle"
 		proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
-		proximityPrompt.MaxActivationDistance = 10
+		proximityPrompt.MaxActivationDistance = 30
 		proximityPrompt.Enabled = true
 		proximityPrompt.RequiresLineOfSight = false -- Don't require line of sight
 		proximityPrompt.HoldDuration = 0 -- Instant activation
@@ -197,7 +197,7 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 		-- Configure existing prompt (in case it was manually added)
 		proximityPrompt.ActionText = "Start Battle"
 		proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
-		proximityPrompt.MaxActivationDistance = 10
+		proximityPrompt.MaxActivationDistance = 30
 		proximityPrompt.Enabled = true
 		proximityPrompt.RequiresLineOfSight = false
 		proximityPrompt.HoldDuration = 0
@@ -305,7 +305,7 @@ function BattlePrepHandler:SetupPartInteraction()
 		local proximityPrompt = Instance.new("ProximityPrompt")
 		proximityPrompt.ActionText = "Start Battle"
 		proximityPrompt.KeyboardKeyCode = Enum.KeyCode.E
-		proximityPrompt.MaxActivationDistance = 10
+		proximityPrompt.MaxActivationDistance = 30
 		proximityPrompt.Parent = testPart
 		
 		-- Default to NPC mode if part name doesn't match

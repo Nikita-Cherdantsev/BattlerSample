@@ -550,18 +550,18 @@ local function GetBossDifficulty(player, bossId)
 	return profile.bossDifficulties[bossId] or "easy"
 end
 
--- Increase boss difficulty after victory (cycles: easy -> normal -> hard -> nightmare -> hell -> easy)
+-- Increase boss difficulty after victory (progression: easy -> normal -> hard -> nightmare -> hell, then stays at hell)
 local function IncreaseBossDifficulty(player, bossId)
 	-- Update difficulty atomically using UpdateProfile (loads profile internally)
 	local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 	
-	-- Difficulty progression order
+	-- Difficulty progression order (no cycling - stays at hell after reaching it)
 	local difficultyOrder = {
 		["easy"] = "normal",
 		["normal"] = "hard",
 		["hard"] = "nightmare",
-		["nightmare"] = "hell",
-		["hell"] = "easy" -- Cycle back to easy after hell
+		["nightmare"] = "hell"
+		-- Note: "hell" has no next difficulty - it stays at hell
 	}
 	
 	local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
@@ -572,6 +572,11 @@ local function IncreaseBossDifficulty(player, bossId)
 		
 		-- Get current difficulty
 		local currentDifficulty = profile.bossDifficulties[bossId] or "easy"
+		
+		-- If already at hell, don't change it
+		if currentDifficulty == "hell" then
+			return profile -- Stay at hell
+		end
 		
 		-- Get next difficulty
 		local nextDifficulty = difficultyOrder[currentDifficulty]
@@ -587,15 +592,20 @@ local function IncreaseBossDifficulty(player, bossId)
 	
 	if success and updatedProfile then
 		local currentDifficulty = (updatedProfile.bossDifficulties and updatedProfile.bossDifficulties[bossId]) or "easy"
-		local difficultyOrder = {
-			["easy"] = "normal",
-			["normal"] = "hard",
-			["hard"] = "nightmare",
-			["nightmare"] = "hell",
-			["hell"] = "easy"
-		}
-		local nextDifficulty = difficultyOrder[currentDifficulty] or "normal"
-		LogInfo(player, "Boss %s difficulty increased: %s -> %s", bossId, currentDifficulty, nextDifficulty)
+		
+		-- Check if difficulty was already at hell (no change)
+		if currentDifficulty == "hell" then
+			LogInfo(player, "Boss %s difficulty already at maximum (hell) - staying at hell", bossId)
+		else
+			local difficultyOrder = {
+				["easy"] = "normal",
+				["normal"] = "hard",
+				["hard"] = "nightmare",
+				["nightmare"] = "hell"
+			}
+			local nextDifficulty = difficultyOrder[currentDifficulty] or "normal"
+			LogInfo(player, "Boss %s difficulty increased: %s -> %s", bossId, currentDifficulty, nextDifficulty)
+		end
 		return true
 	else
 		LogWarning(player, "Failed to save boss difficulty update")
