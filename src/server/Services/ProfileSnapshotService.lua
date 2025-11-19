@@ -230,6 +230,8 @@ function ProfileSnapshotService.GetSnapshot(player, options)
 				lastSyncTime = tonumber(playtimeData.lastSyncTime) or 0,
 				claimedRewards = cloneArray(playtimeData.claimedRewards or {}),
 				rewardsConfig = deepCopy(playtimeData.rewardsConfig or {}),
+				nextRewardTimeSeconds = playtimeData.nextRewardTimeSeconds,
+				hasAvailableReward = playtimeData.hasAvailableReward,
 			}
 		end
 	end

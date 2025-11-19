@@ -22,9 +22,10 @@ PlaytimeHandler.claimedRewards = {}  -- Array of claimed reward indices
 PlaytimeHandler.claimedRewardsSet = {}  -- Set for fast lookup
 PlaytimeHandler.thresholds = {}
 PlaytimeHandler.NetworkClient = nil
-PlaytimeHandler.updateTimer = nil  -- Timer for automatic updates
-PlaytimeHandler.syncTask = nil  -- Task for periodic sync
-PlaytimeHandler.pendingClaim = nil  -- Track which reward index we're waiting for
+PlaytimeHandler.updateTimer = nil
+PlaytimeHandler.syncTask = nil
+PlaytimeHandler.pendingClaim = nil
+PlaytimeHandler.NotificationMarkerHandler = nil
 
 --// Constants
 local SYNC_INTERVAL = 5  -- Sync with server every 5 seconds
@@ -126,7 +127,9 @@ function PlaytimeHandler:SetupPlaytime()
 	-- Setup ProfileUpdated handler
 	self:SetupProfileUpdatedHandler()
 	
-	print("✅ PlaytimeHandler: Playtime UI setup completed")
+	if self.NetworkClient then
+		self.NetworkClient.requestPlaytimeData()
+	end
 end
 
 function PlaytimeHandler:SetupOpenButton()
@@ -151,7 +154,6 @@ function PlaytimeHandler:SetupOpenButton()
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
-		print("✅ PlaytimeHandler: Open button connected")
 	else
 		warn("PlaytimeHandler: Found element '" .. playtimeButton.Name .. "' but it's not a GuiButton (it's a " .. playtimeButton.ClassName .. ")")
 	end
@@ -184,7 +186,6 @@ function PlaytimeHandler:SetupClaimButtons()
 					self:ClaimReward(i)
 				end)
 				table.insert(self.Connections, connection)
-				print("✅ PlaytimeHandler: Claim button connected for Reward" .. i)
 			else
 				warn("PlaytimeHandler: Claim button not found for Reward" .. i)
 			end
@@ -240,20 +241,17 @@ function PlaytimeHandler:LoadRewardsConfig(rewardsConfig)
 	if rewardsConfig then
 		self.rewardsConfig = rewardsConfig.rewards or {}
 		self.thresholds = rewardsConfig.thresholds or {}
-		print("✅ PlaytimeHandler: Rewards config loaded from server")
 	else
 		warn("PlaytimeHandler: No rewards config provided")
 	end
 end
 
 function PlaytimeHandler:UpdatePlaytimeDisplay()
-	-- Update current playtime display
 	local listFrame = self.PlaytimeFrame:FindFirstChild("List")
 	if not listFrame then return end
 	
 	local currentPlaytimeSeconds = self:GetCurrentPlaytime()
 	
-	-- Update each reward's time display
 	for i = 1, 7 do
 		local rewardFrame = listFrame:FindFirstChild("Reward" .. i)
 		if rewardFrame then
@@ -263,12 +261,10 @@ function PlaytimeHandler:UpdatePlaytimeDisplay()
 				if txtTime and not self:IsRewardClaimed(i) then
 					local threshold = self.thresholds[i]
 					if threshold then
-						-- Calculate remaining time in seconds
 						local remainingTotalSeconds = math.max(0, (threshold * 60) - math.floor(currentPlaytimeSeconds))
 						if remainingTotalSeconds > 0 then
 							local remainingMinutes = math.floor(remainingTotalSeconds / 60)
 							local remainingSeconds = remainingTotalSeconds % 60
-							-- Format as MM:SS
 							txtTime.Text = string.format("%02d:%02d", remainingMinutes, remainingSeconds)
 						else
 							txtTime.Text = "00:00"
@@ -400,8 +396,6 @@ function PlaytimeHandler:OpenWindow()
 	
 	-- Start automatic updates
 	self:StartAutoUpdates()
-	
-	print("✅ PlaytimeHandler: Playtime window opened")
 end
 
 function PlaytimeHandler:CloseWindow()
@@ -440,8 +434,6 @@ function PlaytimeHandler:CloseWindow()
 	
 	-- Register with close button handler
 	self:RegisterWithCloseButton(false)
-	
-	print("✅ PlaytimeHandler: Playtime window closed")
 end
 
 function PlaytimeHandler:SetupProfileUpdatedHandler()
@@ -476,6 +468,8 @@ function PlaytimeHandler:SetupProfileUpdatedHandler()
 end
 
 function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
+	local shouldUpdateMarker = false
+	
 	-- Update total playtime and sync time
 	if playtimeData.totalTime then
 		local oldTotalTime = self.totalPlaytime
@@ -486,21 +480,32 @@ function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
 		if self.isWindowOpen then
 			self:CheckAndUpdateAvailableRewards(oldTotalTime, self.totalPlaytime)
 		end
+		
+		shouldUpdateMarker = true
 	end
 	
-	-- Update claimed rewards
 	if playtimeData.claimedRewards then
 		self.claimedRewards = playtimeData.claimedRewards
-		-- Rebuild Set for fast lookup
 		self.claimedRewardsSet = {}
 		for _, rewardIndex in ipairs(self.claimedRewards) do
 			self.claimedRewardsSet[rewardIndex] = true
 		end
+		
+		shouldUpdateMarker = true
 	end
 	
 	-- Update rewards config if provided
 	if playtimeData.rewardsConfig then
 		self:LoadRewardsConfig(playtimeData.rewardsConfig)
+		shouldUpdateMarker = true
+	end
+	
+	if playtimeData.hasAvailableReward ~= nil then
+		shouldUpdateMarker = true
+	end
+	
+	if shouldUpdateMarker then
+		self:UpdateNotificationMarkerWithRetry(playtimeData.hasAvailableReward)
 	end
 	
 	-- Update UI if window is open
@@ -533,14 +538,14 @@ function PlaytimeHandler:StartAutoUpdates()
 		return  -- Already running
 	end
 	
-	-- Update UI periodically
+	-- Update UI periodically (only when window is open)
 	self.updateTimer = RunService.Heartbeat:Connect(function()
 		if self.isWindowOpen then
 			self:UpdatePlaytimeDisplay()
 		end
 	end)
 	
-	-- Sync with server periodically
+	-- Sync with server periodically (only when window is open)
 	if self.syncTask then
 		task.cancel(self.syncTask)
 	end
@@ -592,7 +597,6 @@ function PlaytimeHandler:Cleanup()
 	self.Connections = {}
 
 	self._initialized = false
-	print("✅ PlaytimeHandler cleaned up")
 end
 
 function PlaytimeHandler:BlockInput(value, source)
@@ -627,6 +631,67 @@ end
 function PlaytimeHandler:CloseFrame()
 	if self.PlaytimeFrame and self.PlaytimeFrame.Visible then
 		self:CloseWindow()
+	end
+end
+
+function PlaytimeHandler:UpdateNotificationMarkerWithRetry(hasAvailableReward, retryCount)
+	retryCount = retryCount or 0
+	local maxRetries = 5
+	
+	if not self._initialized then
+		return
+	end
+	
+	if not self.NotificationMarkerHandler then
+		local success, NotificationMarkerHandler = pcall(function()
+			return require(ReplicatedStorage.ClientModules.NotificationMarkerHandler)
+		end)
+		
+		if success and NotificationMarkerHandler and NotificationMarkerHandler:IsInitialized() then
+			self.NotificationMarkerHandler = NotificationMarkerHandler
+		else
+			if retryCount < maxRetries then
+				local delay = 0.05 * (2 ^ retryCount)
+				task.delay(delay, function()
+					if self._initialized then
+						self:UpdateNotificationMarkerWithRetry(hasAvailableReward, retryCount + 1)
+					end
+				end)
+			end
+			return
+		end
+	end
+	
+	if hasAvailableReward ~= nil then
+		self:UpdateNotificationMarker(hasAvailableReward)
+	else
+		self:UpdateNotificationMarker()
+	end
+end
+
+function PlaytimeHandler:UpdateNotificationMarker(hasAvailableRewards)
+	if hasAvailableRewards == nil then
+		if not self.thresholds or self.totalPlaytime == 0 then
+			return
+		end
+		
+		local currentPlaytimeSeconds = self:GetCurrentPlaytime()
+		local currentMinutes = math.floor(currentPlaytimeSeconds / 60)
+		
+		hasAvailableRewards = false
+		for i = 1, 7 do
+			local threshold = self.thresholds[i]
+			if threshold and not self:IsRewardClaimed(i) then
+				if currentMinutes >= threshold then
+					hasAvailableRewards = true
+					break
+				end
+			end
+		end
+	end
+	
+	if self.NotificationMarkerHandler and self.NotificationMarkerHandler:IsInitialized() then
+		self.NotificationMarkerHandler:SetMarkerVisible("BtnPlaytime", hasAvailableRewards)
 	end
 end
 

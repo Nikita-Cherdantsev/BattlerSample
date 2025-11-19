@@ -9,7 +9,6 @@ local PlaytimeService = {}
 
 -- Services
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
 -- Modules
 local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
@@ -49,10 +48,21 @@ local REWARDS_CONFIG = {
 	}
 }
 
--- Player connection time tracking (server-side)
-local playerConnectionTimes = {} -- player -> connectionTime (os.time())
+local playerConnectionTimes = {}
+local playerRewardAvailability = {}
+local playerRewardTimers = {}
 
--- Error codes
+local RemoteEvents = nil
+local ProfileSnapshotService = nil
+
+local function GetNotificationModules()
+	if not RemoteEvents then
+		RemoteEvents = require(game.ServerScriptService.Network.RemoteEvents)
+		ProfileSnapshotService = require(game.ServerScriptService.Services.ProfileSnapshotService)
+	end
+	return RemoteEvents, ProfileSnapshotService
+end
+
 PlaytimeService.ErrorCodes = {
 	INVALID_REWARD_INDEX = "INVALID_REWARD_INDEX",
 	REWARD_ALREADY_CLAIMED = "REWARD_ALREADY_CLAIMED",
@@ -60,7 +70,6 @@ PlaytimeService.ErrorCodes = {
 	INTERNAL = "INTERNAL"
 }
 
--- Calculate current total time including session time
 local function CalculateCurrentTotalTime(playtime, userId)
 	local currentTotalTime = playtime.totalTime
 	local connectionTime = playerConnectionTimes[userId]
@@ -71,12 +80,19 @@ local function CalculateCurrentTotalTime(playtime, userId)
 	return currentTotalTime, connectionTime
 end
 
--- Get rewards configuration
+local function IsRewardClaimed(claimedRewards, rewardIndex)
+	for _, claimedIndex in ipairs(claimedRewards) do
+		if claimedIndex == rewardIndex then
+			return true
+		end
+	end
+	return false
+end
+
 function PlaytimeService.GetPlaytimeRewardsConfig()
 	return REWARDS_CONFIG
 end
 
--- Get current playtime data for a player
 function PlaytimeService.GetPlaytimeData(userId)
 	local profile = ProfileManager.GetCachedProfile(userId)
 	if not profile then
@@ -89,32 +105,41 @@ function PlaytimeService.GetPlaytimeData(userId)
 		claimedRewards = {}
 	}
 	
-	-- Calculate current total time including session time
 	local currentTotalTime, _ = CalculateCurrentTotalTime(playtime, userId)
+	
+	local nextRewardTimeSeconds = nil
+	local currentMinutes = math.floor(currentTotalTime / 60)
+	local hasAvailableReward = false
+	
+	for i = 1, #REWARDS_CONFIG.thresholds do
+		local threshold = REWARDS_CONFIG.thresholds[i]
+		if threshold and not IsRewardClaimed(playtime.claimedRewards or {}, i) then
+			if currentMinutes >= threshold then
+				hasAvailableReward = true
+			else
+				local rewardTimeSeconds = threshold * 60
+				local timeUntilReward = rewardTimeSeconds - currentTotalTime
+				
+				if timeUntilReward > 0 and (not nextRewardTimeSeconds or timeUntilReward < nextRewardTimeSeconds) then
+					nextRewardTimeSeconds = timeUntilReward
+				end
+			end
+		end
+	end
 	
 	return {
 		totalTime = currentTotalTime,
 		claimedRewards = playtime.claimedRewards or {},
-		rewardsConfig = REWARDS_CONFIG
+		rewardsConfig = REWARDS_CONFIG,
+		nextRewardTimeSeconds = nextRewardTimeSeconds,
+		hasAvailableReward = hasAvailableReward
 	}
 end
 
--- Check if reward index is valid
 local function IsValidRewardIndex(rewardIndex)
 	return type(rewardIndex) == "number" and rewardIndex >= 1 and rewardIndex <= #REWARDS_CONFIG.thresholds
 end
 
--- Check if reward is already claimed
-local function IsRewardClaimed(claimedRewards, rewardIndex)
-	for _, claimedIndex in ipairs(claimedRewards) do
-		if claimedIndex == rewardIndex then
-			return true
-		end
-	end
-	return false
-end
-
--- Check if reward is available (time threshold reached)
 local function IsRewardAvailable(totalTime, rewardIndex)
 	local threshold = REWARDS_CONFIG.thresholds[rewardIndex]
 	if not threshold then
@@ -125,7 +150,6 @@ local function IsRewardAvailable(totalTime, rewardIndex)
 	return currentMinutes >= threshold
 end
 
--- Grant lootbox rewards (called after successful profile update)
 local function GrantLootboxRewards(userId, rarity)
 	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time())
 	if not lootboxResult or not lootboxResult.ok then
@@ -135,18 +159,133 @@ local function GrantLootboxRewards(userId, rarity)
 	return lootboxResult.rewards
 end
 
--- Claim playtime reward
+local function CancelPlayerTimers(userId)
+	local timers = playerRewardTimers[userId]
+	if not timers then
+		return
+	end
+	
+	for rewardIndex, timer in pairs(timers) do
+		if timer then
+			task.cancel(timer)
+		end
+	end
+	
+	playerRewardTimers[userId] = nil
+end
+
+local function NotifyPlayerRewardAvailability(player, userId)
+	local RemoteEvents, ProfileSnapshotService = GetNotificationModules()
+	
+	local snapshot = ProfileSnapshotService.GetSnapshot(player, {
+		includePlaytime = true
+	})
+	
+	if snapshot then
+		RemoteEvents.SendProfileUpdate(player, snapshot)
+	end
+end
+
+local function SetupPlayerRewardTimers(player, userId)
+	CancelPlayerTimers(userId)
+	
+	local playtimeData = PlaytimeService.GetPlaytimeData(userId)
+	if not playtimeData then
+		return
+	end
+	
+	local profile = ProfileManager.GetCachedProfile(userId)
+	if not profile then
+		return
+	end
+	
+	local playtime = profile.playtime or {
+		totalTime = 0,
+		lastSyncTime = os.time(),
+		claimedRewards = {}
+	}
+	
+	local currentTotalTime, _ = CalculateCurrentTotalTime(playtime, userId)
+	local currentMinutes = math.floor(currentTotalTime / 60)
+	
+	local nextRewardIndex = nil
+	local nextRewardTimeSeconds = nil
+	
+	for i = 1, #REWARDS_CONFIG.thresholds do
+		local threshold = REWARDS_CONFIG.thresholds[i]
+		if threshold and not IsRewardClaimed(playtime.claimedRewards or {}, i) then
+			local rewardTimeSeconds = threshold * 60
+			local timeUntilReward = rewardTimeSeconds - currentTotalTime
+			
+			if currentMinutes >= threshold then
+				local currentAvailability = playerRewardAvailability[userId]
+				if not currentAvailability or not currentAvailability.hasAvailableReward then
+					playerRewardAvailability[userId] = {
+						hasAvailableReward = true,
+						nextRewardTimeSeconds = nil
+					}
+					NotifyPlayerRewardAvailability(player, userId)
+				end
+			elseif timeUntilReward > 0 then
+				if not nextRewardTimeSeconds or timeUntilReward < nextRewardTimeSeconds then
+					nextRewardIndex = i
+					nextRewardTimeSeconds = timeUntilReward
+				end
+			end
+		end
+	end
+	
+	if nextRewardIndex and nextRewardTimeSeconds then
+		if not playerRewardTimers[userId] then
+			playerRewardTimers[userId] = {}
+		end
+		
+		local waitTime = math.max(0.5, nextRewardTimeSeconds + 0.5)
+		
+		playerRewardAvailability[userId] = {
+			hasAvailableReward = false,
+			nextRewardTimeSeconds = nextRewardTimeSeconds
+		}
+		
+		local timer = task.spawn(function()
+			task.wait(waitTime)
+			
+			local currentPlayer = Players:GetPlayerByUserId(userId)
+			if not currentPlayer then
+				return
+			end
+			
+			local playtimeDataNow = PlaytimeService.GetPlaytimeData(userId)
+			if not playtimeDataNow then
+				return
+			end
+			
+			playerRewardAvailability[userId] = {
+				hasAvailableReward = playtimeDataNow.hasAvailableReward,
+				nextRewardTimeSeconds = playtimeDataNow.nextRewardTimeSeconds
+			}
+			
+			NotifyPlayerRewardAvailability(currentPlayer, userId)
+			
+			if playerRewardTimers[userId] and playerRewardTimers[userId][nextRewardIndex] then
+				playerRewardTimers[userId][nextRewardIndex] = nil
+			end
+			
+			SetupPlayerRewardTimers(currentPlayer, userId)
+		end)
+		
+		playerRewardTimers[userId][nextRewardIndex] = timer
+	end
+end
+
 function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
-	-- Validate reward index
 	if not IsValidRewardIndex(rewardIndex) then
 		return { ok = false, error = PlaytimeService.ErrorCodes.INVALID_REWARD_INDEX }
 	end
 	
-	-- Collect lootbox rarities that need to be granted (outside of UpdateProfile)
 	local lootboxesToGrant = {}
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
-		-- Initialize playtime if missing
 		if not profile.playtime then
 			profile.playtime = {
 				totalTime = 0,
@@ -157,37 +296,31 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 		
 		local playtime = profile.playtime
 		
-		-- Calculate current total time including session time
 		local currentTotalTime, connectionTime = CalculateCurrentTotalTime(playtime, userId)
 		
-		-- Check if reward is already claimed
 		if IsRewardClaimed(playtime.claimedRewards, rewardIndex) then
 			profile._playtimeResult = { ok = false, error = PlaytimeService.ErrorCodes.REWARD_ALREADY_CLAIMED }
 			return profile
 		end
 		
-		-- Check if reward is available (time threshold reached)
 		if not IsRewardAvailable(currentTotalTime, rewardIndex) then
 			profile._playtimeResult = { ok = false, error = PlaytimeService.ErrorCodes.REWARD_NOT_AVAILABLE }
 			return profile
 		end
 		
-		-- Update totalTime with session time
 		if connectionTime then
 			local sessionTime = os.time() - connectionTime
 			playtime.totalTime = playtime.totalTime + sessionTime
 			playtime.lastSyncTime = os.time()
-			playerConnectionTimes[userId] = os.time() -- Reset connection time
+			playerConnectionTimes[userId] = os.time()
 		end
 		
-		-- Get reward config
 		local rewardConfig = REWARDS_CONFIG.rewards[rewardIndex]
 		if not rewardConfig then
 			profile._playtimeResult = { ok = false, error = PlaytimeService.ErrorCodes.INTERNAL }
 			return profile
 		end
 		
-		-- Grant currency rewards (can be done inside UpdateProfile)
 		for _, reward in ipairs(rewardConfig) do
 			if reward.type == "Currency" then
 				local currencyName = string.lower(reward.name)
@@ -195,28 +328,24 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 					ProfileSchema.AddCurrency(profile, currencyName, reward.amount)
 				end
 			elseif reward.type == "Lootbox" then
-				-- Collect lootbox for granting outside UpdateProfile to avoid nesting
 				local rarity = string.lower(reward.name)
 				table.insert(lootboxesToGrant, rarity)
 			end
 		end
 		
-		-- Mark reward as claimed
 		table.insert(playtime.claimedRewards, rewardIndex)
 		
-		-- If this is the last reward (index 7), reset playtime and claimedRewards
 		if #playtime.claimedRewards == 7 then
 			playtime.totalTime = 0
 			playtime.claimedRewards = {}
 			playtime.lastSyncTime = os.time()
-			playerConnectionTimes[userId] = os.time() -- Reset connection time
+			playerConnectionTimes[userId] = os.time()
 		end
 		
 		profile._playtimeResult = { ok = true, rewardIndex = rewardIndex, lootboxes = lootboxesToGrant }
 		return profile
 	end)
 	
-	-- Grant lootboxes after successful profile update (outside UpdateProfile to avoid nesting)
 	local playtimeResult = nil
 	if success and result and result._playtimeResult and result._playtimeResult.ok then
 		playtimeResult = result._playtimeResult
@@ -224,10 +353,8 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 		for _, rarity in ipairs(lootboxesToGrant) do
 			local lootboxRewards = GrantLootboxRewards(userId, rarity)
 			if lootboxRewards then
-				-- Set rewards in the result (typical case: one lootbox per reward)
 				playtimeResult.rewards = lootboxRewards
 			else
-				-- Log error but don't fail the transaction - currency rewards are already granted
 				Logger.debug("PlaytimeService: Failed to grant lootbox %s for reward %d (user %d)", 
 					rarity, rewardIndex, userId)
 			end
@@ -238,32 +365,40 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 		return { ok = false, error = PlaytimeService.ErrorCodes.INTERNAL }
 	end
 	
-	-- Return result (excluding internal lootboxes array)
+	local player = Players:GetPlayerByUserId(userId)
+	if player and playtimeResult and playtimeResult.ok then
+		SetupPlayerRewardTimers(player, userId)
+	end
+	
 	playtimeResult = playtimeResult or { ok = false, error = PlaytimeService.ErrorCodes.INTERNAL }
 	if playtimeResult.ok then
-		-- Remove internal lootboxes array from result
 		playtimeResult.lootboxes = nil
 	end
 	
 	return playtimeResult
 end
 
--- Track player connection time
 function PlaytimeService.TrackPlayerConnection(userId)
 	playerConnectionTimes[userId] = os.time()
+	
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		SetupPlayerRewardTimers(player, userId)
+	end
 end
 
--- Stop tracking player connection time and update profile
 function PlaytimeService.StopTrackingPlayerConnection(userId)
 	local connectionTime = playerConnectionTimes[userId]
 	if not connectionTime then
 		return
 	end
 	
+	CancelPlayerTimers(userId)
+	playerRewardAvailability[userId] = nil
+	
 	local sessionTime = os.time() - connectionTime
 	playerConnectionTimes[userId] = nil
 	
-	-- Update profile with session time
 	local success, _ = ProfileManager.UpdateProfile(userId, function(profile)
 		if not profile.playtime then
 			profile.playtime = {
@@ -281,10 +416,9 @@ function PlaytimeService.StopTrackingPlayerConnection(userId)
 	return success
 end
 
--- Initialize service
 local isInitialized = false
+
 function PlaytimeService.Init()
-	-- Idempotency check
 	if isInitialized then
 		print("⚠️ PlaytimeService already initialized, skipping")
 		return
@@ -292,22 +426,24 @@ function PlaytimeService.Init()
 	
 	isInitialized = true
 	
-	-- Track players on join
 	Players.PlayerAdded:Connect(function(player)
 		PlaytimeService.TrackPlayerConnection(player.UserId)
 	end)
 	
-	-- Stop tracking and save on leave
 	Players.PlayerRemoving:Connect(function(player)
 		PlaytimeService.StopTrackingPlayerConnection(player.UserId)
 	end)
 	
-	-- Handle players already in game
 	for _, player in ipairs(Players:GetPlayers()) do
 		PlaytimeService.TrackPlayerConnection(player.UserId)
 	end
 	
 	print("✅ PlaytimeService initialized")
+end
+
+function PlaytimeService.CheckAndNotifyPlayer(player)
+	SetupPlayerRewardTimers(player, player.UserId)
+	return true
 end
 
 return PlaytimeService

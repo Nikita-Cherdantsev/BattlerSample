@@ -54,6 +54,9 @@
         },
         "FollowRewardHandler": {
           "$path": "src/shared/ClientModules/FollowRewardHandler.lua"
+        },
+        "NotificationMarkerHandler": {
+          "$path": "src/shared/ClientModules/NotificationMarkerHandler.lua"
         }
       },
       "Modules": {

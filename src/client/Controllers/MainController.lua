@@ -25,6 +25,7 @@ local BattlePrepHandler = require(ReplicatedStorage.ClientModules.BattlePrepHand
 local BattleHandler = require(ReplicatedStorage.ClientModules.BattleHandler)
 local RewardsHandler = require(ReplicatedStorage.ClientModules.RewardsHandler)
 local FollowRewardHandler = require(ReplicatedStorage.ClientModules.FollowRewardHandler)
+local NotificationMarkerHandler = require(ReplicatedStorage.ClientModules.NotificationMarkerHandler)
 
 -- State
 local isInitialized = false
@@ -49,6 +50,7 @@ function MainController:Init()
 	
 	-- Initialize handlers with error handling
 	local handlers = {
+        {name = "NotificationMarkerHandler", handler = NotificationMarkerHandler},  
 		{name = "DailyHandler", handler = DailyHandler},
 		{name = "DeckHandler", handler = DeckHandler},
 		{name = "CardInfoHandler", handler = CardInfoHandler},
@@ -205,6 +207,10 @@ function MainController:Cleanup()
     
     if PlaytimeHandler.Cleanup then
         PlaytimeHandler:Cleanup()
+    end
+    
+    if NotificationMarkerHandler.Cleanup then
+        NotificationMarkerHandler:Cleanup()
     end
     
     if ShopHandler.Cleanup then

@@ -649,12 +649,7 @@ end
 local function HandleRequestPlaytimeData(player, requestData)
 	LogInfo(player, "Processing playtime data request")
 	
-	-- Ensure playtime data is available
-	local playtimeData = PlaytimeService.GetPlaytimeData(player.UserId)
-	if not playtimeData then
-		SendErrorUpdate(player, "RequestPlaytimeData.loadFailed", "PROFILE_LOAD_FAILED", "Failed to load playtime data")
-		return
-	end
+	PlaytimeService.CheckAndNotifyPlayer(player)
 	
 	SendSnapshot(player, "RequestPlaytimeData.success", nil, {
 		includePlaytime = true,
