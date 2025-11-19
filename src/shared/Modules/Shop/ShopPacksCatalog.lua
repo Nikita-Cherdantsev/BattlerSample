@@ -13,42 +13,42 @@ ShopPacksCatalog.Packs = {
 		id = "S",
 		hardAmount = 100,
 		robuxPrice = 40,
-		devProductId = 3400863964, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455684189,
 		additionalHard = 0 -- UI bonus display only
 	},
 	["M"] = {
 		id = "M", 
 		hardAmount = 300,
 		robuxPrice = 100,
-		devProductId = 3400864205, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455684392,
 		additionalHard = 30 -- UI bonus display only
 	},
 	["L"] = {
 		id = "L",
 		hardAmount = 700,
 		robuxPrice = 200,
-		devProductId = 3400864901, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455685050,
 		additionalHard = 140 -- UI bonus display only
 	},
 	["XL"] = {
 		id = "XL",
 		hardAmount = 1500,
 		robuxPrice = 400,
-		devProductId = 3400865038, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455685309,
 		additionalHard = 450 -- UI bonus display only
 	},
 	["XXL"] = {
 		id = "XXL",
 		hardAmount = 3500,
 		robuxPrice = 800,
-		devProductId = 3400865167, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455685485,
 		additionalHard = 1400 -- UI bonus display only
 	},
 	["XXXL"] = {
 		id = "XXXL",
 		hardAmount = 8000,
 		robuxPrice = 1500,
-		devProductId = 3400865325, -- TODO(prod): fill with real ProductId from Roblox Creator Dashboard
+		devProductId = 3455686076,
 		additionalHard = 4000 -- UI bonus display only
 	}
 }
