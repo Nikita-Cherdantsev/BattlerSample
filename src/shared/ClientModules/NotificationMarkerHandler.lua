@@ -95,6 +95,12 @@ function NotificationMarkerHandler:RegisterMarker(buttonName)
 		warn("NotificationMarkerHandler: Marker not found for button '" .. buttonName .. "'")
 		return
 	end
+
+	local effect = marker:FindFirstChild("Effect")
+	local emitter = nil
+	if effect then
+		emitter = effect:FindFirstChild("Emitter")
+	end
 	
 	-- Ensure marker is hidden by default
 	marker.Visible = false
@@ -106,6 +112,7 @@ function NotificationMarkerHandler:RegisterMarker(buttonName)
 	-- Store marker info
 	self.markers[buttonName] = {
 		marker = marker,
+		emitter = emitter,
 		tween = nil,
 		isVisible = false,
 		baseScaleX = baseScaleX,
@@ -155,6 +162,7 @@ function NotificationMarkerHandler:ShowMarker(buttonName)
 	)
 	
 	marker.Visible = true
+	markerData.emitter:FindFirstChild("Emit"):Fire()
 	
 	-- Start pulse animation
 	self:StartPulseAnimation(buttonName)
@@ -186,6 +194,7 @@ function NotificationMarkerHandler:HideMarker(buttonName)
 		0
 	)
 	
+	markerData.emitter:FindFirstChild("Clear"):Fire()
 	marker.Visible = false
 	
 	print("✅ NotificationMarkerHandler: Hiding marker for " .. buttonName)

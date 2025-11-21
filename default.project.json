@@ -299,6 +299,12 @@
         },
         "MusicPlayer": {
           "$path": "src/client/MusicPlayer.client.lua"
+        },
+        "Emitter2D": {
+          "$path": "src/client/Emitter2D.client.lua",
+          "Emitter2D": {
+            "$path": "src/client/Emitter2DModuleScripts/Emitter2D.lua"
+          }
         }
       }
     }
