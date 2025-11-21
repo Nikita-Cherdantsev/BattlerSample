@@ -29,6 +29,7 @@ if PlaytimeService.Init then
 	-- Safe to call multiple times (service guards against re-init)
 	PlaytimeService.Init()
 end
+local Manifest = require(game.ReplicatedStorage.Modules.Assets.Manifest)
 
 local dataStore = DataStoreService:GetOrderedDataStore(DATASTORE_KEY)
 
@@ -298,7 +299,6 @@ local function updateLeaderboardDisplay()
 	local rows = buildRows()
 
 	surfaceGui.Heading.Heading.Text = DISPLAY_NAME
-	listFrame.ListContent.GuideTopBar.Value.Text = DISPLAY_NAME
 
 	itemsFrame.Nothing.Visible = (#rows == 0)
 	clearItems()
@@ -308,23 +308,38 @@ local function updateLeaderboardDisplay()
 		local value = entry.seconds or 0
 		local username = getUsername(userId)
 
-		local color = Color3.fromRGB(38, 50, 56)
+		-- Get colors from Manifest based on position
+		local colorFrom, colorTo
 		if index == 1 then
-			color = Color3.fromRGB(255, 215, 0)
+			colorFrom = Manifest.RarityColors.Legendary
+			colorTo = Manifest.RarityColorsGradient.Legendary
 		elseif index == 2 then
-			color = Color3.fromRGB(192, 192, 192)
+			colorFrom = Manifest.RarityColors.Epic
+			colorTo = Manifest.RarityColorsGradient.Epic
 		elseif index == 3 then
-			color = Color3.fromRGB(205, 127, 50)
+			colorFrom = Manifest.RarityColors.Rare
+			colorTo = Manifest.RarityColorsGradient.Rare
+		elseif index == 4 then
+			colorFrom = Manifest.RarityColors.Uncommon
+			colorTo = Manifest.RarityColorsGradient.Uncommon
+		else
+			-- Default colors for positions 5+
+			colorFrom = Color3.fromHex("#7A6B78")
+			colorTo = Color3.fromHex("#221421")
 		end
 
 		local item = sample:Clone()
 		item.Name = tostring(userId)
 		item.LayoutOrder = index
-		item.Values.Number.TextColor3 = color
+		item.Values.Number.TextColor3 = colorFrom
 		item.Values.Number.Text = tostring(index)
 		item.Values.Username.Text = username
 		item.Values.Value.Text = formatSeconds(value)
 		item.Parent = itemsFrame
+		item.UIStroke.UIGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, colorFrom),
+			ColorSequenceKeypoint.new(1, colorTo)
+		})
 	end
 
 	listFrame.CanvasSize = UDim2.new(0, 0, 0, itemsFrame.UIListLayout.AbsoluteContentSize.Y + 35)
