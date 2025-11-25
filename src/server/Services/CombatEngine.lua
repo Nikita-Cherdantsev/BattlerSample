@@ -423,34 +423,26 @@ function CombatEngine.ExecuteBattle(deckA, deckB, seed, collectionA, collectionB
 			-- Process unit if we found one (either initially or after resetting hasActed)
 			if unit then
 				-- Found alive unit - process its turn
-				-- Check if it can attack
-				if unit.stats.attack <= 0 then
-					-- Units with 0 attack still take their turn (for future perks)
-					-- Mark as acted (ExecuteAttack won't be called for 0 attack units)
+				-- Find target (even for 0 attack units, so animation can play)
+				local target = FindTarget(unit, battleState.boardA, battleState.boardB)
+				
+				if not target then
+					-- No valid targets - still processed turn, mark as acted
 					unit.hasActed = true
-					LogInfo("Turn: %s slot %d (%s) - zero attack (perks may activate)", unit.playerId, unit.slotIndex, unit.cardId)
-					-- Mark that we processed a turn (even if no attack)
+					LogInfo("Turn: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
 					hasActionThisRound = true
 				else
-					-- Find target
-					local target = FindTarget(unit, battleState.boardA, battleState.boardB)
-					if not target then
-						-- No valid targets - still processed turn, mark as acted
-						unit.hasActed = true
-						LogInfo("Turn: %s slot %d (%s) - no valid target", unit.playerId, unit.slotIndex, unit.cardId)
-						hasActionThisRound = true
-					else
-						-- Execute attack (ExecuteAttack will set hasActed = true itself)
-						ExecuteAttack(unit, target, battleState)
-						hasActionThisRound = true
-						
-						-- Check if battle ended
-						local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
-						if winner then
-							battleState.winner = winner
-							battleState.isComplete = true
-							break
-						end
+					-- Execute attack (even for 0 attack units - animation will play but no damage)
+					-- ExecuteAttack will handle 0 damage correctly and create log entry for animation
+					ExecuteAttack(unit, target, battleState)
+					hasActionThisRound = true
+					
+					-- Check if battle ended
+					local winner = CheckBattleEnd(battleState.boardA, battleState.boardB)
+					if winner then
+						battleState.winner = winner
+						battleState.isComplete = true
+						break
 					end
 				end
 				

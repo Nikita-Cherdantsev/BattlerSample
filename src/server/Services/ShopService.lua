@@ -131,6 +131,9 @@ function ShopService.ProcessReceipt(receiptInfo)
 end
 
 -- Fetch regional prices for all packs (async, called once per player session)
+-- Note: GetProductInfo on server returns prices for the server's region, not the player's region
+-- For accurate regional pricing, client should fetch prices using GetProductInfo
+-- This function is kept for fallback but may not return accurate regional prices
 function ShopService.FetchRegionalPricesForPlayer(player)
 	if not player then
 		return
@@ -154,10 +157,10 @@ function ShopService.FetchRegionalPricesForPlayer(player)
 					return MarketplaceService:GetProductInfo(pack.devProductId, Enum.InfoType.Product)
 				end)
 				
-				if success and productInfo then
-					-- Use PriceInRobux if available (regional pricing)
-					-- Fall back to hardcoded price if not available
-					prices[pack.id] = productInfo.PriceInRobux or pack.robuxPrice
+				if success and productInfo and productInfo.PriceInRobux then
+					-- Use PriceInRobux from GetProductInfo (may be server region, not player region)
+					-- For accurate player-specific regional prices, client should fetch using GetProductInfo
+					prices[pack.id] = productInfo.PriceInRobux
 				else
 					-- Fall back to hardcoded price on error
 					prices[pack.id] = pack.robuxPrice
@@ -171,7 +174,7 @@ function ShopService.FetchRegionalPricesForPlayer(player)
 		-- Store prices for this player
 		regionalPrices[userId] = prices
 		
-		Logger.info("Fetched regional prices for player %d", userId)
+		Logger.info("Fetched regional prices for player %d (server region)", userId)
 	end)
 end
 

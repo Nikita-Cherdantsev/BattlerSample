@@ -14,6 +14,7 @@ ShopHandler.Connections = {}
 ShopHandler._initialized = false
 
 ShopHandler.isAnimating = false
+ShopHandler.regionalPrices = {} -- Cache regional prices per pack ID
 
 --// Initialization
 function ShopHandler:Init(controller)
@@ -472,6 +473,9 @@ function ShopHandler:OpenWindow()
 
 	self.ShopFrame.Visible = true
 
+	-- Fetch regional prices when opening shop (client-side for accurate player region)
+	self:FetchRegionalPrices()
+
 	if self.Utilities then
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.ShopFrame, .3, function ()
@@ -520,6 +524,90 @@ end
 --// Public Methods
 function ShopHandler:IsInitialized()
 	return self._initialized
+end
+
+-- Fetch regional prices for all packs using client-side GetProductInfo
+-- This ensures accurate regional pricing for the player's region
+function ShopHandler:FetchRegionalPrices()
+	local ShopPacksCatalog = require(game.ReplicatedStorage.Modules.Shop.ShopPacksCatalog)
+	local allPacks = ShopPacksCatalog.AllPacks()
+	
+	-- Fetch prices for all packs (async, non-blocking)
+	task.spawn(function()
+		for _, pack in ipairs(allPacks) do
+			if pack.devProductId then
+				local success, productInfo = pcall(function()
+					return MarketplaceService:GetProductInfo(pack.devProductId, Enum.InfoType.Product)
+				end)
+				
+				if success and productInfo and productInfo.PriceInRobux then
+					-- Store regional price (client-side GetProductInfo returns player's region price)
+					self.regionalPrices[pack.id] = productInfo.PriceInRobux
+				else
+					-- Fall back to hardcoded price on error
+					self.regionalPrices[pack.id] = pack.robuxPrice
+					if not success or not productInfo then
+						warn(string.format("[ShopHandler] Failed to fetch price for pack %s, using hardcoded price: %d", 
+							pack.id, pack.robuxPrice))
+					end
+				end
+			else
+				-- No product ID, use hardcoded price
+				self.regionalPrices[pack.id] = pack.robuxPrice
+			end
+		end
+		
+		-- Update UI with regional prices
+		self:UpdatePackPricesInUI()
+	end)
+end
+
+-- Update pack prices in UI with regional prices
+function ShopHandler:UpdatePackPricesInUI()
+	local packIds = {"S", "M", "L", "XL", "XXL", "XXXL"}
+	local possiblePaths = {
+		{path = {"Main", "Content", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+		{path = {"Main", "Content", "Content"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+		{path = {"Main", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+		{path = {"Main", "Content", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+		{path = {"Main", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+		{path = {"Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
+	}
+	
+	for _, pathInfo in ipairs(possiblePaths) do
+		local currentFrame = self.ShopFrame
+		for _, childName in ipairs(pathInfo.path) do
+			currentFrame = currentFrame:FindFirstChild(childName)
+			if not currentFrame then
+				break
+			end
+		end
+		
+		if currentFrame then
+			for i, frameName in ipairs(pathInfo.frames) do
+				local frame = currentFrame:FindFirstChild(frameName)
+				if frame then
+					local packId = packIds[i]
+					local price = self.regionalPrices[packId]
+					
+					if price then
+						-- Try to find price text elements (common names)
+						local priceTextNames = {"TxtPrice", "Price", "TxtRobux", "Robux", "TxtValue", "Value"}
+						for _, textName in ipairs(priceTextNames) do
+							local priceText = frame:FindFirstChild(textName, true) -- Search recursively
+							if priceText and (priceText:IsA("TextLabel") or priceText:IsA("TextButton")) then
+								priceText.Text = tostring(price)
+								break
+							end
+						end
+					end
+				end
+			end
+			
+			-- If we found a valid path, we can break
+			break
+		end
+	end
 end
 
 function ShopHandler:SetupProfileUpdatedHandler()
