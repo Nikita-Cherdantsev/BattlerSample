@@ -17,7 +17,7 @@ local Logger = require(game.ReplicatedStorage.Modules.Logger)
 -- Promo codes configuration
 -- Each code can have one reward
 local PROMO_CODES = {
-	["DEV_SOFT"] = {
+	--[[["DEV_SOFT"] = {
 		rewards = {
 			{ type = "soft", amount = 100 }
 		}
@@ -60,6 +60,17 @@ local PROMO_CODES = {
 	["DEV_CARD1800"] = {
 		rewards = {
 			{ type = "card", cardId = "card_1800", copies = 6 }
+		}
+	},]]
+	-- 
+	["BETA"] = {
+		rewards = {
+			{ type = "lootbox", rarity = "epic" }
+		}
+	},
+	["GOLD"] = {
+		rewards = {
+			{ type = "hard", amount = 50 }
 		}
 	},
 }
