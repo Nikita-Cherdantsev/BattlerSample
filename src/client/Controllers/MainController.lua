@@ -25,6 +25,7 @@ local BattlePrepHandler = require(ReplicatedStorage.ClientModules.BattlePrepHand
 local BattleHandler = require(ReplicatedStorage.ClientModules.BattleHandler)
 local RewardsHandler = require(ReplicatedStorage.ClientModules.RewardsHandler)
 local FollowRewardHandler = require(ReplicatedStorage.ClientModules.FollowRewardHandler)
+local PromoCodeHandler = require(ReplicatedStorage.ClientModules.PromoCodeHandler)
 local NotificationMarkerHandler = require(ReplicatedStorage.ClientModules.NotificationMarkerHandler)
 
 -- State
@@ -62,7 +63,8 @@ function MainController:Init()
 		{name = "BattlePrepHandler", handler = BattlePrepHandler},
 		{name = "BattleHandler", handler = BattleHandler},
 		{name = "RewardsHandler", handler = RewardsHandler},
-		{name = "FollowRewardHandler", handler = FollowRewardHandler}
+		{name = "FollowRewardHandler", handler = FollowRewardHandler},
+		{name = "PromoCodeHandler", handler = PromoCodeHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do

@@ -13,6 +13,7 @@ local LootboxService = require(game.ServerScriptService:WaitForChild("Services")
 local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
 local DailyService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("DailyService"))
 local FollowRewardService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("FollowRewardService"))
+local PromoCodeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PromoCodeService"))
 local ProfileSnapshotService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ProfileSnapshotService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
@@ -41,6 +42,7 @@ local RequestClaimPlaytimeReward = nil
 local RequestDailyData = nil
 local RequestClaimDailyReward = nil
 local RequestClaimFollowReward = nil
+local RequestRedeemPromoCode = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
 
@@ -774,6 +776,63 @@ local function HandleRequestClaimFollowReward(player)
 	end
 end
 
+local function HandleRequestRedeemPromoCode(player, requestData)
+	LogInfo(player, "Processing promo code redemption request")
+	
+	-- Validate request
+	if not requestData or not requestData.code then
+		SendErrorUpdate(player, "RequestRedeemPromoCode.invalidRequest", "INVALID_REQUEST", "Missing code")
+		return
+	end
+	
+	local code = requestData.code
+	local result = PromoCodeService.RedeemCode(player.UserId, code)
+	
+	if result.ok then
+		local overrides = {}
+		if result.rewards then
+			overrides.rewards = result.rewards
+		end
+		
+		-- Add promo code status to overrides
+		overrides.promoCode = {
+			status = "success",
+			code = result.code
+		}
+		
+		-- Always send profile update to ensure currencies and collection are updated
+		-- Include collection if lootbox rewards (cards) OR direct card rewards
+		SendSnapshot(player, "RequestRedeemPromoCode.success", overrides, {
+			includeCollection = result.rewards ~= nil or result.hasCards == true,
+			-- Note: currencies are always included in profile snapshot
+		})
+		
+		LogInfo(player, "Promo code %s redeemed successfully", code)
+	else
+		local errorCode = result.error or "INTERNAL"
+		local status = "error"
+		
+		if errorCode == PromoCodeService.ErrorCodes.CODE_NOT_FOUND then
+			status = "code_not_found"
+			LogInfo(player, "Promo code not found: %s", code)
+		elseif errorCode == PromoCodeService.ErrorCodes.ALREADY_REDEEMED then
+			status = "already_redeemed"
+			LogInfo(player, "Promo code already redeemed: %s", code)
+		elseif errorCode == PromoCodeService.ErrorCodes.INVALID_CODE then
+			status = "invalid_code"
+			LogInfo(player, "Invalid promo code format: %s", code)
+		else
+			LogWarning(player, "Promo code redemption failed: %s", errorCode)
+		end
+		
+		local overrides = {
+			promoCode = { status = status }
+		}
+		
+		SendSnapshot(player, "RequestRedeemPromoCode.failure", overrides)
+	end
+end
+
 local function HandleRequestBuyLootbox(player, requestData)
 	LogInfo(player, "Processing buy lootbox request")
 	
@@ -984,6 +1043,10 @@ function RemoteEvents.Init()
 	RequestClaimFollowReward.Name = "RequestClaimFollowReward"
 	RequestClaimFollowReward.Parent = NetworkFolder
 	
+	RequestRedeemPromoCode = Instance.new("RemoteEvent")
+	RequestRedeemPromoCode.Name = "RequestRedeemPromoCode"
+	RequestRedeemPromoCode.Parent = NetworkFolder
+	
 	-- NPC Deck RemoteFunction
 	RequestNPCDeck = Instance.new("RemoteFunction")
 	RequestNPCDeck.Name = "RequestNPCDeck"
@@ -1016,6 +1079,7 @@ function RemoteEvents.Init()
 	RequestDailyData.OnServerEvent:Connect(HandleRequestDailyData)
 	RequestClaimDailyReward.OnServerEvent:Connect(HandleRequestClaimDailyReward)
 	RequestClaimFollowReward.OnServerEvent:Connect(HandleRequestClaimFollowReward)
+	RequestRedeemPromoCode.OnServerEvent:Connect(HandleRequestRedeemPromoCode)
 	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
 	
 	-- Initialize PlaytimeService

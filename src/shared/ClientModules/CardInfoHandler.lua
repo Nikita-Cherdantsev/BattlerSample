@@ -1111,6 +1111,13 @@ function CardInfoHandler:OpenWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
 
+	-- Register with close button handler (for BtnCodes visibility, not Close button)
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameOpen("CardInfo")
+	end
+
 	-- Show card info frame
 	self.CardInfoFrame.Visible = true
 
@@ -1150,6 +1157,15 @@ function CardInfoHandler:CloseWindow()
 	-- Clear current card data
 	self.currentCardId = nil
 	self.currentSlotIndex = nil
+	
+	self.isWindowOpen = false
+
+	-- Register with close button handler (for BtnCodes visibility, not Close button)
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameClosed("CardInfo")
+	end
 	
 	print("✅ CardInfoHandler: card info window closed")
 end

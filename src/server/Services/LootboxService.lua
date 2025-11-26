@@ -530,7 +530,8 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 		[BoxTypes.BoxRarity.UNCOMMON] = true,
 		[BoxTypes.BoxRarity.RARE] = true,
 		[BoxTypes.BoxRarity.EPIC] = true,
-		[BoxTypes.BoxRarity.LEGENDARY] = true
+		[BoxTypes.BoxRarity.LEGENDARY] = true,
+		[BoxTypes.BoxRarity.ONEPIECE] = true
 	}
 	if not validRarities[rarity] then
 		return { ok = false, error = LootboxService.ErrorCodes.INVALID_RARITY }

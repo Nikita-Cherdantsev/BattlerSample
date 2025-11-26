@@ -470,6 +470,13 @@ function ShopHandler:OpenWindow()
 	if self.isAnimating then return end
 	self.isAnimating = true
 
+	-- Register with close button handler (for BtnCodes visibility, not Close button)
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameOpen("Shop")
+	end
+
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = false
 	end
@@ -515,6 +522,15 @@ function ShopHandler:CloseWindow()
 	else
 		self.ShopFrame.Visible = false
 		self.isAnimating = false
+	end
+
+	self.isWindowOpen = false
+
+	-- Register with close button handler (for BtnCodes visibility, not Close button)
+	local CloseButtonHandler = require(game.ReplicatedStorage.ClientModules.CloseButtonHandler)
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler then
+		closeButtonHandler:RegisterFrameClosed("Shop")
 	end
 
 	if self.UI.LeftPanel then

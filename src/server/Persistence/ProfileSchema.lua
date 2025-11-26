@@ -62,7 +62,10 @@ ProfileSchema.Profile = {
 	daily = {
 		streak = 0,              -- Consecutive login days (0-7, resets if missed a day)
 		lastLogin = 0            -- Unix timestamp of last login date
-	}
+	},
+	
+	-- Promo codes tracking (map: code -> true)
+	redeemedCodes = {}          -- Tracks which promo codes have been redeemed by the player
 }
 
 -- Lootbox entry structure
@@ -449,6 +452,7 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 			streak = 0,
 			lastLogin = 0
 		},
+		redeemedCodes = {},  -- Initialize promo codes tracking
 		followRewardClaimed = v1Profile.followRewardClaimed or false,
 		bossWins = v1Profile.bossWins or {},
 		npcWins = v1Profile.npcWins or 0,

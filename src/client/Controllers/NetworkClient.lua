@@ -38,6 +38,7 @@ local RequestStartPackPurchase = Network:WaitForChild("RequestStartPackPurchase"
 local RequestBuyLootbox = Network:WaitForChild("RequestBuyLootbox")
 local RequestPlaytimeData = Network:WaitForChild("RequestPlaytimeData")
 local RequestClaimPlaytimeReward = Network:WaitForChild("RequestClaimPlaytimeReward")
+local RequestRedeemPromoCode = Network:WaitForChild("RequestRedeemPromoCode")
 local RequestDailyData = Network:WaitForChild("RequestDailyData")
 local RequestClaimDailyReward = Network:WaitForChild("RequestClaimDailyReward")
 local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward")
@@ -343,6 +344,18 @@ function NetworkClient.requestClaimDailyReward(rewardIndex)
 	
 	log("Requesting claim daily reward: %d", rewardIndex)
 	RequestClaimDailyReward:FireServer({rewardIndex = rewardIndex})
+	
+	return true
+end
+
+-- Promo code methods
+function NetworkClient.requestRedeemPromoCode(code)
+	if not code or type(code) ~= "string" or code == "" then
+		return false, "Invalid promo code"
+	end
+	
+	log("Requesting redeem promo code: %s", code)
+	RequestRedeemPromoCode:FireServer({code = code})
 	
 	return true
 end

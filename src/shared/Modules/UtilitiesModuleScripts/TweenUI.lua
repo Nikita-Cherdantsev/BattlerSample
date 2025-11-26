@@ -5,6 +5,7 @@ local TweenUI = {}
 local propertyMap = {
 	TextLabel = {"TextTransparency", "TextStrokeTransparency", "BackgroundTransparency"},
 	TextButton = {"TextTransparency", "TextStrokeTransparency", "BackgroundTransparency"},
+	TextBox = {"TextTransparency", "TextStrokeTransparency", "BackgroundTransparency"},
 	ImageLabel = {"ImageTransparency", "BackgroundTransparency"},
 	ImageButton = {"ImageTransparency", "BackgroundTransparency"},
 	Frame = {"BackgroundTransparency"},

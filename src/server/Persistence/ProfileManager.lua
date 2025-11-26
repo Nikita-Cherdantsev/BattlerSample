@@ -343,6 +343,10 @@ local function MigrateProfileIfNeeded(profile)
 					claimedRewards = {}
 				}
 			end
+			-- Initialize redeemedCodes if missing (for existing v2 profiles)
+			if not profile.redeemedCodes then
+				profile.redeemedCodes = {}
+			end
 			return profile
 		end
 	end
@@ -375,6 +379,11 @@ local function MigrateProfileIfNeeded(profile)
 			
 			-- Migrate lootbox rarities: "common" -> "uncommon"
 			migratedProfile = ProfileManager.MigrateLootboxRarities(migratedProfile)
+			
+			-- Initialize redeemedCodes if missing (for migrated profiles)
+			if not migratedProfile.redeemedCodes then
+				migratedProfile.redeemedCodes = {}
+			end
 			
 			return migratedProfile
 		else

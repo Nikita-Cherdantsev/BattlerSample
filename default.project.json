@@ -55,6 +55,9 @@
         "FollowRewardHandler": {
           "$path": "src/shared/ClientModules/FollowRewardHandler.lua"
         },
+        "PromoCodeHandler": {
+          "$path": "src/shared/ClientModules/PromoCodeHandler.lua"
+        },
         "NotificationMarkerHandler": {
           "$path": "src/shared/ClientModules/NotificationMarkerHandler.lua"
         }
@@ -262,6 +265,9 @@
         },
         "FollowRewardService": {
           "$path": "src/server/Services/FollowRewardService.lua"
+        },
+        "PromoCodeService": {
+          "$path": "src/server/Services/PromoCodeService.lua"
         }
       }
     },

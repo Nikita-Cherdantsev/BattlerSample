@@ -16,6 +16,8 @@ local _instance = nil
 CloseButtonHandler.UI = nil
 CloseButtonHandler.CloseButton = nil
 CloseButtonHandler.CloseButtonFrame = nil
+CloseButtonHandler.CodesButton = nil
+CloseButtonHandler.CodesButtonFrame = nil
 
 -- State tracking
 CloseButtonHandler.openFrames = {} -- Track which frames are currently open
@@ -79,8 +81,21 @@ function CloseButtonHandler:SetupCloseButtonUI()
 		return false
 	end
 	
+	-- Find BtnCodes in TopPanel
+	local btnCodesFrame = topPanel:FindFirstChild("BtnCodes")
+	if btnCodesFrame then
+		self.CodesButtonFrame = btnCodesFrame
+		self.CodesButton = btnCodesFrame:FindFirstChild("Button")
+		if not self.CodesButton then
+			warn("❌ CloseButtonHandler: Button not found inside BtnCodes frame")
+		end
+	end
+	
 	-- Initially hide the close button
 	self:SetCloseButtonVisible(false)
+	
+	-- Initially show the codes button
+	self:SetCodesButtonVisible(true)
 	
 	-- Connect close button click
 	self.CloseButton.MouseButton1Click:Connect(function()
@@ -129,6 +144,18 @@ function CloseButtonHandler:RegisterFrameClosed(frameName)
 	end
 end
 
+-- Set codes button visibility
+function CloseButtonHandler:SetCodesButtonVisible(visible)
+	if not self.CodesButton or not self.CodesButtonFrame then
+		return
+	end
+	
+	self.CodesButtonFrame.Visible = visible
+	self.CodesButtonFrame.Active = visible
+	self.CodesButton.Visible = visible
+	self.CodesButton.Active = visible
+end
+
 -- Update close button visibility based on open frames
 function CloseButtonHandler:UpdateCloseButtonVisibility()
 	-- If close button is blocked (e.g., Daily reward available), don't show it
@@ -137,15 +164,34 @@ function CloseButtonHandler:UpdateCloseButtonVisibility()
 		return
 	end
 	
-	local hasOpenFrames = false
+	-- Frames that should show Close button in TopPanel
+	local framesWithCloseButton = {
+		Daily = true,
+		Playtime = true,
+		Deck = true,
+		BattlePrep = true
+	}
+	
+	-- Check if any frame with Close button is open
+	local hasOpenFramesWithClose = false
 	for frameName, isOpen in pairs(self.openFrames) do
-		if isOpen then
-			hasOpenFrames = true
+		if isOpen and framesWithCloseButton[frameName] then
+			hasOpenFramesWithClose = true
 			break
 		end
 	end
 	
-	self:SetCloseButtonVisible(hasOpenFrames)
+	self:SetCloseButtonVisible(hasOpenFramesWithClose)
+	
+	-- Hide codes button when any window is open, show when no windows are open
+	local hasAnyOpenFrames = false
+	for frameName, isOpen in pairs(self.openFrames) do
+		if isOpen then
+			hasAnyOpenFrames = true
+			break
+		end
+	end
+	self:SetCodesButtonVisible(not hasAnyOpenFrames)
 end
 
 -- Block close button (e.g., when Daily reward is available)
