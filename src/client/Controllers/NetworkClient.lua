@@ -284,13 +284,16 @@ function NetworkClient.requestGetShopPacks()
 	return true
 end
 
-function NetworkClient.requestStartPackPurchase(packId)
+function NetworkClient.requestStartPackPurchase(packId, expectedPriceInRobux)
 	if not packId or type(packId) ~= "string" then
 		return false, "Invalid pack ID"
 	end
 	
-	log("Requesting start pack purchase: %s", packId)
-	RequestStartPackPurchase:FireServer({packId = packId})
+	log("Requesting start pack purchase: %s (expectedPriceInRobux=%s)", packId, tostring(expectedPriceInRobux))
+	RequestStartPackPurchase:FireServer({
+		packId = packId,
+		expectedPriceInRobux = expectedPriceInRobux,
+	})
 	
 	return true
 end

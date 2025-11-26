@@ -620,7 +620,12 @@ local function HandleRequestStartPackPurchase(player, requestData)
 		return
 	end
 	
-	local result = ShopService.ValidatePackPurchase(player.UserId, requestData.packId)
+	local expectedPriceInRobux = nil
+	if type(requestData.expectedPriceInRobux) == "number" and requestData.expectedPriceInRobux > 0 then
+		expectedPriceInRobux = requestData.expectedPriceInRobux
+	end
+	
+	local result = ShopService.ValidatePackPurchase(player.UserId, requestData.packId, expectedPriceInRobux)
 	
 	local payload = {
 		serverNow = os.time()

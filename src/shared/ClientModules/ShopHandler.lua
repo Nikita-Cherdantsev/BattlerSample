@@ -401,7 +401,13 @@ function ShopHandler:HandlePackPurchase(packId, button)
 	}
 	
 	local success, result = pcall(function()
-		return NetworkClient.requestStartPackPurchase(packId)
+		-- Pass expected regional price (from client-side GetProductInfo) so the server
+		-- can use it for analytics / leaderboards when CurrencySpent is missing (Studio/dev).
+		local expectedPriceInRobux = nil
+		if self.regionalPrices then
+			expectedPriceInRobux = self.regionalPrices[packId]
+		end
+		return NetworkClient.requestStartPackPurchase(packId, expectedPriceInRobux)
 	end)
 	
 	if not success then

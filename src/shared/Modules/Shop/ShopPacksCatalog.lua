@@ -27,8 +27,8 @@ ShopPacksCatalog.Packs = {
 		id = "L",
 		hardAmount = 700,
 		robuxPrice = 200,
-		devProductId = 3400864901, -- DEV productId for testing
-		--devProductId = 3455685050, -- PROD productId
+		--devProductId = 3400864901, -- DEV productId for testing
+		devProductId = 3455685050, -- PROD productId
 		additionalHard = 140 -- UI bonus display only
 	},
 	["XL"] = {

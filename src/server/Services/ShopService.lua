@@ -32,6 +32,36 @@ local processedReceipts = {}
 -- Format: regionalPrices[userId] = { packId -> price }
 local regionalPrices = {}
 
+-- Expected Robux spent per player/product (sent from client based on regional prices).
+-- Used only for analytics / leaderboards when CurrencySpent is missing (e.g. Studio/dev).
+-- Format: expectedRobuxSpent[playerId][productId] = priceInRobux
+local expectedRobuxSpent = {}
+
+function ShopService.SetExpectedRobuxSpent(playerId, productId, priceInRobux)
+	if type(playerId) ~= "number" or type(productId) ~= "number" or type(priceInRobux) ~= "number" then
+		return
+	end
+	
+	expectedRobuxSpent[playerId] = expectedRobuxSpent[playerId] or {}
+	expectedRobuxSpent[playerId][productId] = priceInRobux
+end
+
+local function consumeExpectedRobuxSpent(playerId, productId)
+	local byPlayer = expectedRobuxSpent[playerId]
+	if not byPlayer then
+		return nil
+	end
+	
+	local price = byPlayer[productId]
+	byPlayer[productId] = nil
+	
+	if next(byPlayer) == nil then
+		expectedRobuxSpent[playerId] = nil
+	end
+	
+	return price
+end
+
 local function generateReceiptKey(receiptInfo)
 	if receiptInfo.PurchaseId and receiptInfo.PurchaseId ~= "" then
 		return receiptInfo.PurchaseId
@@ -62,7 +92,7 @@ function ShopService.ProcessReceipt(receiptInfo)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	
-	-- Atomically credit hard currency
+	-- Atomically credit hard currency and update totalRobuxSpent
 	local success, result = pcall(function()
 		return ProfileManager.UpdateProfile(playerId, function(profile)
 			if not profile then
@@ -73,10 +103,24 @@ function ShopService.ProcessReceipt(receiptInfo)
 			local totalHard = pack.hardAmount + (pack.additionalHard or 0)
 			local oldHard = profile.currencies.hard or 0
 			profile.currencies.hard = oldHard + totalHard
-			local amountSpent = robuxSpent
-			if amountSpent <= 0 then
-				amountSpent = pack.robuxPrice or 0
+			
+			-- Track how many Robux the player actually spent on this purchase.
+			-- We trust receiptInfo.CurrencySpent (Roblox-side actual price with regional / dynamic pricing).
+			-- If it's missing (e.g. Studio), fall back to expected price from client (regional),
+			-- and only then to the pack's configured Robux price.
+			local amountSpent = 0
+			if typeof(robuxSpent) == "number" and robuxSpent > 0 then
+				amountSpent = robuxSpent
+			else
+				-- Try to use expected price that was sent from the client when the purchase started
+				local expected = consumeExpectedRobuxSpent(playerId, productId)
+				if type(expected) == "number" and expected > 0 then
+					amountSpent = expected
+				else
+					amountSpent = pack.robuxPrice or 0
+				end
 			end
+
 			profile.totalRobuxSpent = (profile.totalRobuxSpent or 0) + amountSpent
 			-- NOTE: updatedAt is set by ProfileManager.UpdateProfile, don't set it here
 			
@@ -210,7 +254,7 @@ function ShopService.GetShopPacks(player)
 end
 
 -- Validate pack purchase request
-function ShopService.ValidatePackPurchase(playerId, packId)
+function ShopService.ValidatePackPurchase(playerId, packId, expectedPriceInRobux)
 	-- Validate pack exists and has devProductId
 	local pack = ShopPacksCatalog.GetPack(packId)
 	if not pack then
@@ -219,6 +263,12 @@ function ShopService.ValidatePackPurchase(playerId, packId)
 	
 	if not pack.devProductId then
 		return { ok = false, error = ShopService.ErrorCodes.PACK_NOT_AVAILABLE }
+	end
+	
+	-- Stash expected price (from client regional pricing) for analytics / leaderboards.
+	-- This is only a hint and will be used when CurrencySpent is missing (e.g. Studio/dev).
+	if type(expectedPriceInRobux) == "number" and expectedPriceInRobux > 0 then
+		ShopService.SetExpectedRobuxSpent(playerId, pack.devProductId, expectedPriceInRobux)
 	end
 	
 	return { ok = true, pack = pack }
