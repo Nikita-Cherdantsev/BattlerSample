@@ -210,6 +210,27 @@ local function SetupPlayerRewardTimers(player, userId)
 	
 	local nextRewardIndex = nil
 	local nextRewardTimeSeconds = nil
+	local hasAvailableReward = false
+	
+	for i = 1, #REWARDS_CONFIG.thresholds do
+		local threshold = REWARDS_CONFIG.thresholds[i]
+		if threshold and not IsRewardClaimed(playtime.claimedRewards or {}, i) then
+			if currentMinutes >= threshold then
+				hasAvailableReward = true
+			end
+		end
+	end
+	
+	if hasAvailableReward then
+		local currentAvailability = playerRewardAvailability[userId]
+		if not currentAvailability or not currentAvailability.hasAvailableReward then
+			playerRewardAvailability[userId] = {
+				hasAvailableReward = true,
+				nextRewardTimeSeconds = nil
+			}
+			NotifyPlayerRewardAvailability(player, userId)
+		end
+	end
 	
 	for i = 1, #REWARDS_CONFIG.thresholds do
 		local threshold = REWARDS_CONFIG.thresholds[i]
@@ -217,16 +238,7 @@ local function SetupPlayerRewardTimers(player, userId)
 			local rewardTimeSeconds = threshold * 60
 			local timeUntilReward = rewardTimeSeconds - currentTotalTime
 			
-			if currentMinutes >= threshold then
-				local currentAvailability = playerRewardAvailability[userId]
-				if not currentAvailability or not currentAvailability.hasAvailableReward then
-					playerRewardAvailability[userId] = {
-						hasAvailableReward = true,
-						nextRewardTimeSeconds = nil
-					}
-					NotifyPlayerRewardAvailability(player, userId)
-				end
-			elseif timeUntilReward > 0 then
+			if currentMinutes < threshold and timeUntilReward > 0 then
 				if not nextRewardTimeSeconds or timeUntilReward < nextRewardTimeSeconds then
 					nextRewardIndex = i
 					nextRewardTimeSeconds = timeUntilReward
@@ -242,10 +254,12 @@ local function SetupPlayerRewardTimers(player, userId)
 		
 		local waitTime = math.max(0.5, nextRewardTimeSeconds + 0.5)
 		
-		playerRewardAvailability[userId] = {
-			hasAvailableReward = false,
-			nextRewardTimeSeconds = nextRewardTimeSeconds
-		}
+		if not hasAvailableReward then
+			playerRewardAvailability[userId] = {
+				hasAvailableReward = false,
+				nextRewardTimeSeconds = nextRewardTimeSeconds
+			}
+		end
 		
 		local timer = task.spawn(function()
 			task.wait(waitTime)

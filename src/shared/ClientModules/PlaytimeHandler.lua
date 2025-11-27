@@ -481,7 +481,12 @@ function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
 			self:CheckAndUpdateAvailableRewards(oldTotalTime, self.totalPlaytime)
 		end
 		
-		shouldUpdateMarker = true
+		-- Only update marker if hasAvailableReward was explicitly provided
+		-- This prevents marker from being hidden when playtime data is included
+		-- in ProfileUpdated without hasAvailableReward (e.g., when opening lootbox)
+		if playtimeData.hasAvailableReward ~= nil then
+			shouldUpdateMarker = true
+		end
 	end
 	
 	if playtimeData.claimedRewards then
@@ -491,21 +496,28 @@ function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
 			self.claimedRewardsSet[rewardIndex] = true
 		end
 		
-		shouldUpdateMarker = true
+		-- Only update marker if hasAvailableReward was explicitly provided
+		if playtimeData.hasAvailableReward ~= nil then
+			shouldUpdateMarker = true
+		end
 	end
 	
 	-- Update rewards config if provided
 	if playtimeData.rewardsConfig then
 		self:LoadRewardsConfig(playtimeData.rewardsConfig)
-		shouldUpdateMarker = true
+		-- Don't update marker just because config changed
 	end
 	
+	-- Only update marker if hasAvailableReward was explicitly provided by server
 	if playtimeData.hasAvailableReward ~= nil then
 		shouldUpdateMarker = true
-	end
-	
-	if shouldUpdateMarker then
 		self:UpdateNotificationMarkerWithRetry(playtimeData.hasAvailableReward)
+	elseif shouldUpdateMarker then
+		-- If other data changed but hasAvailableReward wasn't provided,
+		-- recalculate it locally (but only if we have valid data)
+		if self.thresholds and self.totalPlaytime > 0 then
+			self:UpdateNotificationMarker()
+		end
 	end
 	
 	-- Update UI if window is open
