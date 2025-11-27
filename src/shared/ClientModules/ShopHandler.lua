@@ -56,6 +56,9 @@ function ShopHandler:SetupShop()
 	self.InputBlocker = shopFrame:FindFirstChild("InputBlocker")
 	
 	shopFrame.Visible = false
+
+	-- Fetch regional prices (client-side for accurate player region)
+	self:FetchRegionalPrices()
 	
 	self:SetupOpenButton()
 	self:SetupCloseButton()
@@ -146,13 +149,7 @@ end
 
 function ShopHandler:SetupPackButtons()
 	local possiblePaths = {
-		{path = {"Main", "Content", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "Content"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {}, frames = {"PackS", "PackM", "PackL", "PackXL", "PackXXL", "PackXXXL"}}
+		{path = {"Main", "Content", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}}
 	}
 	
 	local packIds = {"S", "M", "L", "XL", "XXL", "XXXL"}
@@ -244,13 +241,7 @@ end
 
 function ShopHandler:SetupLootboxButtons()
 	local possiblePaths = {
-		{path = {"Main", "Content", "Content", "ScrollingFrame", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {"Main", "Content", "Content"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {"Main", "Content", "ScrollingFrame", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {"Main", "Content", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {"Main", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {"Content", "ScrollingFrame", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}},
-		{path = {}, frames = {"LootboxUncommon", "LootboxRare", "LootboxEpic", "LootboxLegendary"}}
+		{path = {"Main", "Content", "Content", "ScrollingFrame", "PacksContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4"}}
 	}
 	
 	local rarities = {"uncommon", "rare", "epic", "legendary"}
@@ -486,8 +477,8 @@ function ShopHandler:OpenWindow()
 
 	self.ShopFrame.Visible = true
 
-	-- Fetch regional prices when opening shop (client-side for accurate player region)
-	self:FetchRegionalPrices()
+	-- Update UI with regional prices
+	self:UpdatePackPricesInUI()
 
 	if self.Utilities then
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
@@ -578,9 +569,6 @@ function ShopHandler:FetchRegionalPrices()
 				self.regionalPrices[pack.id] = pack.robuxPrice
 			end
 		end
-		
-		-- Update UI with regional prices
-		self:UpdatePackPricesInUI()
 	end)
 end
 
@@ -589,12 +577,21 @@ function ShopHandler:UpdatePackPricesInUI()
 	local packIds = {"S", "M", "L", "XL", "XXL", "XXXL"}
 	local possiblePaths = {
 		{path = {"Main", "Content", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "Content"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "Content", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Main", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
-		{path = {"Content", "ScrollingFrame", "CurrencyContent"}, frames = {"Frame1", "Frame2", "Frame3", "Frame4", "Frame5", "Frame6"}},
 	}
+
+	local featuredFrame = self.ShopFrame:FindFirstChild("Main"):FindFirstChild("Content"):FindFirstChild("Content"):FindFirstChild("ScrollingFrame"):FindFirstChild("FeaturedContent")
+	if featuredFrame then
+		local coinsFrame = featuredFrame:FindFirstChild("Frame1")
+		if coinsFrame then
+			local price = self.regionalPrices[packIds[5]]
+			if price then
+				local priceText = coinsFrame:FindFirstChild("TxtPrice", true)
+				if priceText then
+					priceText.Text = tostring(price)
+				end
+			end
+		end
+	end
 	
 	for _, pathInfo in ipairs(possiblePaths) do
 		local currentFrame = self.ShopFrame
