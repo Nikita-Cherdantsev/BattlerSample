@@ -420,10 +420,13 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		-- Grant rewards
 		grantRewards(profile, rewards)
 		
+		-- Save source before removing lootbox (for analytics)
+		local lootboxSource = lootbox.source
+		
 		-- Free the slot and compact array
 		profile.lootboxes[slotIndex] = nil
 		profile.lootboxes = compactLootboxArray(profile.lootboxes)
-		profile._lootboxResult = { ok = true, rewards = rewards }
+		profile._lootboxResult = { ok = true, rewards = rewards, source = lootboxSource, rarity = lootbox.rarity }
 		return preserveProfileInvariants(profile, userId)
 	end)
 	
@@ -431,7 +434,17 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	local lootboxResult = result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	
+	-- Track analytics event
+	if lootboxResult.ok then
+		local AnalyticsService = require(script.Parent.AnalyticsService)
+		local rarity = lootboxResult.rarity or "unknown"
+		local source = lootboxResult.source or "unknown"
+		AnalyticsService.TrackLootboxOpened(userId, rarity, source)
+	end
+	
+	return lootboxResult
 end
 
 -- Open lootbox instantly with hard currency
@@ -502,6 +515,9 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 
 		rewards.rarity = lootbox.rarity
 		
+		-- Save source before removing lootbox (for analytics)
+		local lootboxSource = lootbox.source
+		
 		-- Grant rewards
 		grantRewards(profile, rewards)
 		
@@ -512,7 +528,7 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		-- Preserve profile invariants
 		profile = preserveProfileInvariants(profile, userId)
 		
-		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = instantCost }
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = instantCost, source = lootboxSource, rarity = lootbox.rarity }
 		return profile
 	end)
 	
@@ -520,7 +536,17 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	local lootboxResult = result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	
+	-- Track analytics event
+	if lootboxResult.ok then
+		local AnalyticsService = require(script.Parent.AnalyticsService)
+		local rarity = lootboxResult.rarity or "unknown"
+		local source = lootboxResult.source or "unknown"
+		AnalyticsService.TrackLootboxOpened(userId, rarity, source)
+	end
+	
+	return lootboxResult
 end
 
 --- Open a shop-purchased lootbox immediately (creates temporary lootbox, opens it, grants rewards)
@@ -597,7 +623,7 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 		profile = preserveProfileInvariants(profile, userId)
 		
 		-- Return the rewards for logging
-		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = 0 }
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = 0, rarity = rarity, source = "shop" }
 		return profile
 	end)
 	
@@ -605,7 +631,16 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	local lootboxResult = result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	
+	-- Track analytics event (OpenShopLootbox is always from shop)
+	if lootboxResult.ok then
+		local AnalyticsService = require(script.Parent.AnalyticsService)
+		local rarity = lootboxResult.rarity or rarity
+		AnalyticsService.TrackLootboxOpened(userId, rarity, "shop")
+	end
+	
+	return lootboxResult
 end
 
 --- Speed up unlocking (complete timer and make lootbox ready)

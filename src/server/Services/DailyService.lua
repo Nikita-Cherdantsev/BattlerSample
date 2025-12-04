@@ -364,6 +364,12 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 		return { ok = false, error = profileResult._dailyResult.error }
 	end
 	
+	-- Track analytics event
+	if dailyResult and dailyResult.ok then
+		local AnalyticsService = require(script.Parent.AnalyticsService)
+		AnalyticsService.TrackDailyRewardClaimed(userId, rewardIndex)
+	end
+	
 	-- Return result (excluding internal lootboxes array)
 	dailyResult = dailyResult or { ok = false, error = DailyService.ErrorCodes.INTERNAL }
 	if dailyResult.ok then

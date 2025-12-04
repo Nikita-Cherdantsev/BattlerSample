@@ -386,6 +386,10 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 	
 	playtimeResult = playtimeResult or { ok = false, error = PlaytimeService.ErrorCodes.INTERNAL }
 	if playtimeResult.ok then
+		-- Track analytics event
+		local AnalyticsService = require(script.Parent.AnalyticsService)
+		AnalyticsService.TrackPlaytimeRewardClaimed(userId, rewardIndex)
+		
 		playtimeResult.lootboxes = nil
 	end
 	

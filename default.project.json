@@ -239,6 +239,9 @@
       },
       "Services": {
         "$className": "Folder",
+        "AnalyticsService": {
+          "$path": "src/server/Services/AnalyticsService.lua"
+        },
         "CombatEngine": {
           "$path": "src/server/Services/CombatEngine.lua"
         },

@@ -794,6 +794,13 @@ function ProfileManager.LevelUpCard(userId, cardId, requiredCount, softAmount)
 		return false, "Failed to save profile"
 	end
 	
+	-- Track analytics event
+	if updatedProfile and updatedProfile.collection and updatedProfile.collection[cardId] then
+		local AnalyticsService = require(script.Parent.Parent.Services.AnalyticsService)
+		local newLevel = updatedProfile.collection[cardId].level or 1
+		AnalyticsService.TrackCardUpgraded(tonumber(userId), cardId, newLevel)
+	end
+	
 	return true
 end
 
