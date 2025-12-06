@@ -468,59 +468,45 @@ function PlaytimeHandler:SetupProfileUpdatedHandler()
 end
 
 function PlaytimeHandler:HandlePlaytimeUpdate(playtimeData)
-	local shouldUpdateMarker = false
-	
-	-- Update total playtime and sync time
 	if playtimeData.totalTime then
-		local oldTotalTime = self.totalPlaytime
-		self.totalPlaytime = playtimeData.totalTime
-		self.lastServerSync = os.time()
-		
-		-- Check if new rewards became available
-		if self.isWindowOpen then
-			self:CheckAndUpdateAvailableRewards(oldTotalTime, self.totalPlaytime)
-		end
-		
-		-- Only update marker if hasAvailableReward was explicitly provided
-		-- This prevents marker from being hidden when playtime data is included
-		-- in ProfileUpdated without hasAvailableReward (e.g., when opening lootbox)
 		if playtimeData.hasAvailableReward ~= nil then
-			shouldUpdateMarker = true
+			local oldTotalTime = self.totalPlaytime
+			self.totalPlaytime = playtimeData.totalTime
+			self.lastServerSync = os.time()
+			
+			if self.isWindowOpen then
+				self:CheckAndUpdateAvailableRewards(oldTotalTime, self.totalPlaytime)
+			end
+		else
+			if self.totalPlaytime == 0 then
+				self.totalPlaytime = playtimeData.totalTime
+				self.lastServerSync = os.time()
+			end
 		end
 	end
 	
 	if playtimeData.claimedRewards then
-		self.claimedRewards = playtimeData.claimedRewards
-		self.claimedRewardsSet = {}
-		for _, rewardIndex in ipairs(self.claimedRewards) do
-			self.claimedRewardsSet[rewardIndex] = true
-		end
-		
-		-- Only update marker if hasAvailableReward was explicitly provided
-		if playtimeData.hasAvailableReward ~= nil then
-			shouldUpdateMarker = true
+		if playtimeData.hasAvailableReward ~= nil or self.totalPlaytime == 0 then
+			self.claimedRewards = playtimeData.claimedRewards
+			self.claimedRewardsSet = {}
+			for _, rewardIndex in ipairs(self.claimedRewards) do
+				self.claimedRewardsSet[rewardIndex] = true
+			end
 		end
 	end
 	
-	-- Update rewards config if provided
 	if playtimeData.rewardsConfig then
 		self:LoadRewardsConfig(playtimeData.rewardsConfig)
-		-- Don't update marker just because config changed
 	end
 	
-	-- Only update marker if hasAvailableReward was explicitly provided by server
 	if playtimeData.hasAvailableReward ~= nil then
-		shouldUpdateMarker = true
 		self:UpdateNotificationMarkerWithRetry(playtimeData.hasAvailableReward)
-	elseif shouldUpdateMarker then
-		-- If other data changed but hasAvailableReward wasn't provided,
-		-- recalculate it locally (but only if we have valid data)
-		if self.thresholds and self.totalPlaytime > 0 then
+	else
+		if self.thresholds and #self.thresholds > 0 and self.totalPlaytime > 0 then
 			self:UpdateNotificationMarker()
 		end
 	end
 	
-	-- Update UI if window is open
 	if self.isWindowOpen then
 		self:UpdateAllRewardsDisplay()
 	end
@@ -683,7 +669,7 @@ end
 
 function PlaytimeHandler:UpdateNotificationMarker(hasAvailableRewards)
 	if hasAvailableRewards == nil then
-		if not self.thresholds or self.totalPlaytime == 0 then
+		if not self.thresholds or #self.thresholds == 0 or self.totalPlaytime == 0 then
 			return
 		end
 		
