@@ -12,6 +12,7 @@ local ShopService = require(game.ServerScriptService:WaitForChild("Services"):Wa
 local LootboxService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LootboxService"))
 local PlaytimeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PlaytimeService"))
 local DailyService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("DailyService"))
+local AnalyticsService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("AnalyticsService"))
 local FollowRewardService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("FollowRewardService"))
 local PromoCodeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PromoCodeService"))
 local ProfileSnapshotService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ProfileSnapshotService"))
@@ -1084,6 +1085,9 @@ function RemoteEvents.Init()
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()
+	
+	-- Initialize AnalyticsService
+	AnalyticsService.Init()
 	
 	-- Track player login for daily rewards
 	Players.PlayerAdded:Connect(function(player)

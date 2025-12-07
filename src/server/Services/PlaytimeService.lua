@@ -151,7 +151,7 @@ local function IsRewardAvailable(totalTime, rewardIndex)
 end
 
 local function GrantLootboxRewards(userId, rarity)
-	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time())
+	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time(), "playtime")
 	if not lootboxResult or not lootboxResult.ok then
 		warn("[PlaytimeService] Failed to open lootbox: " .. tostring(rarity) .. " for user " .. tostring(userId))
 		return nil

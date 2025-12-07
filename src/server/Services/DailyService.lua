@@ -157,7 +157,7 @@ end
 
 -- Grant lootbox rewards (called after successful profile update)
 local function GrantLootboxRewards(userId, rarity)
-	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time())
+	local lootboxResult = LootboxService.OpenShopLootbox(userId, rarity, os.time(), "daily")
 	if not lootboxResult or not lootboxResult.ok then
 		warn("[DailyService] Failed to open lootbox: " .. tostring(rarity) .. " for user " .. tostring(userId) .. " (error=" .. tostring(lootboxResult and lootboxResult.error) .. ")")
 		return nil

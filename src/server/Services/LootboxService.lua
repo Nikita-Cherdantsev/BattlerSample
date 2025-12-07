@@ -550,7 +550,11 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 end
 
 --- Open a shop-purchased lootbox immediately (creates temporary lootbox, opens it, grants rewards)
-function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
+function LootboxService.OpenShopLootbox(userId, rarity, serverNow, source)
+	-- source: "shop" for purchased, "daily" for daily rewards, "playtime" for playtime rewards, etc.
+	-- Default to "shop" for backward compatibility
+	source = source or "shop"
+	
 	-- Validate rarity (rarity should already be lowercase from client)
 	local validRarities = {
 		[BoxTypes.BoxRarity.UNCOMMON] = true,
@@ -623,7 +627,7 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 		profile = preserveProfileInvariants(profile, userId)
 		
 		-- Return the rewards for logging
-		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = 0, rarity = rarity, source = "shop" }
+		profile._lootboxResult = { ok = true, rewards = rewards, instantCost = 0, rarity = rarity, source = source }
 		return profile
 	end)
 	
@@ -633,11 +637,12 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow)
 	
 	local lootboxResult = result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	
-	-- Track analytics event (OpenShopLootbox is always from shop)
+	-- Track analytics event
 	if lootboxResult.ok then
 		local AnalyticsService = require(script.Parent.AnalyticsService)
 		local rarity = lootboxResult.rarity or rarity
-		AnalyticsService.TrackLootboxOpened(userId, rarity, "shop")
+		local sourceForAnalytics = lootboxResult.source or source or "shop"
+		AnalyticsService.TrackLootboxOpened(userId, rarity, sourceForAnalytics)
 	end
 	
 	return lootboxResult
