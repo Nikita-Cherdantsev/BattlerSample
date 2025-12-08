@@ -17,6 +17,7 @@ local FollowRewardService = require(game.ServerScriptService:WaitForChild("Servi
 local PromoCodeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("PromoCodeService"))
 local ProfileSnapshotService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ProfileSnapshotService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
+local TutorialService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("TutorialService"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
 -- Network folder and RemoteEvents (created in Init)
@@ -46,6 +47,8 @@ local RequestClaimFollowReward = nil
 local RequestRedeemPromoCode = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
+local RequestTutorialProgress = nil
+local RequestCompleteTutorialStep = nil
 
 -- Utility functions
 local function LogInfo(player, message, ...)
@@ -914,6 +917,48 @@ local function HandleRequestClaimBattleReward(player, requestData)
 	LogInfo(player, "Battle reward claimed successfully")
 end
 
+local function HandleRequestTutorialProgress(player, requestData)
+	LogInfo(player, "Processing tutorial progress request")
+	
+	local result = TutorialService.GetProgress(player.UserId)
+	
+	if result.ok then
+		SendSnapshot(player, "RequestTutorialProgress.success", {
+			tutorialStep = result.currentStep,
+			nextStepIndex = result.nextStepIndex,
+			isComplete = result.isComplete,
+			nextStep = result.nextStep
+		})
+		LogInfo(player, "Tutorial progress sent: step %d", result.currentStep)
+	else
+		SendErrorUpdate(player, "RequestTutorialProgress.failure", result.error or "INTERNAL", "Failed to get tutorial progress")
+		LogWarning(player, "Get tutorial progress failed: %s", tostring(result.error))
+	end
+end
+
+local function HandleRequestCompleteTutorialStep(player, requestData)
+	LogInfo(player, "Processing complete tutorial step request")
+	
+	-- Validate request
+	if not requestData or type(requestData.stepIndex) ~= "number" then
+		SendErrorUpdate(player, "RequestCompleteTutorialStep.invalidRequest", "INVALID_REQUEST", "Missing or invalid stepIndex")
+		return
+	end
+	
+	local result = TutorialService.CompleteStep(player.UserId, requestData.stepIndex)
+	
+	if result.ok then
+		SendSnapshot(player, "RequestCompleteTutorialStep.success", {
+			tutorialStep = result.tutorialStep,
+			isComplete = result.isComplete
+		})
+		LogInfo(player, "Tutorial step %d completed", requestData.stepIndex)
+	else
+		SendErrorUpdate(player, "RequestCompleteTutorialStep.failure", result.error or "INTERNAL", tostring(result.error))
+		LogWarning(player, "Complete tutorial step failed: %s", tostring(result.error))
+	end
+end
+
 -- Connection code moved to Init() function
 
 -- Public API for other server modules
@@ -941,6 +986,8 @@ RemoteEvents.RequestClaimDailyReward = RequestClaimDailyReward
 RemoteEvents.RequestClaimFollowReward = RequestClaimFollowReward
 RemoteEvents.RequestNPCDeck = RequestNPCDeck
 RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
+RemoteEvents.RequestTutorialProgress = RequestTutorialProgress
+RemoteEvents.RequestCompleteTutorialStep = RequestCompleteTutorialStep
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -1058,6 +1105,15 @@ function RemoteEvents.Init()
 	RequestClaimBattleReward.Name = "RequestClaimBattleReward"
 	RequestClaimBattleReward.Parent = NetworkFolder
 	
+	-- Tutorial RemoteEvents
+	RequestTutorialProgress = Instance.new("RemoteEvent")
+	RequestTutorialProgress.Name = "RequestTutorialProgress"
+	RequestTutorialProgress.Parent = NetworkFolder
+	
+	RequestCompleteTutorialStep = Instance.new("RemoteEvent")
+	RequestCompleteTutorialStep.Name = "RequestCompleteTutorialStep"
+	RequestCompleteTutorialStep.Parent = NetworkFolder
+	
 	
 	-- Connect RemoteEvents to handlers
 	RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
@@ -1082,6 +1138,8 @@ function RemoteEvents.Init()
 	RequestClaimFollowReward.OnServerEvent:Connect(HandleRequestClaimFollowReward)
 	RequestRedeemPromoCode.OnServerEvent:Connect(HandleRequestRedeemPromoCode)
 	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
+	RequestTutorialProgress.OnServerEvent:Connect(HandleRequestTutorialProgress)
+	RequestCompleteTutorialStep.OnServerEvent:Connect(HandleRequestCompleteTutorialStep)
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()

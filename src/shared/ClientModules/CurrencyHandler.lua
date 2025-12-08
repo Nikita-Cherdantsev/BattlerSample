@@ -151,6 +151,10 @@ end
 
 -- Cleanup
 function CurrencyHandler:Cleanup()
+	if not self then
+		return
+	end
+	
 	-- Disconnect any connections if needed
 	if self.stateSubscription then
 		self.stateSubscription()
@@ -162,12 +166,14 @@ function CurrencyHandler:Cleanup()
 		self.profileReadyDisconnect = nil
 	end
 	
-	for _, connection in ipairs(self.connections) do
-		if connection and connection.Disconnect then
-			connection:Disconnect()
+	if self.connections and type(self.connections) == "table" then
+		for _, connection in ipairs(self.connections) do
+			if connection and connection.Disconnect then
+				connection:Disconnect()
+			end
 		end
+		self.connections = {}
 	end
-	self.connections = {}
 	
 	self.isInitialized = false
 end

@@ -42,6 +42,8 @@ local RequestRedeemPromoCode = Network:WaitForChild("RequestRedeemPromoCode")
 local RequestDailyData = Network:WaitForChild("RequestDailyData")
 local RequestClaimDailyReward = Network:WaitForChild("RequestClaimDailyReward")
 local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward")
+local RequestTutorialProgress = Network:WaitForChild("RequestTutorialProgress")
+local RequestCompleteTutorialStep = Network:WaitForChild("RequestCompleteTutorialStep")
 
 -- State
 local lastServerNow = 0
@@ -356,6 +358,25 @@ function NetworkClient.requestRedeemPromoCode(code)
 	
 	log("Requesting redeem promo code: %s", code)
 	RequestRedeemPromoCode:FireServer({code = code})
+	
+	return true
+end
+
+-- Tutorial methods
+function NetworkClient.requestTutorialProgress()
+	log("Requesting tutorial progress")
+	RequestTutorialProgress:FireServer({})
+	
+	return true
+end
+
+function NetworkClient.requestCompleteTutorialStep(stepIndex)
+	if not stepIndex or type(stepIndex) ~= "number" or stepIndex < 1 then
+		return false, "Invalid step index"
+	end
+	
+	log("Requesting complete tutorial step: %d", stepIndex)
+	RequestCompleteTutorialStep:FireServer({stepIndex = stepIndex})
 	
 	return true
 end

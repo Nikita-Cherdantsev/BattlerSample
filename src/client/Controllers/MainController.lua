@@ -27,10 +27,12 @@ local RewardsHandler = require(ReplicatedStorage.ClientModules.RewardsHandler)
 local FollowRewardHandler = require(ReplicatedStorage.ClientModules.FollowRewardHandler)
 local PromoCodeHandler = require(ReplicatedStorage.ClientModules.PromoCodeHandler)
 local NotificationMarkerHandler = require(ReplicatedStorage.ClientModules.NotificationMarkerHandler)
+local TutorialHandler = require(ReplicatedStorage.ClientModules.TutorialHandler)
 
 -- State
 local isInitialized = false
 local cardInfoHandlerInstance = nil
+local currencyHandlerInstance = nil
 
 -- Public API
 
@@ -64,7 +66,8 @@ function MainController:Init()
 		{name = "BattleHandler", handler = BattleHandler},
 		{name = "RewardsHandler", handler = RewardsHandler},
 		{name = "FollowRewardHandler", handler = FollowRewardHandler},
-		{name = "PromoCodeHandler", handler = PromoCodeHandler}
+		{name = "PromoCodeHandler", handler = PromoCodeHandler},
+		{name = "TutorialHandler", handler = TutorialHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do
@@ -72,6 +75,9 @@ function MainController:Init()
 			if handlerInfo.name == "CardInfoHandler" then
 				cardInfoHandlerInstance = handlerInfo.handler
 				return handlerInfo.handler:Init(self)
+			elseif handlerInfo.name == "CurrencyHandler" then
+				currencyHandlerInstance = handlerInfo.handler:Init(self)
+				return currencyHandlerInstance
 			else
 				return handlerInfo.handler:Init(self)
 			end
@@ -181,6 +187,55 @@ end
 -- Check if MainController is initialized
 function MainController:IsInitialized()
     return isInitialized
+end
+
+function MainController:Reload()
+	if not isInitialized then
+		return
+	end
+	
+	print("🔄 Reloading client...")
+	
+	local handlersToCleanup = {
+		DailyHandler,
+		DeckHandler,
+		LootboxUIHandler,
+		PlaytimeHandler,
+		NotificationMarkerHandler,
+		ShopHandler,
+		BattlePrepHandler,
+		BattleHandler,
+		RewardsHandler,
+		FollowRewardHandler,
+		PromoCodeHandler,
+		TutorialHandler
+	}
+	
+	for _, handler in ipairs(handlersToCleanup) do
+		if handler and handler.Cleanup then
+			handler:Cleanup()
+		end
+	end
+	
+	if cardInfoHandlerInstance and cardInfoHandlerInstance.Cleanup then
+		cardInfoHandlerInstance:Cleanup()
+	end
+	
+	if currencyHandlerInstance and currencyHandlerInstance.Cleanup then
+		currencyHandlerInstance:Cleanup()
+	end
+	
+	local closeButtonHandler = CloseButtonHandler.GetInstance()
+	if closeButtonHandler and closeButtonHandler.Cleanup then
+		closeButtonHandler:Cleanup()
+	end
+	
+	isInitialized = false
+	cardInfoHandlerInstance = nil
+	currencyHandlerInstance = nil
+	
+	self:Init()
+	print("✅ Client reloaded successfully")
 end
 
 -- Cleanup function

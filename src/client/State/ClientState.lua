@@ -115,6 +115,34 @@ function ClientState.applyProfileUpdate(payload)
 		state._lastClientTime = os.time() -- Store client time when server time was received
 	end
 	
+	if payload.forceReload then
+		log("Full profile reload requested by server")
+		
+		local success, MainController = pcall(function()
+			local StarterPlayer = game:GetService("StarterPlayer")
+			local StarterPlayerScripts = StarterPlayer:FindFirstChild("StarterPlayerScripts")
+			if StarterPlayerScripts then
+				local Controllers = StarterPlayerScripts:FindFirstChild("Controllers")
+				if Controllers then
+					return require(Controllers:FindFirstChild("MainController"))
+				end
+			end
+			return nil
+		end)
+		
+		if success and MainController and MainController.IsInitialized and MainController:IsInitialized() and MainController.Reload then
+			task.spawn(function()
+				task.wait(0.1)
+				MainController:Reload()
+			end)
+		end
+		
+		state.profile = nil
+		profileReady = false
+		notifySubscribers()
+		return
+	end
+	
 	-- Update profile data (merge with existing if available)
 	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies or payload.playtime then
 		-- Create or update profile

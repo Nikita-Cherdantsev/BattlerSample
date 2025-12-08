@@ -60,6 +60,9 @@
         },
         "NotificationMarkerHandler": {
           "$path": "src/shared/ClientModules/NotificationMarkerHandler.lua"
+        },
+        "TutorialHandler": {
+          "$path": "src/shared/ClientModules/TutorialHandler.lua"
         }
       },
       "Modules": {
@@ -131,6 +134,12 @@
           "$className": "Folder",
           "ShopPacksCatalog": {
             "$path": "src/shared/Modules/Shop/ShopPacksCatalog.lua"
+          }
+        },
+        "Tutorial": {
+          "$className": "Folder",
+          "TutorialConfig": {
+            "$path": "src/shared/Modules/Tutorial/TutorialConfig.lua"
           }
         },
         "Boss": {
@@ -271,6 +280,12 @@
         },
         "PromoCodeService": {
           "$path": "src/server/Services/PromoCodeService.lua"
+        },
+        "TutorialService": {
+          "$path": "src/server/Services/TutorialService.lua"
+        },
+        "CommandService": {
+          "$path": "src/server/Services/CommandService.lua"
         }
       }
     },

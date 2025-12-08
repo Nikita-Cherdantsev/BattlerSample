@@ -12,6 +12,7 @@ local PlayerDataService = require(ServerScriptService:WaitForChild("Services"):W
 local MatchService = require(ServerScriptService:WaitForChild("Services"):WaitForChild("MatchService"))
 local CombatEngine = require(ServerScriptService:WaitForChild("Services"):WaitForChild("CombatEngine"))
 local RemoteEvents = require(ServerScriptService:WaitForChild("Network"):WaitForChild("RemoteEvents"))
+local CommandService = require(ServerScriptService:WaitForChild("Services"):WaitForChild("CommandService"))
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Runtime verification: ensure all required modules are properly loaded
@@ -78,6 +79,14 @@ local function InitializeServer()
 		print("✅ MatchService initialized")
 	else
 		print("⚠️ MatchService has no Init function")
+	end
+	
+	-- Initialize CommandService (this sets up developer commands)
+	if CommandService.Init then
+		CommandService.Init()
+		print("✅ CommandService initialized")
+	else
+		print("⚠️ CommandService has no Init function")
 	end
 	
 	ReplicatedStorage:SetAttribute("ServerInitialized", true)
