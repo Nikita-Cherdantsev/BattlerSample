@@ -130,6 +130,7 @@ function PromoCodeService.RedeemCode(userId, code)
 	
 	-- Redeem code atomically
 	local lootboxesToGrant = {}
+	local currencyGrants = {}
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
 		-- Ensure redeemedCodes exists
@@ -151,6 +152,7 @@ function PromoCodeService.RedeemCode(userId, code)
 						profile._promoCodeResult = { ok = false, error = PromoCodeService.ErrorCodes.INVALID_REWARD, message = "Failed to add hard currency" }
 						return profile
 					end
+					table.insert(currencyGrants, { currencyType = "hard", amount = amount })
 				end
 			elseif reward.type == "soft" then
 				local amount = reward.amount or 0
@@ -160,6 +162,7 @@ function PromoCodeService.RedeemCode(userId, code)
 						profile._promoCodeResult = { ok = false, error = PromoCodeService.ErrorCodes.INVALID_REWARD, message = "Failed to add soft currency" }
 						return profile
 					end
+					table.insert(currencyGrants, { currencyType = "soft", amount = amount })
 				end
 			elseif reward.type == "lootbox" then
 				local rarity = reward.rarity
@@ -251,6 +254,20 @@ function PromoCodeService.RedeemCode(userId, code)
 	promoCodeResult = promoCodeResult or { ok = false, error = PromoCodeService.ErrorCodes.INTERNAL }
 	if promoCodeResult.ok then
 		promoCodeResult.lootboxes = nil
+
+		if #currencyGrants > 0 then
+			local AnalyticsService = require(script.Parent.AnalyticsService)
+			local customFields = AnalyticsService.BuildEconomyCustomFields(userId, result)
+			for _, grant in ipairs(currencyGrants) do
+				AnalyticsService.LogEconomyEvent({
+					userId = userId,
+					flowType = Enum.AnalyticsEconomyFlowType.Source,
+					currencyType = grant.currencyType,
+					amount = grant.amount,
+					customFields = customFields
+				})
+			end
+		end
 	end
 	
 	return promoCodeResult

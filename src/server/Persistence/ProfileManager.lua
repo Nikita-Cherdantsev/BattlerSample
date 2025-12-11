@@ -799,6 +799,16 @@ function ProfileManager.LevelUpCard(userId, cardId, requiredCount, softAmount)
 		local AnalyticsService = require(script.Parent.Parent.Services.AnalyticsService)
 		local newLevel = updatedProfile.collection[cardId].level or 1
 		AnalyticsService.TrackCardUpgraded(tonumber(userId), cardId, newLevel)
+
+		local customFields = AnalyticsService.BuildEconomyCustomFields(tonumber(userId), updatedProfile)
+		AnalyticsService.LogEconomyEvent({
+			userId = tonumber(userId),
+			flowType = Enum.AnalyticsEconomyFlowType.Sink,
+			currencyType = "soft",
+			amount = softAmount,
+			itemSku = cardId,
+			customFields = customFields
+		})
 	end
 	
 	return true

@@ -10,6 +10,7 @@ local AnalyticsService = {}
 local RobloxAnalytics = game:GetService("AnalyticsService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 
 -- Configuration
 local ANALYTICS_CONFIG = {
@@ -62,6 +63,10 @@ local debounceCache = {}
 -- Using game.JobId ensures automatic uniqueness across different servers
 -- Format: "userId_JobId" - automatically unique per server, no need to clear on rejoin
 local playerSessions = {}
+
+-- Session start timestamps (seconds) to compute session duration for custom fields
+-- userId -> os.time() when the player joined the server
+local sessionStartTimes = {}
 
 -- Check if player is admin
 local function IsAdmin(userId)
@@ -123,6 +128,237 @@ local function ShouldSendEvent(eventName, userId)
 	end
 	
 	return true
+end
+
+-- Normalize currency type to the canonical names used in analytics
+-- Accepts "hard"/"soft"/"Gold"/"Energy" (case-insensitive) and returns "Gold" or "Energy"
+local function normalizeCurrencyType(currencyType)
+	if not currencyType then
+		return nil
+	end
+	local lowered = string.lower(tostring(currencyType))
+	if lowered == "hard" or lowered == "gold" then
+		return "Gold"
+	end
+	if lowered == "soft" or lowered == "energy" then
+		return "Energy"
+	end
+	return nil
+end
+
+-- Build economy custom fields (PlayTimeMinutes, SessionTimeMinutes, CollectionPower)
+-- profile is optional but recommended for accurate totals (expects playtime.totalTime and squadPower)
+function AnalyticsService.BuildEconomyCustomFields(userId, profile)
+	local playtimeMinutes = nil
+	local sessionMinutes = nil
+	local collectionPower = nil
+
+	local now = os.time()
+	
+	-- Используем sessionStartTimes из AnalyticsService для SessionTimeMinutes
+	local sessionStart = sessionStartTimes[userId]
+	if sessionStart then
+		sessionMinutes = math.max(0, math.floor((now - sessionStart) / 60))
+	end
+
+	-- Для PlayTimeMinutes используем ту же логику, что и лидерборд
+	-- Сначала пытаемся получить накопленное время из DataStore лидерборда
+	-- Если недоступно, используем PlaytimeService.GetPlaytimeData
+	if profile and profile.playtime then
+		local totalSeconds = 0
+		
+		-- Пытаемся получить накопленное время из DataStore лидерборда (как в лидерборде)
+		local success, dataStoreValue = pcall(function()
+			local DataStoreService = game:GetService("DataStoreService")
+			local dataStore = DataStoreService:GetOrderedDataStore("GlobalLeaderboard_TotalPlaytimeSeconds")
+			return dataStore:GetAsync(userId)
+		end)
+		
+		if success and dataStoreValue and type(dataStoreValue) == "number" and dataStoreValue > 0 then
+			-- Используем накопленное время из DataStore (как в лидерборде)
+			totalSeconds = dataStoreValue
+		else
+			-- Fallback: используем PlaytimeService.GetPlaytimeData (текущее время + сессия)
+			local playtimeSuccess, playtimeData = pcall(function()
+				local PlaytimeService = require(script.Parent.PlaytimeService)
+				return PlaytimeService.GetPlaytimeData(userId)
+			end)
+			
+			if playtimeSuccess and playtimeData and playtimeData.totalTime then
+				totalSeconds = playtimeData.totalTime
+			else
+				-- Последний fallback: используем логику из профиля + текущая сессия
+				local baseSeconds = profile.playtime.totalTime or 0
+				if sessionStart then
+					totalSeconds = baseSeconds + (now - sessionStart)
+				else
+					totalSeconds = baseSeconds
+				end
+			end
+		end
+		
+		playtimeMinutes = math.max(0, math.floor(totalSeconds / 60))
+	end
+
+	if profile and type(profile.squadPower) == "number" then
+		collectionPower = profile.squadPower
+	end
+
+	local fieldsToSend = {}
+	local customFieldEnums = {
+		Enum.AnalyticsCustomFieldKeys.CustomField01,
+		Enum.AnalyticsCustomFieldKeys.CustomField02,
+		Enum.AnalyticsCustomFieldKeys.CustomField03
+	}
+
+	local orderedValues = { playtimeMinutes, sessionMinutes, collectionPower }
+	for index, value in ipairs(orderedValues) do
+		if value ~= nil then
+			local enumKey = customFieldEnums[index]
+			if enumKey then
+				fieldsToSend[enumKey.Name] = tostring(value)
+			end
+		end
+	end
+
+	return fieldsToSend
+end
+
+-- Public helper to expose session start for other modules (read-only)
+function AnalyticsService.GetSessionStartTime(userId)
+	return sessionStartTimes[userId]
+end
+
+-- Log Roblox Economy Event with optional custom fields
+-- flowType: Enum.AnalyticsEconomyFlowType (or string "Source"/"Sink")
+-- currencyType: "Gold" or "Energy" (accepts hard/soft aliases)
+-- amount: number (positive)
+-- balanceAfterTransaction: automatically calculated from profile (balance after the transaction)
+-- transactionType: always "Gameplay" for now (Enum.AnalyticsEconomyTransactionType.Gameplay.Name)
+-- itemSku: optional string identifier (e.g., Lootbox_rare, Gold_S)
+-- customFields: optional map with CustomField01/02/03 keys (string values) using Enum.AnalyticsCustomFieldKeys
+function AnalyticsService.LogEconomyEvent(params)
+	if not params then
+		return
+	end
+
+	local userId = params.userId
+	if not userId or IsAdmin(userId) then
+		return
+	end
+
+	if not ANALYTICS_CONFIG.enabled then
+		return
+	end
+
+	local flowType = params.flowType
+	if type(flowType) == "string" then
+		local lowered = string.lower(flowType)
+		if lowered == "source" then
+			flowType = Enum.AnalyticsEconomyFlowType.Source
+		elseif lowered == "sink" then
+			flowType = Enum.AnalyticsEconomyFlowType.Sink
+		end
+	end
+
+	if flowType ~= Enum.AnalyticsEconomyFlowType.Source and flowType ~= Enum.AnalyticsEconomyFlowType.Sink then
+		warn(string.format("[AnalyticsService] Invalid flowType for economy event: %s", tostring(params.flowType)))
+		return
+	end
+
+	local currencyType = normalizeCurrencyType(params.currencyType)
+	if not currencyType then
+		warn(string.format("[AnalyticsService] Invalid currencyType for economy event: %s", tostring(params.currencyType)))
+		return
+	end
+
+	local amount = tonumber(params.amount) or 0
+	if amount <= 0 then
+		-- Ignore zero/negative changes
+		return
+	end
+
+	local player = Players:GetPlayerByUserId(userId)
+	if not player then
+		return
+	end
+
+	-- Получаем баланс ПОСЛЕ транзакции (обязательный параметр!)
+	local profile = ProfileManager.GetCachedProfile(userId)
+	if not profile then
+		warn(string.format("[AnalyticsService] Cannot get balance - profile not loaded for userId %s", tostring(userId)))
+		return
+	end
+
+	local balanceAfterTransaction = 0
+	if currencyType == "Gold" then
+		balanceAfterTransaction = profile.currencies and profile.currencies.hard or 0
+	elseif currencyType == "Energy" then
+		balanceAfterTransaction = profile.currencies and profile.currencies.soft or 0
+	end
+
+	-- Всегда используем Gameplay для всех событий (пока один тип для всех)
+	local transactionType = Enum.AnalyticsEconomyTransactionType.Gameplay.Value
+
+	local itemSku = params.itemSku
+	if itemSku ~= nil and type(itemSku) ~= "string" then
+		itemSku = tostring(itemSku)
+	end
+
+	-- Получаем customFields из params или строим автоматически
+	local customFields = params.customFields
+	if not customFields then
+		-- Если не переданы, строим автоматически
+		customFields = AnalyticsService.BuildEconomyCustomFields(userId, profile)
+	end
+
+	-- Debug: логируем все параметры перед отправкой
+	print(string.format("[AnalyticsService] 🔍 DEBUG LogEconomyEvent | userId=%s | flowType=%s | currencyType=%s | amount=%s | balanceAfter=%s | transactionType=%s (type: %s) | itemSku=%s | customFields=%s",
+		tostring(userId),
+		tostring(flowType),
+		tostring(currencyType),
+		tostring(amount),
+		tostring(balanceAfterTransaction),
+		tostring(transactionType), type(transactionType),
+		tostring(itemSku),
+		HttpService:JSONEncode(customFields)
+	))
+
+	local success, errorMsg = pcall(function()
+		-- Правильный порядок параметров согласно официальной документации:
+		-- 1. player
+		-- 2. flowType (Enum)
+		-- 3. currencyType (string)
+		-- 4. amount (number)
+		-- 5. balanceAfterTransaction (number) - ОБЯЗАТЕЛЬНЫЙ!
+		-- 6. transactionType (string - .Name)
+		-- 7. itemSku (string, optional)
+		-- 8. customFields (table, optional)
+		RobloxAnalytics:LogEconomyEvent(
+			player,
+			flowType,
+			currencyType,
+			amount,
+			balanceAfterTransaction,
+			transactionType,
+			itemSku,
+			customFields
+		)
+	end)
+
+	if not success then
+		warn(string.format("[AnalyticsService] ❌ Failed to send economy event for userId %s: %s", tostring(userId), tostring(errorMsg)))
+	else
+		print(string.format("[AnalyticsService] ✅ Economy event sent | userId=%s | flow=%s | currency=%s | amount=%s | balanceAfter=%s | transactionType=%s | sku=%s | fields=%s",
+			tostring(userId),
+			tostring(flowType),
+			tostring(currencyType),
+			tostring(amount),
+			tostring(balanceAfterTransaction),
+			tostring(transactionType),
+			tostring(itemSku),
+			HttpService:JSONEncode(customFields)))
+	end
 end
 
 -- Send funnel event to Roblox Analytics
@@ -336,6 +572,7 @@ function AnalyticsService.Init()
 	-- Create session when player joins
 	Players.PlayerAdded:Connect(function(player)
 		local userId = player.UserId
+		sessionStartTimes[userId] = os.time()
 		-- IMPORTANT: Clear any existing session for this userId (in case of rejoin)
 		-- This ensures that if a player rejoins, they get a fresh session
 		-- Even though JobId-based sessionId would be the same on rejoin, we clear it
@@ -357,11 +594,13 @@ function AnalyticsService.Init()
 				tostring(userId), playerSessions[userId]))
 			playerSessions[userId] = nil
 		end
+		sessionStartTimes[userId] = nil
 	end)
 	
 	-- Handle players already in game (in case of server restart)
 	for _, player in ipairs(Players:GetPlayers()) do
 		local userId = player.UserId
+		sessionStartTimes[userId] = sessionStartTimes[userId] or os.time()
 		if playerSessions[userId] then
 			print(string.format("[AnalyticsService] ⚠️  Clearing existing session for player already in game: %s", 
 				tostring(userId)))

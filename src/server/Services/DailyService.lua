@@ -174,6 +174,7 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 	
 	local currentDay = GetCurrentDayTimestamp()
 	local lootboxesToGrant = {}
+	local currencyGrants = {}
 	
 	local success, resultOrError = ProfileManager.UpdateProfile(userId, function(profile)
 		-- Ensure core tables exist before modifying
@@ -305,6 +306,7 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 						profile._dailyResult = { ok = false, error = DailyService.ErrorCodes.INTERNAL }
 						return profile
 					end
+					table.insert(currencyGrants, { currencyType = currencyName, amount = reward.amount })
 				end
 			elseif reward.type == "Lootbox" then
 				-- Collect lootbox for granting outside UpdateProfile
@@ -368,6 +370,20 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 	if dailyResult and dailyResult.ok then
 		local AnalyticsService = require(script.Parent.AnalyticsService)
 		AnalyticsService.TrackDailyRewardClaimed(userId, rewardIndex)
+
+		-- Log economy events for currency rewards (sources)
+		if #currencyGrants > 0 then
+			local customFields = AnalyticsService.BuildEconomyCustomFields(userId, profileResult)
+			for _, grant in ipairs(currencyGrants) do
+				AnalyticsService.LogEconomyEvent({
+					userId = userId,
+					flowType = Enum.AnalyticsEconomyFlowType.Source,
+					currencyType = grant.currencyType,
+					amount = grant.amount,
+					customFields = customFields
+				})
+			end
+		end
 	end
 	
 	-- Return result (excluding internal lootboxes array)

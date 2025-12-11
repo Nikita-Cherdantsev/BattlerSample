@@ -15,6 +15,7 @@ local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 local LootboxService = require(script.Parent.LootboxService)
 local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
 local Logger = require(game.ReplicatedStorage.Modules.Logger)
+local AnalyticsService = require(script.Parent.AnalyticsService)
 
 -- Error codes
 ShopService.ErrorCodes = {
@@ -135,6 +136,18 @@ function ShopService.ProcessReceipt(receiptInfo)
 			totalHard, playerId, tostring(result)))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+
+	-- Economy analytics: IAP source (Gold)
+	local updatedProfile = ProfileManager.GetCachedProfile(playerId)
+	local economyFields = AnalyticsService.BuildEconomyCustomFields(playerId, updatedProfile)
+	AnalyticsService.LogEconomyEvent({
+		userId = playerId,
+		flowType = Enum.AnalyticsEconomyFlowType.Source,
+		currencyType = "hard",
+		amount = totalHard,
+		itemSku = tostring(pack.id),
+		customFields = economyFields
+	})
 	
 	-- Mark receipt as processed
 	processedReceipts[purchaseId] = {
@@ -325,6 +338,18 @@ function ShopService.BuyLootbox(playerId, rarity)
 			cost, playerId, tostring(result)))
 		return { ok = false, error = ShopService.ErrorCodes.INTERNAL }
 	end
+
+	-- Economy analytics: sink (Gold) for lootbox purchase
+	local profileAfter = ProfileManager.GetCachedProfile(playerId)
+	local economyFields = AnalyticsService.BuildEconomyCustomFields(playerId, profileAfter)
+	AnalyticsService.LogEconomyEvent({
+		userId = playerId,
+		flowType = Enum.AnalyticsEconomyFlowType.Sink,
+		currencyType = "hard",
+		amount = cost,
+		itemSku = "Lootbox_" .. tostring(rarity),
+		customFields = economyFields
+	})
 	
 	Logger.debug("Player %d bought %s lootbox for %d hard currency", playerId, rarity, cost)
 	

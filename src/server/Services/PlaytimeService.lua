@@ -298,6 +298,7 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 	end
 	
 	local lootboxesToGrant = {}
+	local currencyGrants = {}
 	
 	local success, result = ProfileManager.UpdateProfile(userId, function(profile)
 		if not profile.playtime then
@@ -340,6 +341,7 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 				local currencyName = string.lower(reward.name)
 				if currencyName == "soft" or currencyName == "hard" then
 					ProfileSchema.AddCurrency(profile, currencyName, reward.amount)
+					table.insert(currencyGrants, { currencyType = currencyName, amount = reward.amount })
 				end
 			elseif reward.type == "Lootbox" then
 				local rarity = string.lower(reward.name)
@@ -389,6 +391,19 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 		-- Track analytics event
 		local AnalyticsService = require(script.Parent.AnalyticsService)
 		AnalyticsService.TrackPlaytimeRewardClaimed(userId, rewardIndex)
+
+		if #currencyGrants > 0 then
+			local customFields = AnalyticsService.BuildEconomyCustomFields(userId, result)
+			for _, grant in ipairs(currencyGrants) do
+				AnalyticsService.LogEconomyEvent({
+					userId = userId,
+					flowType = Enum.AnalyticsEconomyFlowType.Source,
+					currencyType = grant.currencyType,
+					amount = grant.amount,
+					customFields = customFields
+				})
+			end
+		end
 		
 		playtimeResult.lootboxes = nil
 	end

@@ -15,6 +15,7 @@ local SeededRNG = require(game.ReplicatedStorage.Modules.RNG.SeededRNG)
 local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 local Logger = require(game.ReplicatedStorage.Modules.Logger)
 local Types = require(game.ReplicatedStorage.Modules.Types)
+local AnalyticsService = require(script.Parent.AnalyticsService)
 
 -- Helper function to preserve profile invariants
 local function preserveProfileInvariants(profile, userId)
@@ -62,6 +63,32 @@ local function grantRewards(profile, rewards)
 			profile.collection[cardId] = { count = copies, level = 1 }
 		end
 	end
+end
+
+-- Helper: send economy events for lootbox rewards (sources)
+local function logLootboxRewardEconomy(userId, rarity, rewards, profile)
+	if not rewards then
+		return
+	end
+
+	local customFields = AnalyticsService.BuildEconomyCustomFields(userId, profile)
+	local itemSku = "Lootbox_" .. tostring(rarity or rewards.rarity or "unknown")
+
+	local function send(delta, currencyType)
+		if type(delta) == "number" and delta > 0 then
+			AnalyticsService.LogEconomyEvent({
+				userId = userId,
+				flowType = Enum.AnalyticsEconomyFlowType.Source,
+				currencyType = currencyType,
+				amount = delta,
+				itemSku = itemSku,
+				customFields = customFields
+			})
+		end
+	end
+
+	send(rewards.softDelta, "soft")
+	send(rewards.hardDelta, "hard")
 end
 
 -- Error codes
@@ -438,7 +465,7 @@ function LootboxService.CompleteUnlock(userId, slotIndex, serverNow)
 	
 	-- Track analytics event
 	if lootboxResult.ok then
-		local AnalyticsService = require(script.Parent.AnalyticsService)
+		logLootboxRewardEconomy(userId, lootboxResult.rarity, lootboxResult.rewards, result)
 		local rarity = lootboxResult.rarity or "unknown"
 		local source = lootboxResult.source or "unknown"
 		AnalyticsService.TrackLootboxOpened(userId, rarity, source)
@@ -540,7 +567,20 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 	
 	-- Track analytics event
 	if lootboxResult.ok then
-		local AnalyticsService = require(script.Parent.AnalyticsService)
+		logLootboxRewardEconomy(userId, lootboxResult.rarity, lootboxResult.rewards, result)
+
+		if lootboxResult.instantCost and lootboxResult.instantCost > 0 then
+			local customFields = AnalyticsService.BuildEconomyCustomFields(userId, result)
+			AnalyticsService.LogEconomyEvent({
+				userId = userId,
+				flowType = Enum.AnalyticsEconomyFlowType.Sink,
+				currencyType = "hard",
+				amount = lootboxResult.instantCost,
+				itemSku = "Lootbox_" .. tostring(lootboxResult.rarity or "unknown"),
+				customFields = customFields
+			})
+		end
+
 		local rarity = lootboxResult.rarity or "unknown"
 		local source = lootboxResult.source or "unknown"
 		AnalyticsService.TrackLootboxOpened(userId, rarity, source)
@@ -639,7 +679,7 @@ function LootboxService.OpenShopLootbox(userId, rarity, serverNow, source)
 	
 	-- Track analytics event
 	if lootboxResult.ok then
-		local AnalyticsService = require(script.Parent.AnalyticsService)
+		logLootboxRewardEconomy(userId, lootboxResult.rarity, lootboxResult.rewards, result)
 		local rarity = lootboxResult.rarity or rarity
 		local sourceForAnalytics = lootboxResult.source or source or "shop"
 		AnalyticsService.TrackLootboxOpened(userId, rarity, sourceForAnalytics)
@@ -754,7 +794,25 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 		return { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
 	end
 	
-	return result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+	local speedUpResult = result._lootboxResult or { ok = false, error = LootboxService.ErrorCodes.INTERNAL }
+
+	if speedUpResult.ok then
+		logLootboxRewardEconomy(userId, speedUpResult.rewards and speedUpResult.rewards.rarity, speedUpResult.rewards, result)
+
+		if speedUpResult.instantCost and speedUpResult.instantCost > 0 then
+			local customFields = AnalyticsService.BuildEconomyCustomFields(userId, result)
+			AnalyticsService.LogEconomyEvent({
+				userId = userId,
+				flowType = Enum.AnalyticsEconomyFlowType.Sink,
+				currencyType = "hard",
+				amount = speedUpResult.instantCost,
+				itemSku = "Lootbox_" .. tostring(speedUpResult.rewards and speedUpResult.rewards.rarity or "unknown"),
+				customFields = customFields
+			})
+		end
+	end
+
+	return speedUpResult
 end
 
 return LootboxService
