@@ -103,7 +103,7 @@ function TweenUI.FadeIn(frame, duration, callback)
 	runCallbackAfterTweens(tweens, callback)
 end
 
-function TweenUI.FadeOut(frame, duration, callback)
+function TweenUI.FadeOut(frame, duration, callback, skipHide)
 	local objects = getTweenables(frame)
 	if not baseTransparencyMap[frame] then
 		storeBaseTransparency(frame, objects)
@@ -117,7 +117,9 @@ function TweenUI.FadeOut(frame, duration, callback)
 	end
 	local tweens = tweenToTarget(objects, targetMap, duration)
 	runCallbackAfterTweens(tweens, function()
-		frame.Visible = false
+		if not skipHide then
+			frame.Visible = false
+		end
 		applyTransparencyFromMap(frame)
 		if callback then callback() end
 	end)

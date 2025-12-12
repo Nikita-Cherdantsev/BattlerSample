@@ -12,6 +12,15 @@ local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitF
 local CardLevels = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardLevels"))
 local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
 
+-- Lazy load RemoteEvents to avoid circular dependency
+local RemoteEvents = nil
+local function GetRemoteEvents()
+	if not RemoteEvents then
+		RemoteEvents = require(game.ServerScriptService:WaitForChild("Network"):WaitForChild("RemoteEvents"))
+	end
+	return RemoteEvents
+end
+
 -- Configuration
 local AUTOSAVE_INTERVAL = 300 -- 5 minutes in seconds
 local MAX_AUTOSAVE_RETRIES = 3
@@ -21,6 +30,7 @@ local AUTOSAVE_BACKOFF_BASE = 2 -- seconds
 local playerProfiles = {} -- player -> profile mapping
 local autosaveTasks = {} -- player -> autosave task
 local isShuttingDown = false
+local isInitialized = false  -- Add separate initialization flag
 
 -- Forward declarations
 local StartAutosave
@@ -143,61 +153,178 @@ end
 
 -- Player lifecycle handlers
 local function OnPlayerAdded(player)
-	LogInfo(player, "Player joined, loading profile...")
-	
-	-- Load or create profile with retries
-	local profile = nil
-	local retryCount = 0
-	local maxRetries = 3
-	
-	while not profile and retryCount < maxRetries do
-		profile = ProfileManager.LoadProfile(player.UserId)
-		if not profile then
-			retryCount = retryCount + 1
-			if retryCount < maxRetries then
-				LogWarning(player, "Failed to load profile, retrying (%d/%d)...", retryCount, maxRetries)
-				task.wait(1) -- Wait 1 second before retry
-			else
-				LogError(player, "Failed to load/create profile after %d attempts", maxRetries)
-				return
+	-- Wrap in pcall to catch any errors
+	local success, err = pcall(function()
+		LogInfo(player, "Player joined, loading profile...")
+		
+		-- Load or create profile with retries
+		local profile = nil
+		local retryCount = 0
+		local maxRetries = 3
+		
+		while not profile and retryCount < maxRetries do
+			profile = ProfileManager.LoadProfile(player.UserId)
+			if not profile then
+				retryCount = retryCount + 1
+				if retryCount < maxRetries then
+					LogWarning(player, "Failed to load profile, retrying (%d/%d)...", retryCount, maxRetries)
+					task.wait(1) -- Wait 1 second before retry
+				else
+					LogError(player, "Failed to load/create profile after %d attempts", maxRetries)
+					return
+				end
 			end
 		end
-	end
-	
-	-- Store profile reference
-	playerProfiles[player] = profile
-	
-	-- Update profile with current player info and login time atomically
-	local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
-		profile.playerId = tostring(player.UserId)
-		ProfileSchema.UpdateLoginTime(profile)
-		return profile
+		
+		-- Store profile reference
+		playerProfiles[player] = profile
+		
+		-- Update profile with current player info and login time atomically
+		local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
+			profile.playerId = tostring(player.UserId)
+			ProfileSchema.UpdateLoginTime(profile)
+			return profile
+		end)
+		
+		if success and updatedProfile then
+			-- Sync local cache with updated profile
+			playerProfiles[player] = updatedProfile
+			LogInfo(player, "Saved profile for user: %d", player.UserId)
+		else
+			LogWarning(player, "Failed to save profile for user: %d", player.UserId)
+		end
+		
+		-- Note: No longer assigning starter deck - players start with empty deck
+		
+		-- Check and grant pending battle rewards
+		local finalProfile = updatedProfile or profile
+		
+		-- Ensure pendingBattleRewards is initialized (should be done by MigrateProfileIfNeeded, but fallback here)
+		if finalProfile and not finalProfile.pendingBattleRewards then
+			local success, updatedProfileWithPending = ProfileManager.UpdateProfile(player.UserId, function(profile)
+				if not profile.pendingBattleRewards then
+					profile.pendingBattleRewards = {}
+				end
+				return profile
+			end)
+			if success and updatedProfileWithPending then
+				finalProfile = updatedProfileWithPending
+				playerProfiles[player] = finalProfile
+			end
+		end
+		
+		if finalProfile and finalProfile.pendingBattleRewards and #finalProfile.pendingBattleRewards > 0 then
+			local LootboxService = require(script.Parent.LootboxService)
+			local ProfileSchema = require(game.ServerScriptService.Persistence.ProfileSchema)
+			
+			-- Copy rewards to grant (to avoid modifying during iteration)
+			local rewardsToGrant = {}
+			for _, reward in ipairs(finalProfile.pendingBattleRewards) do
+				table.insert(rewardsToGrant, reward)
+			end
+			
+			-- Separate rewards by type
+			local softRewards = {}
+			local lootboxRewards = {}
+			for _, reward in ipairs(rewardsToGrant) do
+				if reward.type == "soft" then
+					table.insert(softRewards, reward)
+				elseif reward.type == "lootbox" then
+					table.insert(lootboxRewards, reward)
+				end
+			end
+			
+			local rewardsGranted = 0
+			
+			-- Grant soft currency rewards in one UpdateProfile call
+			if #softRewards > 0 then
+				local totalSoftAmount = 0
+				for _, reward in ipairs(softRewards) do
+					totalSoftAmount = totalSoftAmount + reward.amount
+				end
+				
+				local success = ProfileManager.UpdateProfile(player.UserId, function(profile)
+					if not profile.pendingBattleRewards then
+						profile.pendingBattleRewards = {}
+					end
+					
+					-- Remove all soft currency rewards from pending and grant them
+					for i = #profile.pendingBattleRewards, 1, -1 do
+						local reward = profile.pendingBattleRewards[i]
+						if reward.type == "soft" then
+							table.remove(profile.pendingBattleRewards, i)
+						end
+					end
+					
+					-- Grant all soft currency at once
+					ProfileSchema.AddCurrency(profile, "soft", totalSoftAmount)
+					
+					return profile
+				end)
+				
+				if success then
+					rewardsGranted = rewardsGranted + #softRewards
+				else
+					LogWarning(player, "Failed to grant pending soft currency rewards")
+				end
+			end
+			
+			-- Grant lootbox rewards (each requires separate TryAddBox call which does its own UpdateProfile)
+			for _, reward in ipairs(lootboxRewards) do
+				local result = LootboxService.TryAddBox(player.UserId, reward.rarity, "battle_reward")
+				if result.ok then
+					rewardsGranted = rewardsGranted + 1
+					-- Remove from pending after successful grant (find by type and rarity to handle index changes)
+					ProfileManager.UpdateProfile(player.UserId, function(profile)
+						if profile.pendingBattleRewards then
+							for i = #profile.pendingBattleRewards, 1, -1 do
+								local pendingReward = profile.pendingBattleRewards[i]
+								if pendingReward.type == "lootbox" and pendingReward.rarity == reward.rarity then
+									table.remove(profile.pendingBattleRewards, i)
+									break
+								end
+							end
+						end
+						return profile
+					end)
+				end
+			end
+			
+			if rewardsGranted > 0 then
+				LogInfo(player, "Auto-granted %d pending battle reward(s) on login", rewardsGranted)
+				
+				-- Send profile update to client so they see the new lootbox/currency
+				local remoteEvents = GetRemoteEvents()
+				if remoteEvents and remoteEvents.SendSnapshot then
+					remoteEvents.SendSnapshot(player, "AutoGrantPendingRewards.success")
+				end
+			end
+			
+			-- Update finalProfile reference after granting rewards
+			finalProfile = ProfileManager.GetCachedProfile(player.UserId) or finalProfile
+			if finalProfile then
+				playerProfiles[player] = finalProfile
+			end
+		end
+		
+		-- Start autosave
+		StartAutosave(player)
+		
+		-- Fetch regional prices for shop (async, non-blocking)
+		local ShopService = require(script.Parent.ShopService)
+		if ShopService and ShopService.FetchRegionalPricesForPlayer then
+			ShopService.FetchRegionalPricesForPlayer(player)
+		end
+		
+		-- Get final profile for logging (use updated profile if available)
+		local stats = ProfileManager.GetProfileStats(player.UserId)
+		LogInfo(player, "Profile loaded successfully. Collection: %d unique cards, Deck: %d cards", 
+			stats and stats.uniqueCards or 0, finalProfile and #finalProfile.deck or 0)
 	end)
 	
-	if success and updatedProfile then
-		-- Sync local cache with updated profile
-		playerProfiles[player] = updatedProfile
-		LogInfo(player, "Saved profile for user: %d", player.UserId)
-	else
-		LogWarning(player, "Failed to save profile for user: %d", player.UserId)
+	if not success then
+		warn(string.format("[PlayerDataService] ERROR in OnPlayerAdded for %s: %s", player.Name, tostring(err)))
 	end
-	
-	-- Note: No longer assigning starter deck - players start with empty deck
-	
-	-- Start autosave
-	StartAutosave(player)
-	
-	-- Fetch regional prices for shop (async, non-blocking)
-	local ShopService = require(script.Parent.ShopService)
-	if ShopService and ShopService.FetchRegionalPricesForPlayer then
-		ShopService.FetchRegionalPricesForPlayer(player)
-	end
-	
-	-- Get final profile for logging (use updated profile if available)
-	local finalProfile = updatedProfile or profile
-	local stats = ProfileManager.GetProfileStats(player.UserId)
-	LogInfo(player, "Profile loaded successfully. Collection: %d unique cards, Deck: %d cards", 
-		stats and stats.uniqueCards or 0, finalProfile and #finalProfile.deck or 0)
 end
 
 local function OnPlayerRemoving(player)
@@ -650,11 +777,24 @@ end
 
 -- Initialize service
 function PlayerDataService.Init()
-	-- Idempotency check
-	if isShuttingDown ~= nil then
+	-- Idempotency check - use separate flag instead of isShuttingDown
+	if isInitialized then
 		LogInfo(nil, "PlayerDataService already initialized, skipping")
+		-- BUT still handle already present players in case of hot-reload
+		local presentPlayers = Players:GetPlayers()
+		if #presentPlayers > 0 then
+			for _, player in ipairs(presentPlayers) do
+				-- Check if player is already in playerProfiles
+				if not playerProfiles[player] then
+					OnPlayerAdded(player)
+				end
+			end
+		end
 		return
 	end
+	
+	-- Mark as initialized
+	isInitialized = true
 	
 	-- Initialize state
 	isShuttingDown = false
@@ -677,5 +817,13 @@ function PlayerDataService.Init()
 end
 
 -- Initialization moved to ServerBootstrap
+
+-- Reset initialization (for testing/hot-reload)
+function PlayerDataService.Reset()
+	isInitialized = false
+	isShuttingDown = false
+	playerProfiles = {}
+	autosaveTasks = {}
+end
 
 return PlayerDataService

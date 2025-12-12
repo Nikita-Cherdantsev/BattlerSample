@@ -312,6 +312,23 @@ local function ComputeSquadPower(profile)
 	return RoundToDecimals(totalPower, 1)
 end
 
+-- Migrate tutorial step for old users (set to last step if missing)
+local function MigrateTutorialStep(profile)
+	if not profile then
+		return
+	end
+	
+	-- Check if tutorialStep is missing or nil (old users without tutorial structure)
+	if profile.tutorialStep == nil or type(profile.tutorialStep) ~= "number" then
+		-- Get last tutorial step to mark tutorial as complete for old users
+		local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+		local lastStep = TutorialConfig.GetStepCount()
+		
+		profile.tutorialStep = lastStep
+		print("🔄 Migrated tutorial step for old user:", profile.playerId, "set to last step:", lastStep)
+	end
+end
+
 -- Migrate profile if needed
 local function MigrateProfileIfNeeded(profile)
 	-- Check if profile needs migration
@@ -346,6 +363,10 @@ local function MigrateProfileIfNeeded(profile)
 			-- Initialize redeemedCodes if missing (for existing v2 profiles)
 			if not profile.redeemedCodes then
 				profile.redeemedCodes = {}
+			end
+			-- Initialize pendingBattleRewards if missing (for existing v2 profiles)
+			if not profile.pendingBattleRewards then
+				profile.pendingBattleRewards = {}
 			end
 			return profile
 		end
@@ -385,10 +406,35 @@ local function MigrateProfileIfNeeded(profile)
 				migratedProfile.redeemedCodes = {}
 			end
 			
+			-- Initialize pendingBattleRewards if missing (for migrated profiles)
+			if not migratedProfile.pendingBattleRewards then
+				migratedProfile.pendingBattleRewards = {}
+			end
+			
 			return migratedProfile
 		else
 			warn("❌ Failed to migrate profile from v1 to v2")
 			return nil
+		end
+	end
+	
+	-- For existing v2 profiles (with version = "v2"), ensure all new fields are initialized
+	if profile.version == "v2" then
+		-- Initialize playtime if missing
+		if not profile.playtime then
+			profile.playtime = {
+				totalTime = 0,
+				lastSyncTime = os.time(),
+				claimedRewards = {}
+			}
+		end
+		-- Initialize redeemedCodes if missing
+		if not profile.redeemedCodes then
+			profile.redeemedCodes = {}
+		end
+		-- Initialize pendingBattleRewards if missing (CRITICAL: for existing v2 profiles)
+		if not profile.pendingBattleRewards then
+			profile.pendingBattleRewards = {}
 		end
 	end
 	
@@ -414,8 +460,20 @@ function ProfileManager.LoadProfile(userId)
 		if memoryStore and latestVersion then
 			-- MemoryStore is working and we have version info - check if cache is valid
 			if cached.version and cached.version >= latestVersion then
-				-- Cache is still valid
-				return cached.profile
+				-- Cache is still valid - BUT we still need to ensure migration is applied
+				-- because new fields might have been added since profile was cached
+				local profile = cached.profile
+				profile = MigrateProfileIfNeeded(profile)
+				-- Migrate tutorial step for old users
+				if profile then
+					MigrateTutorialStep(profile)
+					-- Update cache with migrated profile
+					profileCache[profileKey] = {
+						profile = profile,
+						version = cached.version
+					}
+				end
+				return profile
 			else
 				-- Cache is outdated, clear it
 				print("🔄 Cache outdated for user:", userId, "cached version:", cached.version, "latest version:", latestVersion, "reloading from DataStore")
@@ -455,6 +513,9 @@ function ProfileManager.LoadProfile(userId)
 			if type(profile.bossWins) ~= "table" then
 				profile.bossWins = {}
 			end
+			
+			-- Migrate tutorial step for old users (set to last step if missing)
+			MigrateTutorialStep(profile)
 		end
 		
 		-- Validate loaded profile

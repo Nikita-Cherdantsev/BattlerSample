@@ -11,6 +11,7 @@ local CardCatalog = require(game.ReplicatedStorage.Modules.Cards.CardCatalog)
 local CardStats = require(game.ReplicatedStorage.Modules.Cards.CardStats)
 local CardLevels = require(game.ReplicatedStorage.Modules.Cards.CardLevels)
 local Manifest = require(game.ReplicatedStorage.Modules.Assets.Manifest)
+local EventBus = require(game.ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local CardInfoHandler = {}
@@ -278,6 +279,7 @@ function CardInfoHandler:SetupActionButtons()
 	local btnCollection = buttons:FindFirstChild("BtnCollection")
 	if btnCollection then
 		local connection = btnCollection.MouseButton1Click:Connect(function()
+			EventBus:Emit("ButtonClicked", "CardInfo.Buttons.BtnCollection")
 			self:OnCollectionButtonClicked()
 		end)
 		table.insert(self.Connections, connection)
@@ -288,6 +290,7 @@ function CardInfoHandler:SetupActionButtons()
 	local btnDeck = buttons:FindFirstChild("BtnDeck")
 	if btnDeck then
 		local connection = btnDeck.MouseButton1Click:Connect(function()
+			EventBus:Emit("ButtonClicked", "CardInfo.Buttons.BtnDeck")
 			self:OnDeckButtonClicked()
 		end)
 		table.insert(self.Connections, connection)
@@ -298,6 +301,7 @@ function CardInfoHandler:SetupActionButtons()
 	local btnLevelUp = buttons:FindFirstChild("BtnLevelUp")
 	if btnLevelUp then
 		local connection = btnLevelUp.MouseButton1Click:Connect(function()
+			EventBus:Emit("ButtonClicked", "CardInfo.Buttons.BtnLevelUp")
 			self:OnLevelUpButtonClicked()
 		end)
 		table.insert(self.Connections, connection)
@@ -1126,11 +1130,15 @@ function CardInfoHandler:OpenWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.CardInfoFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "CardInfo")
 			end)
 		end
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "CardInfo")
 	end
 	
 	print("✅ CardInfoHandler: card info window opened")
@@ -1146,12 +1154,16 @@ function CardInfoHandler:CloseWindow()
 			self.Utilities.TweenUI.FadeOut(self.CardInfoFrame, .3, function () 
 				self.CardInfoFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "CardInfo")
 			end)
 		end
 	else
 		-- Fallback: no animation
 		self.CardInfoFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "CardInfo")
 	end
 	
 	-- Clear current card data

@@ -126,6 +126,11 @@ end
 -- buttonName: Name of the button (e.g., "BtnPlaytime")
 -- visible: true to show, false to hide
 function NotificationMarkerHandler:SetMarkerVisible(buttonName, visible)
+	-- Check if handler is initialized
+	if not self._initialized then
+		return
+	end
+	
 	local markerData = self.markers[buttonName]
 	if not markerData then
 		warn("NotificationMarkerHandler: Marker not registered for " .. buttonName)
@@ -154,6 +159,8 @@ function NotificationMarkerHandler:ShowMarker(buttonName)
 	
 	-- Set initial scale to MIN before showing
 	local marker = markerData.marker
+	if not marker then return end
+	
 	marker.Size = UDim2.new(
 		markerData.baseScaleX * PULSE_SCALE_MIN,
 		0,
@@ -162,7 +169,14 @@ function NotificationMarkerHandler:ShowMarker(buttonName)
 	)
 	
 	marker.Visible = true
-	markerData.emitter:FindFirstChild("Emit"):Fire()
+	
+	-- Check if emitter exists before using it
+	if markerData.emitter then
+		local emitEvent = markerData.emitter:FindFirstChild("Emit")
+		if emitEvent then
+			emitEvent:Fire()
+		end
+	end
 	
 	-- Start pulse animation
 	self:StartPulseAnimation(buttonName)
@@ -187,6 +201,8 @@ function NotificationMarkerHandler:HideMarker(buttonName)
 	
 	-- Reset scale to base
 	local marker = markerData.marker
+	if not marker then return end
+	
 	marker.Size = UDim2.new(
 		markerData.baseScaleX,
 		0,
@@ -194,7 +210,14 @@ function NotificationMarkerHandler:HideMarker(buttonName)
 		0
 	)
 	
-	markerData.emitter:FindFirstChild("Clear"):Fire()
+	-- Check if emitter exists before using it
+	if markerData.emitter then
+		local clearEvent = markerData.emitter:FindFirstChild("Clear")
+		if clearEvent then
+			clearEvent:Fire()
+		end
+	end
+	
 	marker.Visible = false
 	
 	print("✅ NotificationMarkerHandler: Hiding marker for " .. buttonName)

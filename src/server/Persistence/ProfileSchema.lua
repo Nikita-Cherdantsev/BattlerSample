@@ -65,7 +65,11 @@ ProfileSchema.Profile = {
 	},
 	
 	-- Promo codes tracking (map: code -> true)
-	redeemedCodes = {}          -- Tracks which promo codes have been redeemed by the player
+	redeemedCodes = {},          -- Tracks which promo codes have been redeemed by the player
+	
+	-- Pending battle rewards (unclaimed rewards from battles)
+	-- Format: { {type = "soft", amount = number}, {type = "lootbox", rarity = string} }
+	pendingBattleRewards = {}    -- Array of unclaimed battle rewards
 }
 
 -- Lootbox entry structure
@@ -364,6 +368,40 @@ function ProfileSchema.ValidateProfile(profile)
 		end
 	end
 	
+	-- Check pending battle rewards
+	if profile.pendingBattleRewards ~= nil then
+		if type(profile.pendingBattleRewards) ~= "table" then
+			return false, "Invalid pendingBattleRewards (must be table)"
+		end
+		
+		-- Limit to prevent excessive accumulation
+		if #profile.pendingBattleRewards > 50 then
+			return false, "Too many pending battle rewards (max 50)"
+		end
+		
+		for i, reward in ipairs(profile.pendingBattleRewards) do
+			if type(reward) ~= "table" then
+				return false, "Invalid reward at index " .. i
+			end
+			
+			if not reward.type then
+				return false, "Missing reward type at index " .. i
+			end
+			
+			if reward.type == "soft" then
+				if type(reward.amount) ~= "number" or reward.amount <= 0 then
+					return false, "Invalid soft reward amount at index " .. i
+				end
+			elseif reward.type == "lootbox" then
+				if not reward.rarity or not ProfileSchema.IsValidLootboxRarity(reward.rarity) then
+					return false, "Invalid lootbox rarity at index " .. i
+				end
+			else
+				return false, "Invalid reward type '" .. tostring(reward.type) .. "' at index " .. i
+			end
+		end
+	end
+	
 	return true, nil
 end
 
@@ -420,7 +458,8 @@ function ProfileSchema.CreateProfile(playerId)
 		followRewardClaimed = false,
 		bossWins = {},
 		npcWins = 0,
-		totalRobuxSpent = 0
+		totalRobuxSpent = 0,
+		pendingBattleRewards = {}
 	}
 	
 	return profile
@@ -456,7 +495,8 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 		followRewardClaimed = v1Profile.followRewardClaimed or false,
 		bossWins = v1Profile.bossWins or {},
 		npcWins = v1Profile.npcWins or 0,
-		totalRobuxSpent = v1Profile.totalRobuxSpent or 0
+		totalRobuxSpent = v1Profile.totalRobuxSpent or 0,
+		pendingBattleRewards = {}
 	}
 	
 	-- Migrate collection from v1 format to v2 format

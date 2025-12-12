@@ -13,6 +13,7 @@ local CardLevels = require(game.ReplicatedStorage.Modules.Cards.CardLevels)
 local CardLevels = require(game.ReplicatedStorage.Modules.Cards.CardLevels)
 local Types = require(game.ReplicatedStorage.Modules.Types)
 local Manifest = require(game.ReplicatedStorage.Modules.Assets.Manifest)
+local EventBus = require(game.ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local DeckHandler = {}
@@ -140,6 +141,8 @@ function DeckHandler:SetupOpenButton()
 	-- The TextButton is the actual clickable element
 	if deckButton:IsA("TextButton") then
 		local connection = deckButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "LeftPanel.BtnDeck")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -153,6 +156,8 @@ function DeckHandler:SetupOpenButton()
 	-- Try to connect to other clickable elements as fallback
 	if deckButton:IsA("GuiButton") or deckButton:IsA("ImageButton") then
 		local connection = deckButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "LeftPanel.BtnDeck")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -447,6 +452,8 @@ function DeckHandler:CreateCollectionCard(cardData)
     local cardButton = cardInstance:FindFirstChild("BtnInfo")
 	if cardButton and cardButton:IsA("GuiButton") then
 		local connection = cardButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "Deck.Collection.Content.Content.ScrollingFrame.Card_" .. cardData.id .. ".BtnInfo")
 			self:OnCollectionCardClicked(cardData.id)
 		end)
 		table.insert(self.Connections, connection)
@@ -480,6 +487,8 @@ function DeckHandler:CreateDeckCard(cardData, slotIndex)
     local cardButton = cardInstance:FindFirstChild("BtnInfo")
 	if cardButton and cardButton:IsA("GuiButton") then
 		local connection = cardButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "Deck.Deck.Content.Content.DeckCard_" .. cardData.id .. "_" .. slotIndex .. ".BtnInfo")
 			self:OnDeckCardClicked(cardData.id, slotIndex)
 		end)
 		table.insert(self.Connections, connection)
@@ -787,9 +796,13 @@ function DeckHandler:OpenWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.DeckFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "Deck")
 			end)
 		else
 			self.isAnimating = false
+			-- Emit window opened event immediately if no animation
+			EventBus:Emit("WindowOpened", "Deck")
 		end
 		
 		if self.Utilities.Blur and self.Utilities.Blur.Show then
@@ -799,6 +812,8 @@ function DeckHandler:OpenWindow()
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "Deck")
 	end
 	
 	print("✅ DeckHandler: Deck window opened successfully")
@@ -814,6 +829,8 @@ function DeckHandler:CloseWindow()
 			self.Utilities.TweenUI.FadeOut(self.DeckFrame, .3, function () 
 				self.DeckFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "Deck")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -823,14 +840,18 @@ function DeckHandler:CloseWindow()
 		-- Fallback: no animation
 		self.DeckFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "Deck")
 	end
 
 	-- Show HUD panels
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = true
+		EventBus:Emit("HudShown", "LeftPanel")
 	end
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
+		EventBus:Emit("HudShown", "BottomPanel")
 	end
 	
 	-- Register with close button handler

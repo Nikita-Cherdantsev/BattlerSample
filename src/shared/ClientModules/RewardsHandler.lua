@@ -9,6 +9,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
+--// Modules
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
+
 --// Module
 local RewardsHandler = {}
 
@@ -193,6 +196,8 @@ function RewardsHandler:SetupButtonHandlers()
 	-- Setup BtnClaim
 	if self.BtnClaim and self.BtnClaim:IsA("TextButton") then
 		local connection = self.BtnClaim.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "Reward.Buttons.BtnClaim")
 			self:OnClaimButtonClicked()
 		end)
 		table.insert(self.Connections, connection)
@@ -297,7 +302,17 @@ function RewardsHandler:SetupProfileUpdatedHandler()
 				end
 				
 				if currentCount < previousCount then
-					-- Slot was freed - show Claim button and update panel
+					-- Slot was freed - save reward to pending and show Claim button
+					if self.pendingLootboxReward and self.NetworkClient and self.NetworkClient.requestSaveBattleRewardToPending then
+						-- Save reward to pending on server
+						local requestData = {
+							rewardType = "lootbox",
+							rarity = self.pendingLootboxReward.rarity
+						}
+						self.NetworkClient.requestSaveBattleRewardToPending(requestData)
+					end
+					
+					-- Show Claim button, hide Destroy button
 					if self.BtnDestroy then
 						self.BtnDestroy.Visible = false
 						self.BtnDestroy.Active = false
@@ -774,7 +789,13 @@ function RewardsHandler:ShowRewardsFrame()
 	
 	-- Use TweenUI if available
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
-		self.Utilities.TweenUI.FadeIn(self.RewardsFrame, 0.3)
+		self.Utilities.TweenUI.FadeIn(self.RewardsFrame, 0.3, function()
+			-- Emit window opened event after animation completes
+			EventBus:Emit("WindowOpened", "Reward")
+		end)
+	else
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "Reward")
 	end
 	
 	if self.Utilities and self.Utilities.Blur then
@@ -788,6 +809,17 @@ function RewardsHandler:CloseRewards()
 	end
 	
 	local function finalize()
+		if self.UI then
+			if self.UI.LeftPanel then
+				self.UI.LeftPanel.Visible = true
+				EventBus:Emit("HudShown", "LeftPanel")
+			end
+			if self.UI.BottomPanel then
+				self.UI.BottomPanel.Visible = true
+				EventBus:Emit("HudShown", "BottomPanel")
+			end
+		end
+
 		self.currentReward = nil
 		self.isWaitingForSlot = false
 		self.pendingLootboxReward = nil
@@ -810,6 +842,8 @@ function RewardsHandler:CloseRewards()
 	if self.Utilities and self.Utilities.TweenUI and self.Utilities.TweenUI.FadeOut then
 		self.Utilities.TweenUI.FadeOut(self.RewardsFrame, 0.3, function()
 			self.RewardsFrame.Visible = false
+			-- Emit window closed event after animation completes
+			EventBus:Emit("WindowClosed", "Reward")
 			-- Reset state
 			finalize()
 		end)
@@ -818,17 +852,10 @@ function RewardsHandler:CloseRewards()
 		end
 	else
 		self.RewardsFrame.Visible = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "Reward")
 		-- Reset state
 		finalize()
-	end
-
-	if self.UI then
-		if self.UI.LeftPanel then
-			self.UI.LeftPanel.Visible = true
-		end
-		if self.UI.BottomPanel then
-			self.UI.BottomPanel.Visible = true
-		end
 	end
 end
 

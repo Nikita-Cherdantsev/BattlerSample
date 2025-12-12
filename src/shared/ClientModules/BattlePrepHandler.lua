@@ -3,6 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
+--// Modules
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
+
 --// Module
 local BattlePrepHandler = {}
 
@@ -229,6 +232,39 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 	
 	-- Connect interaction (use original part name for battle logic)
 	local connection = proximityPrompt.Triggered:Connect(function()
+		-- Extract NPC name from model (prefer model name over part name)
+		-- For tutorial, we need to match with path like "Workspace.Noob" or "Workspace.Rubber King"
+		local npcName = nil
+		if originalPart and originalPart.Parent then
+			-- Try to get model name (Model.Name)
+			local model = originalPart.Parent
+			if model:IsA("Model") then
+				npcName = model.Name
+			else
+				-- Fallback: try to find parent model
+				local parentModel = originalPart:FindFirstAncestorOfClass("Model")
+				if parentModel then
+					npcName = parentModel.Name
+				end
+			end
+		end
+		
+		-- Fallback to part name if model name not found
+		if not npcName and originalPartName then
+			-- Try to extract NPC name from part name
+			-- NPCMode1Head -> Noob, BossMode1Head -> Rubber King, etc.
+			if originalPartName:match("^NPCMode") then
+				npcName = "Noob"  -- Default NPC name
+			elseif originalPartName:match("^BossMode") then
+				npcName = "Rubber King"  -- Default boss name
+			else
+				npcName = originalPartName
+			end
+		end
+		
+		-- Emit prompt activated event
+		EventBus:Emit("PromptActivated", npcName or "NPC")
+		
 		-- Check if battle is already active
 		local battleHandler = handler.Controller and handler.Controller:GetBattleHandler()
 		if battleHandler and battleHandler.isBattleActive then
@@ -310,6 +346,9 @@ function BattlePrepHandler:SetupPartInteraction()
 		
 		-- Default to NPC mode if part name doesn't match
 		local connection = proximityPrompt.Triggered:Connect(function()
+			-- Emit prompt activated event
+			EventBus:Emit("PromptActivated", "TestNPC")
+			
 			-- Check if battle is already active
 			local battleHandler = self.Controller and self.Controller:GetBattleHandler()
 			if battleHandler and battleHandler.isBattleActive then
@@ -407,7 +446,13 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.StartBattleFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "StartBattle")
 			end)
+		else
+			self.isAnimating = false
+			-- Emit window opened event immediately if no animation
+			EventBus:Emit("WindowOpened", "StartBattle")
 		end
 		if self.Utilities.Blur then
 			self.Utilities.Blur.Show()
@@ -894,6 +939,8 @@ function BattlePrepHandler:CloseWindow(showHUD)
 			self.Utilities.TweenUI.FadeOut(self.StartBattleFrame, .3, function () 
 				self.StartBattleFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "StartBattle")
 				-- Clear battle active flag after animation completes
 				clearBattleActiveFlag()
 			end)
@@ -905,6 +952,8 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		-- Fallback: no animation
 		self.StartBattleFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "StartBattle")
 		-- Clear battle active flag immediately for fallback case
 		clearBattleActiveFlag()
 	end
@@ -919,9 +968,11 @@ function BattlePrepHandler:CloseWindow(showHUD)
 	if showHUD and self.UI then
 		if self.UI.LeftPanel then
 			self.UI.LeftPanel.Visible = true
+			EventBus:Emit("HudShown", "LeftPanel")
 		end
 		if self.UI.BottomPanel then
 			self.UI.BottomPanel.Visible = true
+			EventBus:Emit("HudShown", "BottomPanel")
 		end
 	end
 	
@@ -1001,6 +1052,9 @@ function BattlePrepHandler:SetupStartButton()
 	
 	-- Connect click event with error handling
 	local connection = self.StartButton.MouseButton1Click:Connect(function()
+		-- Emit button click event
+		EventBus:Emit("ButtonClicked", "StartBattle.Buttons.BtnStart")
+		
 		-- Verify NetworkClient is available before allowing click
 		local networkClient = self.Controller and self.Controller:GetNetworkClient()
 		if not networkClient then

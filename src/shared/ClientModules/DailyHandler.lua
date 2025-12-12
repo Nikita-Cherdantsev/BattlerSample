@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 
 --// Modules
 local Resolver = require(ReplicatedStorage.Modules.Assets.Resolver)
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local DailyHandler = {}
@@ -25,6 +26,7 @@ DailyHandler.lastServerSync = 0  -- Last server sync time (os.time())
 DailyHandler.hasCheckedAutoOpen = false  -- Flag to track if we've checked for auto-open
 DailyHandler.lastAutoOpenDay = 0  -- Track which day we last auto-opened for
 DailyHandler.pendingClaim = false  -- Flag to track if we're waiting for claim response
+DailyHandler.pendingAutoOpen = false  -- Flag to track if we should auto-open after loading screen hides
 
 --// Constants
 local SYNC_INTERVAL = 60  -- Sync with server every 30 seconds when window is open
@@ -77,6 +79,7 @@ function DailyHandler:Init(controller)
 	self.hasCheckedAutoOpen = false
 	self.lastAutoOpenDay = 0
 	self.pendingClaim = false
+	self.pendingAutoOpen = false
 
 	-- Setup daily functionality
 	self:SetupDaily()
@@ -84,7 +87,11 @@ function DailyHandler:Init(controller)
 	-- Setup profile updated handler
 	self:SetupProfileUpdatedHandler()
 	
+	-- Setup loading screen completion handler
+	self:SetupLoadingScreenHandler()
+	
 	-- Request daily data to check if we should auto-open the window
+	-- Auto-open will happen after loading screen hides
 	self:CheckAndAutoOpen()
 
 	self._initialized = true
@@ -149,6 +156,8 @@ function DailyHandler:SetupOpenButton()
 	
 	if dailyButton:IsA("GuiButton") or dailyButton:IsA("TextButton") then
 		local connection = dailyButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "LeftPanel.BtnDaily")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -179,6 +188,8 @@ function DailyHandler:SetupClaimButton()
 	end
 
 	local connection = claimButton.MouseButton1Click:Connect(function()
+		-- Emit button click event
+		EventBus:Emit("ButtonClicked", "Daily.Frame.Buttons.BtnClaim")
 		self:ClaimReward()
 	end)
 
@@ -188,6 +199,13 @@ end
 
 function DailyHandler:OpenWindow()
 	if self.isAnimating then return end
+	
+	-- Check if handler is initialized and UI is available
+	if not self._initialized or not self.UI or not self.DailyFrame then
+		warn("DailyHandler: Cannot open window - handler not initialized or UI not available")
+		return
+	end
+	
 	self.isAnimating = true
 
 	-- Request daily data from server
@@ -196,10 +214,10 @@ function DailyHandler:OpenWindow()
 	end
 
 	-- Hide HUD panels if they exist
-	if self.UI.LeftPanel then
+	if self.UI:FindFirstChild("LeftPanel") then
 		self.UI.LeftPanel.Visible = false
 	end
-	if self.UI.BottomPanel then
+	if self.UI:FindFirstChild("BottomPanel") then
 		self.UI.BottomPanel.Visible = false
 	end
 
@@ -217,6 +235,8 @@ function DailyHandler:OpenWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.DailyFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "Daily")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -225,6 +245,8 @@ function DailyHandler:OpenWindow()
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "Daily")
 	end
 	
 	-- Start automatic updates
@@ -246,6 +268,8 @@ function DailyHandler:CloseWindow()
 			self.Utilities.TweenUI.FadeOut(self.DailyFrame, .3, function () 
 				self.DailyFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "Daily")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -255,6 +279,8 @@ function DailyHandler:CloseWindow()
 		-- Fallback: no animation
 		self.DailyFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "Daily")
 	end
 
 	self.isWindowOpen = false
@@ -262,9 +288,11 @@ function DailyHandler:CloseWindow()
 	-- Show HUD panels
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = true
+		EventBus:Emit("HudShown", "LeftPanel")
 	end
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
+		EventBus:Emit("HudShown", "BottomPanel")
 	end
 	
 	-- Register with close button handler
@@ -402,7 +430,52 @@ function DailyHandler:SetupProfileUpdatedHandler()
 	table.insert(self.Connections, connection)
 end
 
+function DailyHandler:SetupLoadingScreenHandler()
+	-- Check if loading screen is already hidden
+	local Players = game:GetService("Players")
+	local player = Players.LocalPlayer
+	local loadingScreenAlreadyHidden = false
+	
+	if player then
+		local playerGui = player:FindFirstChild("PlayerGui")
+		if playerGui then
+			local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
+			if loadingScreen then
+				loadingScreenAlreadyHidden = not loadingScreen.Enabled
+			else
+				-- No loading screen found, assume it's already hidden
+				loadingScreenAlreadyHidden = true
+			end
+		end
+	end
+	
+	-- If loading screen is already hidden and we have pending auto-open, open immediately
+	if loadingScreenAlreadyHidden and self.pendingAutoOpen then
+		if not self.isClaimed and not self.isWindowOpen and self._initialized then
+			print("📅 DailyHandler: Auto-opening daily window - loading screen already hidden (Day " .. self.currentDay .. ")")
+			self.pendingAutoOpen = false
+			self:OpenWindow()
+		end
+	end
+	
+	-- Listen for loading screen completion event
+	local loadingScreenHiddenConnection = EventBus:On("LoadingScreenHidden", function()
+		-- Loading screen is hidden, check if we should auto-open daily bonus
+		if self.pendingAutoOpen and not self.isClaimed and not self.isWindowOpen and self._initialized then
+			print("📅 DailyHandler: Auto-opening daily window after loading screen hidden - reward available and not claimed (Day " .. self.currentDay .. ")")
+			self.pendingAutoOpen = false
+			self:OpenWindow()
+		end
+	end)
+	table.insert(self.Connections, loadingScreenHiddenConnection)
+end
+
 function DailyHandler:HandleDailyUpdate(dailyData)
+	-- Check if handler is initialized
+	if not self._initialized then
+		return
+	end
+	
 	-- Update server sync time
 	self.lastServerSync = os.time()
 	
@@ -448,15 +521,32 @@ function DailyHandler:HandleDailyUpdate(dailyData)
 	end
 	
 	if shouldAutoOpen then
-		-- Delay auto-open slightly to ensure UI is ready (async to avoid blocking)
-		task.spawn(function()
-			task.wait(1.5) -- Wait a bit for UI to be fully ready
-			-- Double-check conditions after delay
-			if not self.isClaimed and not self.isWindowOpen and self._initialized then
+		-- Set flag to auto-open after loading screen hides
+		-- Check if loading screen is already hidden
+		local Players = game:GetService("Players")
+		local player = Players.LocalPlayer
+		local loadingScreenHidden = true
+		
+		if player then
+			local playerGui = player:FindFirstChild("PlayerGui")
+			if playerGui then
+				local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
+				if loadingScreen and loadingScreen.Enabled then
+					-- Loading screen still visible, wait for it to hide
+					loadingScreenHidden = false
+					self.pendingAutoOpen = true
+				end
+			end
+		end
+		
+		-- If loading screen is already hidden, open immediately
+		if loadingScreenHidden then
+			-- Add check for initialization and UI availability
+			if not self.isClaimed and not self.isWindowOpen and self._initialized and self.UI and self.DailyFrame then
 				print("📅 DailyHandler: Auto-opening daily window - reward available and not claimed (Day " .. self.currentDay .. ")")
 				self:OpenWindow()
 			end
-		end)
+		end
 	end
 	
 	-- Mark as checked once we have valid data
@@ -615,7 +705,10 @@ function DailyHandler:Cleanup()
 	-- Disconnect all connections
 	for _, connection in ipairs(self.Connections) do
 		if connection then
-			if connection.Disconnect then
+			-- EventBus returns a disconnect function, not a connection object
+			if type(connection) == "function" then
+				connection()
+			elseif connection.Disconnect then
 				connection:Disconnect()
 			end
 		end

@@ -9,6 +9,7 @@ local MainController = {}
 
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 -- Modules
 local NetworkClient = require(script.Parent.NetworkClient)
@@ -37,7 +38,7 @@ local currencyHandlerInstance = nil
 -- Public API
 
 -- Initialize MainController and all handlers
-function MainController:Init()
+function MainController:Init(skipRequestProfile)
     if isInitialized then
         print("MainController already initialized")
         return
@@ -48,8 +49,10 @@ function MainController:Init()
     -- Initialize ClientState first
     ClientState.init(NetworkClient)
     
-    -- Request initial profile
+    -- Request initial profile only if not reloading (profile will come via ProfileUpdated with forceReload)
+    if not skipRequestProfile then
 	NetworkClient.requestProfile()
+	end
 	
 	-- Initialize handlers with error handling
 	local handlers = {
@@ -189,13 +192,30 @@ function MainController:IsInitialized()
     return isInitialized
 end
 
-function MainController:Reload()
+-- Full reload with loading screen and player respawn (for profile reset)
+function MainController:FullReload()
 	if not isInitialized then
 		return
 	end
 	
-	print("🔄 Reloading client...")
+	print("🔄 Full reloading client with loading screen and respawn...")
 	
+	-- Get LoadingScreenHandler
+	local LoadingScreenHandler = nil
+	local success, handler = pcall(function()
+		return require(ReplicatedStorage.ClientModules.LoadingScreenHandler)
+	end)
+	
+	if success and handler then
+		LoadingScreenHandler = handler
+		-- Initialize and show loading screen
+		LoadingScreenHandler:Init(self)
+		LoadingScreenHandler:Show()
+	end
+	
+	-- Note: Player respawn is handled on server via LoadCharacter() in CommandService
+	
+	-- Cleanup all handlers
 	local handlersToCleanup = {
 		DailyHandler,
 		DeckHandler,
@@ -234,8 +254,31 @@ function MainController:Reload()
 	cardInfoHandlerInstance = nil
 	currencyHandlerInstance = nil
 	
-	self:Init()
-	print("✅ Client reloaded successfully")
+	-- Reset ClientState initialization flag
+	ReplicatedStorage:SetAttribute("ClientInitialized", false)
+	
+	-- Wait a moment for cleanup to complete
+	task.wait(0.2)
+	
+	-- Reinitialize (profile will come via ProfileUpdated with forceReload)
+	self:Init(true)
+	
+	-- Wait for initialization to complete
+	task.wait(0.5)
+	
+	-- Mark client as ready
+	ReplicatedStorage:SetAttribute("ClientInitialized", true)
+	
+	-- Mark server as ready (profile already loaded)
+	if LoadingScreenHandler then
+		LoadingScreenHandler:SetServerReady()
+		LoadingScreenHandler:SetClientReady()
+		-- Wait minimum loading time for better UX
+		task.wait(1.0)
+		LoadingScreenHandler:SetExternalReady()
+	end
+	
+	print("✅ Client fully reloaded with loading screen")
 end
 
 -- Cleanup function

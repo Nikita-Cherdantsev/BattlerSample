@@ -5,6 +5,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 
 --// Modules
 local NetworkClient = require(game.StarterPlayer.StarterPlayerScripts.Controllers.NetworkClient)
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local ShopHandler = {}
@@ -85,6 +86,8 @@ function ShopHandler:SetupOpenButton()
 	
 	if shopButton:IsA("GuiButton") then
 		local connection = shopButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "LeftPanel.BtnShop")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -372,6 +375,8 @@ function ShopHandler:SetupModelClickHandler()
 				return -- Don't allow interaction during battle
 			end
 			
+			-- Emit prompt activated event
+			EventBus:Emit("PromptActivated", "Shop")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -484,6 +489,8 @@ function ShopHandler:OpenWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.ShopFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "Shop")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -491,6 +498,8 @@ function ShopHandler:OpenWindow()
 		end
 	else
 		self.isAnimating = false
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "Shop")
 	end
 	
 	print("✅ ShopHandler: Shop window opened")
@@ -505,6 +514,8 @@ function ShopHandler:CloseWindow()
 			self.Utilities.TweenUI.FadeOut(self.ShopFrame, .3, function () 
 				self.ShopFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "Shop")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -513,6 +524,8 @@ function ShopHandler:CloseWindow()
 	else
 		self.ShopFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "Shop")
 	end
 
 	self.isWindowOpen = false
@@ -526,9 +539,11 @@ function ShopHandler:CloseWindow()
 
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = true
+		EventBus:Emit("HudShown", "LeftPanel")
 	end
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
+		EventBus:Emit("HudShown", "BottomPanel")
 	end
 	
 	print("✅ ShopHandler: Shop window closed")

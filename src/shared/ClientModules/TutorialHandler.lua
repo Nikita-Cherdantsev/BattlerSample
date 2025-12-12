@@ -11,6 +11,10 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
+-- Modules
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
+local Logger = require(ReplicatedStorage.Modules.Logger)
+
 -- Module
 local TutorialHandler = {}
 
@@ -18,7 +22,7 @@ local TutorialHandler = {}
 TutorialHandler.Connections = {}
 TutorialHandler._initialized = false
 TutorialHandler.currentStep = nil
-TutorialHandler.currentStepIndex = -1  -- -1 означает "еще не инициализирован"
+TutorialHandler.currentStepIndex = -1  -- -1 means "not yet initialized"
 TutorialHandler.isTutorialActive = false
 TutorialHandler.tutorialGui = nil  -- Cloned ScreenGui from ReplicatedFirst
 TutorialHandler.overlayObject = nil  -- Reference to Tutorial.Overlay
@@ -34,6 +38,8 @@ TutorialHandler.highlightObjects = {}  -- Array of cloned highlight objects
 TutorialHandler.unifiedMasks = nil  -- Shared masks for all highlights
 TutorialHandler.updateConnections = {}
 TutorialHandler.tweenConnections = {}
+TutorialHandler.proximityPromptsState = {}  -- Store original Enabled state of prompts
+TutorialHandler.proximityPromptListener = nil  -- Listener for new prompts
 
 -- Constants
 local HIGHLIGHT_Z_INDEX = 1000
@@ -49,9 +55,7 @@ local TUTORIAL_TEMPLATE_PATH = "ReplicatedFirst/Instances/Tutorial"
 
 -- Initialization
 function TutorialHandler:Init(controller)
-	-- Prevent multiple initializations
 	if self._initialized then
-		print("📚 TutorialHandler: Already initialized, skipping")
 		return true
 	end
 	
@@ -92,8 +96,9 @@ function TutorialHandler:Init(controller)
 	self.PersistentConnections = {}  -- Persistent connections (ProfileUpdated, etc.)
 	self.profileUpdatedConnection = nil  -- Reference to ProfileUpdated connection to prevent duplicates
 	self.currentStep = nil
-	self.currentStepIndex = -1  -- -1 означает "еще не инициализирован", чтобы первое обновление всегда обрабатывалось
+	self.currentStepIndex = -1  -- -1 means "not yet initialized", ensures first update is always processed
 	self.showingStepIndex = nil  -- Index of the step currently being shown (different from currentStepIndex which is last completed)
+	self.lastShownStepIndex = nil  -- Last step index that was shown (for tracking forceStepOnGameLoad completion)
 	self.isTutorialActive = false
 	self.tutorialGui = nil  -- Cloned ScreenGui from ReplicatedFirst
 	self.tutorialContainer = nil  -- Reference to Tutorial Frame (parent of Arrow/Overlay/Text)
@@ -110,12 +115,17 @@ function TutorialHandler:Init(controller)
 	self.unifiedMasks = nil  -- Shared masks for all highlights
 	self.updateConnections = {}
 	self.tweenConnections = {}
-	self.isTutorialTemporarilyHidden = false  -- Флаг для временного скрытия
-	self.windowVisibilityConnections = {}  -- Соединения для отслеживания окон
+	self.isTutorialTemporarilyHidden = false  -- Flag for temporary hiding
+	self.windowVisibilityConnections = {}  -- Connections for window tracking
 	self.fadeInTweens = {}  -- Track fade-in tweens to cancel duplicates
 	self.conditionalTargets = {}  -- Store computed targets for "conditional" placeholders
 	self.pathObjects = {}  -- Store path objects (Beam, Attachments, Parts) for cleanup
 	self.beamTemplate = nil  -- Beam template from cloned Tutorial GUI (for cloning)
+	self.isInitialLoad = false  -- Flag to track if this is the initial game load (for forceStepOnGameLoad)
+	self.pendingStepIndex = nil  -- Step index we're waiting for (for event-based conditions)
+	self.stepOverrides = {}  -- stepIndex -> { nextStep = number?, text = string? } - хранилище override значений без модификации конфига
+	self.pendingNextStepIndex = nil  -- Step index scheduled to be shown (via task.spawn)
+	self._uiObjectCache = {}  -- Cache for UI objects to avoid repeated FindUIObject calls
 	
 	-- Setup UI
 	self:SetupUI()
@@ -129,11 +139,7 @@ function TutorialHandler:Init(controller)
 	-- Setup window/button listeners
 	self:SetupEventListeners()
 	
-	-- Request tutorial progress from server (will be called after a delay in SetupProfileUpdatedHandler)
-	-- Also, tutorial will start automatically when profile is received via ProfileUpdated
-	
 	self._initialized = true
-	print("✅ TutorialHandler initialized successfully!")
 	return true
 end
 
@@ -161,32 +167,26 @@ function TutorialHandler:SetupTutorialTemplate()
 	-- Try to find existing Tutorial ScreenGui
 	local existingTutorial = playerGui:FindFirstChild("Tutorial")
 	if existingTutorial and existingTutorial:IsA("ScreenGui") then
-		print("📚 TutorialHandler: Reusing existing Tutorial ScreenGui")
 		self.tutorialGui = existingTutorial
 	else
-		-- Clone tutorial template from ReplicatedFirst
 		local ReplicatedFirst = game:GetService("ReplicatedFirst")
 		
-		-- Wait for Instances folder
 		local instancesFolder = ReplicatedFirst:WaitForChild("Instances", 10)
 		if not instancesFolder then
 			warn("TutorialHandler: ReplicatedFirst.Instances not found")
 			return
 		end
 		
-		-- Wait for Tutorial template
 		local tutorialTemplate = instancesFolder:WaitForChild("Tutorial", 10)
 		if not tutorialTemplate then
 			warn("TutorialHandler: Tutorial template not found in ReplicatedFirst.Instances")
 			return
 		end
 		
-		-- Clone the template
 		self.tutorialGui = tutorialTemplate:Clone()
 		self.tutorialGui.Name = "Tutorial"
 		self.tutorialGui.ResetOnSpawn = false
 		self.tutorialGui.Parent = playerGui
-		print("📚 TutorialHandler: Created new Tutorial ScreenGui")
 	end
 	
 	-- Always update references to tutorial UI elements (whether new or existing)
@@ -251,6 +251,77 @@ function TutorialHandler:SetupTutorialTemplate()
 	if self.textObject then
 		self.textObject.Visible = false
 	end
+	
+	-- Scale tutorial UI elements based on aspect ratio
+	-- Wait a frame to ensure screen size is available
+	task.spawn(function()
+		task.wait() -- Wait for next frame to ensure screen size is available
+		self:ScaleTutorialUI()
+	end)
+end
+
+-- Scale tutorial UI elements based on device aspect ratio
+function TutorialHandler:ScaleTutorialUI()
+	-- Reference values
+	local REFERENCE_WIDTH = 1920
+	local REFERENCE_HEIGHT = 1080
+	local REFERENCE_TEXT_SIZE = 32
+	local REFERENCE_PADDING = 25
+	
+	-- Get current screen size from Camera ViewportSize
+	local workspace = game:GetService("Workspace")
+	local camera = workspace.CurrentCamera
+	
+	if not camera then
+		-- Camera not available yet, try again next frame
+		task.spawn(function()
+			task.wait(0.1)
+			self:ScaleTutorialUI()
+		end)
+		return
+	end
+	
+	local screenSize = camera.ViewportSize
+	if screenSize.X == 0 or screenSize.Y == 0 then
+		-- Screen size not available yet, try again next frame
+		task.spawn(function()
+			task.wait(0.1)
+			self:ScaleTutorialUI()
+		end)
+		return
+	end
+	
+	-- Calculate aspect ratios
+	local referenceAspectRatio = REFERENCE_WIDTH / REFERENCE_HEIGHT
+	local currentAspectRatio = screenSize.X / screenSize.Y
+	
+	-- Calculate scale factor based on aspect ratio difference
+	-- We scale based on the smaller dimension to maintain proportions
+	local scaleFactor = math.min(screenSize.X / REFERENCE_WIDTH, screenSize.Y / REFERENCE_HEIGHT)
+	
+	-- Apply scaling to text size
+	if self.textLabel then
+		local scaledTextSize = math.floor(REFERENCE_TEXT_SIZE * scaleFactor)
+		self.textLabel.TextSize = scaledTextSize
+	end
+	
+	-- Find and scale UIPadding
+	-- Path: Tutorial.Tutorial.Text.Text.UIPadding
+	if self.textObject then
+		local textInnerFrame = self.textObject:FindFirstChild("Text", true)
+		if textInnerFrame then
+			local uiPadding = textInnerFrame:FindFirstChild("UIPadding")
+			if uiPadding then
+				local scaledPadding = math.floor(REFERENCE_PADDING * scaleFactor)
+				uiPadding.PaddingTop = UDim.new(0, scaledPadding)
+				uiPadding.PaddingBottom = UDim.new(0, scaledPadding)
+			else
+				warn("TutorialHandler: UIPadding not found in Tutorial.Text.Text")
+			end
+		else
+			warn("TutorialHandler: Inner Text frame not found in Tutorial.Text")
+		end
+	end
 end
 
 function TutorialHandler:SetupProfileUpdatedHandler()
@@ -268,8 +339,9 @@ function TutorialHandler:SetupProfileUpdatedHandler()
 	
 	-- Also request tutorial progress explicitly on initialization
 	-- This ensures we get the tutorial state even if profile doesn't include it
+	-- Reduced delay for faster initialization
 	task.spawn(function()
-		task.wait(1)  -- Wait a bit for everything to initialize
+		task.wait(0.1)  -- Minimal delay to ensure UI is ready
 		if self._initialized then
 			self:RequestTutorialProgress()
 		end
@@ -277,12 +349,229 @@ function TutorialHandler:SetupProfileUpdatedHandler()
 end
 
 function TutorialHandler:SetupEventListeners()
-	-- Listen for window opens/closes and button clicks
-	-- This will be used to check start/complete conditions
+	local windowOpenedDisconnect = EventBus:On("WindowOpened", function(windowName)
+		self:OnWindowOpened(windowName)
+	end)
+	table.insert(self.PersistentConnections, windowOpenedDisconnect)
 	
-	-- We'll check conditions when showing steps
-	-- For now, we'll use a polling approach or event-based system
-	-- depending on what events are available
+	local windowClosedDisconnect = EventBus:On("WindowClosed", function(windowName)
+		self:OnWindowClosed(windowName)
+	end)
+	table.insert(self.PersistentConnections, windowClosedDisconnect)
+	
+	local buttonClickedDisconnect = EventBus:On("ButtonClicked", function(buttonPath)
+		self:OnButtonClicked(buttonPath)
+	end)
+	table.insert(self.PersistentConnections, buttonClickedDisconnect)
+	
+	local promptActivatedDisconnect = EventBus:On("PromptActivated", function(promptName)
+		self:OnPromptActivated(promptName)
+	end)
+	table.insert(self.PersistentConnections, promptActivatedDisconnect)
+	
+	local hudShownDisconnect = EventBus:On("HudShown", function(panelName)
+		self:OnHudShown(panelName)
+	end)
+	table.insert(self.PersistentConnections, hudShownDisconnect)
+end
+
+-- Get next step index with override support (doesn't modify original config)
+function TutorialHandler:GetNextStepIndex(currentStep)
+	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	
+	-- Проверить override значения (приоритет над конфигом)
+	if self.stepOverrides[currentStep] and self.stepOverrides[currentStep].nextStep then
+		return self.stepOverrides[currentStep].nextStep
+	end
+	
+	-- Использовать стандартную логику из конфига
+	return TutorialConfig.GetNextStepIndex(currentStep)
+end
+
+-- Helper: Resolve conditional target
+function TutorialHandler:ResolveConditionalTarget(target, step)
+	if target ~= "conditional" then
+		return target
+	end
+	
+	if step and step.path and step.startCondition and step.startCondition.type == "prompt_click" then
+		return self:ExtractNPCNameFromPath(step.path)
+	end
+	
+	return self.conditionalTargets and self.conditionalTargets.complete
+end
+
+-- Helper: Extract NPC name from path (e.g., "Workspace.Noob" -> "Noob")
+function TutorialHandler:ExtractNPCNameFromPath(path)
+	local pathParts = {}
+	for part in string.gmatch(path, "([^%.]+)") do
+		table.insert(pathParts, part)
+	end
+	return #pathParts > 0 and pathParts[#pathParts] or nil
+end
+
+-- Helper: Check if event matches step start condition
+function TutorialHandler:CheckStartConditionMatch(step, eventType, eventValue)
+	if not step or not step.startCondition or step.startCondition.type ~= eventType then
+		return false
+	end
+	
+	local target = step.startCondition.target
+	target = self:ResolveConditionalTarget(target, step)
+	
+	if eventType == "window_open" then
+		return target == eventValue
+	elseif eventType == "hud_show" then
+		return target == eventValue
+	elseif eventType == "button_click" then
+		return target and (target == eventValue or string.find(eventValue, target))
+	elseif eventType == "prompt_click" then
+		return target and (target == eventValue or string.find(eventValue, target))
+	end
+	
+	return false
+end
+
+-- Helper: Check if event matches step complete condition
+function TutorialHandler:CheckCompleteConditionMatch(condition, eventType, eventValue)
+	if not condition or condition.type ~= eventType then
+		return false
+	end
+	
+	-- Special handling for prompt_click with promptTargets array
+	if eventType == "prompt_click" and self.currentStep and self.currentStep.promptTargets then
+		-- Check if eventValue matches any of the promptTargets
+		for _, promptTarget in ipairs(self.currentStep.promptTargets) do
+			if promptTarget == eventValue or string.find(eventValue, promptTarget) then
+				return true
+			end
+		end
+		return false
+	end
+	
+	local target = condition.target
+	if target == "conditional" then
+		if eventType == "prompt_click" and self.currentStep and self.currentStep.path then
+			target = self:ExtractNPCNameFromPath(self.currentStep.path)
+		else
+			target = self.conditionalTargets and self.conditionalTargets.complete
+		end
+	end
+	
+	if not target then
+		return false
+	end
+	
+	if eventType == "window_open" or eventType == "window_close" then
+		return target == eventValue
+	elseif eventType == "button_click" then
+		return target == eventValue or string.find(eventValue, target)
+	elseif eventType == "prompt_click" then
+		return target == eventValue or string.find(eventValue, target)
+	end
+	
+	return false
+end
+
+-- Helper: Handle event for next step (when tutorial is not active)
+function TutorialHandler:HandleEventForNextStep(eventType, eventValue)
+	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	local nextStepIndex = self.pendingStepIndex or self:GetNextStepIndex(self.currentStepIndex)
+	if not nextStepIndex then
+		return false
+	end
+	
+	local step = TutorialConfig.GetStep(nextStepIndex)
+	if not step or not self:CheckStartConditionMatch(step, eventType, eventValue) then
+		return false
+	end
+	
+	self.pendingStepIndex = nil
+	self:ProcessTutorialStep(nextStepIndex, false)
+	return true
+end
+
+function TutorialHandler:OnWindowOpened(windowName)
+	if not self._initialized then
+		return
+	end
+	
+	-- Clear UI object cache when window opens (window might have been created/destroyed)
+	-- This ensures fresh lookups for windows that might not have existed before
+	self._uiObjectCache = {}
+	
+	if not self.isTutorialActive then
+		self:HandleEventForNextStep("window_open", windowName)
+		return
+	end
+	
+	if self.currentStep and self.currentStep.completeCondition then
+		if self:CheckCompleteConditionMatch(self.currentStep.completeCondition, "window_open", windowName) then
+			self:CompleteCurrentStep()
+		end
+	end
+end
+
+function TutorialHandler:OnWindowClosed(windowName)
+	if not self._initialized or not self.isTutorialActive then
+		return
+	end
+	
+	if self.currentStep and self.currentStep.completeCondition then
+		if self:CheckCompleteConditionMatch(self.currentStep.completeCondition, "window_close", windowName) then
+			self:CompleteCurrentStep()
+		end
+	end
+end
+
+function TutorialHandler:OnButtonClicked(buttonPath)
+	if not self._initialized then
+		return
+	end
+	
+	if not self.isTutorialActive then
+		self:HandleEventForNextStep("button_click", buttonPath)
+		return
+	end
+	
+	if self.currentStep and self.currentStep.completeCondition then
+		if self:CheckCompleteConditionMatch(self.currentStep.completeCondition, "button_click", buttonPath) then
+			self:CompleteCurrentStep()
+		end
+	end
+end
+
+function TutorialHandler:OnPromptActivated(promptName)
+	if not self._initialized then
+		return
+	end
+	
+	if not self.isTutorialActive then
+		self:HandleEventForNextStep("prompt_click", promptName)
+		return
+	end
+	
+	if self.currentStep and self.currentStep.completeCondition then
+		if self:CheckCompleteConditionMatch(self.currentStep.completeCondition, "prompt_click", promptName) then
+			self:CompleteCurrentStep()
+		end
+	end
+end
+
+function TutorialHandler:OnHudShown(panelName)
+	if not self._initialized then
+		return
+	end
+	
+	-- Clear UI object cache when HUD panel is shown (panel might have been created/destroyed)
+	self._uiObjectCache = {}
+	
+	if not self.isTutorialActive then
+		self:HandleEventForNextStep("hud_show", panelName)
+		return
+	end
+	
+	-- HUD panels don't have complete conditions, they're only for start conditions
 end
 
 function TutorialHandler:RequestTutorialProgress()
@@ -298,62 +587,268 @@ function TutorialHandler:HandleTutorialProgress(tutorialStep)
 	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
 	
 	local newStep = tutorialStep or 0
-	print("📚 TutorialHandler: HandleTutorialProgress called with step:", newStep, "current completed:", self.currentStepIndex, "showing:", self.showingStepIndex)
+	Logger.debug("[TutorialHandler] HandleTutorialProgress: received step %d, currentStepIndex = %d, isInitialLoad = %s", 
+		newStep, self.currentStepIndex, tostring(self.isInitialLoad))
 	
-	-- If tutorial step is reset to 0 (profile reset), clear tutorial state
-	if newStep == 0 and self.currentStepIndex ~= 0 then
-		print("📚 TutorialHandler: Tutorial reset detected (step 0), clearing tutorial state")
+	if newStep == 0 and self.currentStepIndex > 0 then
+		-- Tutorial was completed or reset (had progress, now reset to 0)
 		self:HideTutorialStep()
-		self.currentStepIndex = -1  -- Reset to allow processing
+		self.currentStepIndex = 0  -- Set to 0, not -1, to indicate tutorial is complete
+		self.isInitialLoad = false
+		-- Ensure ProximityPrompts are restored when tutorial is completed
+		self:RestoreAllProximityPrompts()
+		Logger.debug("[TutorialHandler] Tutorial completed or reset to 0")
+		return
 	end
 	
-	-- Only update if step actually changed (allow first update when currentStepIndex is -1)
-	-- Also check if we're already processing this step
-	if self.currentStepIndex ~= -1 and self.currentStepIndex == newStep then
-		-- Check if we're already showing the next step
-		local nextStepIndex = TutorialConfig.GetNextStepIndex(self.currentStepIndex)
-		if self.showingStepIndex == nextStepIndex and self.isTutorialActive then
-			print("📚 TutorialHandler: Step unchanged and already showing, skipping")
-			return
+	-- If newStep == 0 and currentStepIndex == -1, this is a new player starting tutorial
+	-- Continue processing to show first step
+	
+	-- Ignore outdated ProfileUpdated that would rollback progress
+	-- This can happen when ProfileUpdated comes from other actions with cached profile data
+	-- Note: With new server logic, altNextStep rollbacks set tutorialStep = altNextStep - 1,
+	-- so we might receive a step that's lower than currentStepIndex
+	-- Check if this might be a valid altNextStep rollback
+	if self.currentStepIndex ~= -1 and newStep < self.currentStepIndex then
+		local isPossibleAltNextStep = false
+		-- Check if any step between newStep+1 and currentStepIndex has altNextStep that would result in newStep+1
+		-- Example: currentStepIndex=13, newStep=10, check if step 13 has altNextStep=11 (which would set tutorialStep=10)
+		for stepIndex = newStep + 1, self.currentStepIndex do
+			local stepConfig = TutorialConfig.GetStep(stepIndex)
+			if stepConfig and stepConfig.altNextStep then
+				-- altNextStep indicates which step to show, server sets tutorialStep = altNextStep - 1
+				-- So if altNextStep - 1 == newStep, this is a valid rollback
+				if stepConfig.altNextStep - 1 == newStep then
+					isPossibleAltNextStep = true
+					Logger.debug("[TutorialHandler] Valid altNextStep rollback detected: step %d has altNextStep = %d, server set tutorialStep = %d", 
+						stepIndex, stepConfig.altNextStep, newStep)
+					break
+				end
+			end
+		end
+		
+		if not isPossibleAltNextStep then
+			-- This is not a valid altNextStep rollback - likely outdated data
+			if self.currentStepIndex - newStep > 2 then
+				Logger.debug("[TutorialHandler] Ignoring outdated ProfileUpdated: received step %d but currentStepIndex is %d (likely from unrelated action with stale data)", 
+					newStep, self.currentStepIndex)
+				return  -- Don't process outdated step
+			end
+			-- Small rollback (1-2 steps) - allow it
+			Logger.debug("[TutorialHandler] Allowing small rollback from step %d to %d", 
+				self.currentStepIndex, newStep)
 		end
 	end
 	
-	-- Update last completed step
-	self.currentStepIndex = newStep
+	local wasUninitialized = (self.currentStepIndex == -1)
 	
-	-- Check if tutorial is complete
+	-- Check if we already processed this step via optimistic update
+	local wasOptimistic = (self.currentStepIndex ~= -1 and self.currentStepIndex >= newStep)
+	
+	if wasOptimistic then
+		if self.currentStepIndex > newStep then
+			-- We're ahead of server via optimistic updates
+			-- Check if this is a valid altNextStep rollback
+			local rollbackTargetStep = newStep + 1  -- The step we should show after rollback (e.g., 11)
+			local isAltNextStepRollback = false
+			
+			-- First, check steps in the normal range
+			for stepIndex = newStep + 1, math.max(self.currentStepIndex, rollbackTargetStep + 1) do
+				local stepConfig = TutorialConfig.GetStep(stepIndex)
+				if stepConfig and stepConfig.altNextStep then
+					if stepConfig.altNextStep - 1 == newStep then
+						isAltNextStepRollback = true
+						Logger.debug("[TutorialHandler] Valid altNextStep rollback: step %d has altNextStep = %d, server set tutorialStep = %d", 
+							stepIndex, stepConfig.altNextStep, newStep)
+						break
+					end
+				end
+			end
+			
+			-- If not found, check if any step has altNextStep that matches rollbackTargetStep
+			-- This catches cases where we just completed a step (e.g., 13) that's not yet in currentStepIndex
+			if not isAltNextStepRollback then
+				for stepIndex = 1, TutorialConfig.GetStepCount() do
+					local stepConfig = TutorialConfig.GetStep(stepIndex)
+					if stepConfig and stepConfig.altNextStep == rollbackTargetStep then
+						-- This step has altNextStep that matches the rollback target
+						-- Check if altNextStep - 1 == newStep
+						if stepConfig.altNextStep - 1 == newStep then
+							isAltNextStepRollback = true
+							Logger.debug("[TutorialHandler] Valid altNextStep rollback: step %d has altNextStep = %d, server set tutorialStep = %d (found via full search)", 
+								stepIndex, stepConfig.altNextStep, newStep)
+							break
+						end
+					end
+				end
+			end
+			
+			if isAltNextStepRollback then
+				-- This is a valid altNextStep rollback from server
+				-- Server is the source of truth, so we must accept the rollback
+				-- even if we optimistically progressed further
+				Logger.debug("[TutorialHandler] Server confirmed altNextStep rollback to step %d (was at %d via optimistic update), syncing and showing next step", 
+					newStep, self.currentStepIndex)
+				self.currentStepIndex = newStep
+				-- Continue processing to show the next step (altNextStep)
+			else
+				-- Normal case: sync to server state but skip redundant processing
+				Logger.debug("[TutorialHandler] Server confirmed step %d (already at %d via optimistic update), syncing to server state", 
+					newStep, self.currentStepIndex)
+				self.currentStepIndex = newStep
+				return
+			end
+		elseif self.currentStepIndex == newStep then
+			-- Server confirmed what we already optimistically updated
+			
+			-- IMPORTANT: For step 13, clear stepOverrides if server confirmed victory (newStep == 13)
+			-- If server returned step 13, it means victory (useAltNextStep = false)
+			-- If server returned step 10, it means loss (useAltNextStep = true, rollback to show step 11)
+			if newStep == 13 and self.stepOverrides[13] then
+				Logger.debug("[TutorialHandler] Server confirmed step 13 (victory), clearing stepOverrides[13]")
+				self.stepOverrides[13] = nil
+			end
+			
+			local nextStepIndex = self:GetNextStepIndex(self.currentStepIndex)
+			-- Only skip if step is actually showing (not just pending)
+			-- pendingNextStepIndex alone is not enough - step might not have been shown yet
+			if self.showingStepIndex == nextStepIndex and self.isTutorialActive then
+				Logger.debug("[TutorialHandler] Server confirmed step %d (already processed via optimistic update), next step %d is already showing, skipping", 
+					newStep, nextStepIndex)
+				return
+			end
+			-- Continue processing to ensure next step is shown
+			-- This handles cases where task.spawn hasn't executed yet, step wasn't shown, or pendingNextStepIndex was set but step failed to show
+		end
+	else
+		-- Normal case: server has a new step for us
+		self.currentStepIndex = newStep
+	end
+	
+	-- Reset lastShownStepIndex if we've progressed past or caught up to the shown step
+	-- This prevents the forceStepOnGameLoad logic from interfering with normal progression
+	if self.lastShownStepIndex and self.currentStepIndex >= self.lastShownStepIndex then
+		self.lastShownStepIndex = nil
+	end
+	
+	if wasUninitialized then
+		self.isInitialLoad = true
+		Logger.debug("[TutorialHandler] First load detected, setting isInitialLoad = true for step %d", newStep)
+	end
+	
 	if TutorialConfig.IsComplete(self.currentStepIndex) then
-		print("📚 TutorialHandler: Tutorial is complete")
 		self:HideTutorialStep()
+		self.isInitialLoad = false
+		-- Ensure ProximityPrompts are restored when tutorial is completed
+		self:RestoreAllProximityPrompts()
+		Logger.debug("[TutorialHandler] Tutorial is complete at step %d", self.currentStepIndex)
 		return
 	end
 	
-	-- Get next step
-	local nextStepIndex = TutorialConfig.GetNextStepIndex(self.currentStepIndex)
-	print("📚 TutorialHandler: Next step index:", nextStepIndex)
+	local nextStepIndex = self:GetNextStepIndex(self.currentStepIndex)
+	
+	if self.lastShownStepIndex and self.lastShownStepIndex < self.currentStepIndex then
+		Logger.debug("[TutorialHandler] Just completed step %d shown via forceStepOnGameLoad, showing step %d instead of next step %d", 
+			self.lastShownStepIndex, self.currentStepIndex, nextStepIndex)
+		nextStepIndex = self.currentStepIndex
+		self.lastShownStepIndex = nil  -- Clear after using
+	end
+	
 	if not nextStepIndex then
-		print("📚 TutorialHandler: No next step, hiding tutorial")
 		self:HideTutorialStep()
+		self.isInitialLoad = false
+		-- Ensure ProximityPrompts are restored when tutorial is completed
+		self:RestoreAllProximityPrompts()
+		Logger.debug("[TutorialHandler] No next step after %d, tutorial complete", self.currentStepIndex)
 		return
 	end
 	
-	-- Don't show if we're already showing this step and tutorial is active
+	Logger.debug("[TutorialHandler] Current step: %d, Next step: %d, showingStepIndex: %s", 
+		self.currentStepIndex, nextStepIndex, tostring(self.showingStepIndex))
+	
 	if self.showingStepIndex == nextStepIndex and self.isTutorialActive then
-		print("📚 TutorialHandler: Already showing step", nextStepIndex, "skipping")
+		Logger.debug("[TutorialHandler] Already showing step %d, skipping", nextStepIndex)
 		return
 	end
 	
-	-- Wait for loading screen to finish before showing tutorial
 	task.spawn(function()
 		self:WaitForLoadingScreenToFinish()
-		-- Double-check we're still supposed to show this step
-		-- Only skip if tutorial is active AND showing the same step
 		if self.isTutorialActive and self.showingStepIndex == nextStepIndex then
-			print("📚 TutorialHandler: Step already showing after loading screen wait, skipping")
 			return
 		end
-		-- Now proceed with showing the tutorial step
-		self:ProcessTutorialStep(nextStepIndex)
+		
+		local wasInitialLoad = self.isInitialLoad
+		
+		-- Check forceStepOnGameLoad only on first load (wasUninitialized)
+		-- Check it for the NEXT step that should be shown, not the completed one
+		-- Don't modify currentStepIndex to preserve server progress
+		if wasInitialLoad and wasUninitialized and self.currentStepIndex > 0 then
+			-- Check forceStepOnGameLoad for NEXT step, not current (completed) step
+			local nextStepConfig = TutorialConfig.GetStep(nextStepIndex)
+			if nextStepConfig and nextStepConfig.forceStepOnGameLoad then
+				local forceStepIndex = nextStepConfig.forceStepOnGameLoad
+				if forceStepIndex and forceStepIndex >= 1 and forceStepIndex <= TutorialConfig.GetStepCount() then
+					-- Check startCondition of the target step before showing it
+					local forceStepConfig = TutorialConfig.GetStep(forceStepIndex)
+					if forceStepConfig then
+						local forceStepConditionMet = self:CheckStartCondition(forceStepConfig)
+						
+						-- If condition not met and step has altNextStep, use altNextStep instead
+						if not forceStepConditionMet and forceStepConfig.altNextStep then
+							local altNextStep = forceStepConfig.altNextStep
+							Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, using altNextStep %d instead", 
+								forceStepIndex, altNextStep)
+							
+							-- Send request to server to complete step 13 (which has altNextStep = 11)
+							-- Server will set tutorialStep = 10 (altNextStep - 1)
+							-- We need to find which step has this altNextStep
+							local sourceStepIndex = nil
+							for i = 1, TutorialConfig.GetStepCount() do
+								local stepConfig = TutorialConfig.GetStep(i)
+								if stepConfig and stepConfig.altNextStep == altNextStep then
+									sourceStepIndex = i
+									break
+								end
+							end
+							
+							if sourceStepIndex and self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+								Logger.debug("[TutorialHandler] Sending requestCompleteTutorialStep(%d, useAltNextStep=true) to server to trigger altNextStep rollback", 
+									sourceStepIndex)
+								self.NetworkClient.requestCompleteTutorialStep(sourceStepIndex, true)
+							end
+							
+							-- Wait for server to update tutorialStep before showing altNextStep
+							-- HandleTutorialProgress will be called when server responds
+							self.isInitialLoad = false
+							return
+						end
+						
+						-- If condition met, show the target step
+						if forceStepConditionMet then
+							Logger.debug("[TutorialHandler] forceStepOnGameLoad triggered: next step %d has forceStepOnGameLoad = %d, showing step %d locally", 
+								nextStepIndex, forceStepIndex, forceStepIndex)
+							self:ShowTutorialStep(forceStepIndex, true)
+							self.isInitialLoad = false
+							return
+						end
+						
+						-- Condition not met and no altNextStep - wait for condition
+						Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, waiting for condition", forceStepIndex)
+						self:WaitForConditionalCondition(forceStepConfig, forceStepIndex)
+						self.isInitialLoad = false
+						return
+					end
+				end
+			end
+		end
+		
+		if self.isInitialLoad then
+			self.isInitialLoad = false
+		end
+		
+		Logger.debug("[TutorialHandler] Processing next step %d, wasInitialLoad = %s", 
+			nextStepIndex, tostring(wasInitialLoad))
+		self:ProcessTutorialStep(nextStepIndex, wasInitialLoad, false)
 	end)
 end
 
@@ -370,45 +865,255 @@ function TutorialHandler:WaitForLoadingScreenToFinish()
 	
 	local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
 	if loadingScreen then
-		-- Wait for loading screen to be disabled
 		if loadingScreen.Enabled then
-			print("📚 TutorialHandler: Waiting for loading screen to finish...")
 			local changedSignal = loadingScreen:GetPropertyChangedSignal("Enabled")
 			while loadingScreen.Enabled do
 				changedSignal:Wait()
 			end
-			-- Wait a bit more to ensure fade-out animation completes
-			task.wait(0.5)
-			print("📚 TutorialHandler: Loading screen finished, proceeding with tutorial")
+			task.wait(0.1)  -- Reduced delay after loading screen closes
 		end
 	else
-		-- Loading screen not found, wait a bit anyway
-		task.wait(1)
+		task.wait(0.2)  -- Reduced delay when no loading screen
 	end
 end
 
-function TutorialHandler:ProcessTutorialStep(nextStepIndex)
+function TutorialHandler:ProcessTutorialStep(nextStepIndex, isInitialLoad, isRollback)
 	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
 	
-	-- Get step data
+	Logger.debug("[TutorialHandler] ProcessTutorialStep: nextStepIndex = %d, isInitialLoad = %s, currentStepIndex = %d", 
+		nextStepIndex, tostring(isInitialLoad), self.currentStepIndex)
+	
 	local step = TutorialConfig.GetStep(nextStepIndex)
 	if not step then
-		print("📚 TutorialHandler: Step not found:", nextStepIndex)
+		warn(string.format("[TutorialHandler] Step %d not found", nextStepIndex))
 		return
 	end
 	
-	print("📚 TutorialHandler: Next step:", nextStepIndex, "startCondition:", step.startCondition.type, step.startCondition.target)
-	
-	-- Check start condition
 	local startConditionMet = self:CheckStartCondition(step)
+	Logger.debug("[TutorialHandler] Step %d startCondition met: %s", nextStepIndex, tostring(startConditionMet))
+	
 	if not startConditionMet then
-		print("📚 TutorialHandler: Start condition not met, waiting...")
-		self:WaitForStepCondition(step, nextStepIndex)
+		-- Check if completeCondition has force = true
+		-- If so, automatically complete the step even if startCondition is not met
+		if step.completeCondition and step.completeCondition.force == true then
+			Logger.debug("[TutorialHandler] Step %d has force = true, auto-completing step (optimistic update)", nextStepIndex)
+			
+			-- Optimistic update: update local state immediately without waiting for server
+			-- This provides instant visual feedback for consecutive force steps
+			local wasOptimisticUpdate = false
+			if self.currentStepIndex < nextStepIndex then
+				-- Update local state optimistically
+				local oldStepIndex = self.currentStepIndex
+				self.currentStepIndex = nextStepIndex
+				wasOptimisticUpdate = true
+				Logger.debug("[TutorialHandler] Optimistic update: currentStepIndex %d -> %d", oldStepIndex, nextStepIndex)
+			end
+			
+			-- Send request to server asynchronously (doesn't block)
+			if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+				self.NetworkClient.requestCompleteTutorialStep(nextStepIndex)
+			end
+			
+			-- Process next step immediately if it also has force = true
+			-- This creates instant cascade for consecutive force steps
+			local nextNextStepIndex = self:GetNextStepIndex(nextStepIndex)
+			if nextNextStepIndex then
+				local nextStep = TutorialConfig.GetStep(nextNextStepIndex)
+				if nextStep then
+					local nextStartConditionMet = self:CheckStartCondition(nextStep)
+					if not nextStartConditionMet and nextStep.completeCondition and nextStep.completeCondition.force == true then
+						Logger.debug("[TutorialHandler] Cascading: next step %d also has force = true, processing immediately", nextNextStepIndex)
+						-- Process immediately without waiting for server response
+						-- Use task.spawn with task.wait to ensure UI is ready before processing next step
+						task.spawn(function()
+							task.wait()  -- Wait one frame to ensure previous step is fully processed
+							self:ProcessTutorialStep(nextNextStepIndex, false)
+						end)
+						return
+					end
+				end
+			end
+			
+			-- If next step doesn't have force, wait for server confirmation
+			-- But if we did optimistic update, we need to trigger processing
+			if wasOptimisticUpdate then
+				-- Wait for server to confirm, then process next step normally
+				-- The HandleTutorialProgress will handle it when server responds
+				return
+			end
+			
+			return
+		end
+		
+		-- forceStepOnGameLoad only works on initial game load, not during normal step transitions
+		if step.forceStepOnGameLoad and isInitialLoad then
+			local forceStepIndex = step.forceStepOnGameLoad
+			if forceStepIndex and forceStepIndex >= 1 and forceStepIndex <= TutorialConfig.GetStepCount() then
+				-- Check startCondition of the target step before showing it
+				local forceStepConfig = TutorialConfig.GetStep(forceStepIndex)
+				if forceStepConfig then
+					local forceStepConditionMet = self:CheckStartCondition(forceStepConfig)
+					
+						-- If condition not met and step has altNextStep, use altNextStep instead
+						if not forceStepConditionMet and forceStepConfig.altNextStep then
+							local altNextStep = forceStepConfig.altNextStep
+							Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, using altNextStep %d instead", 
+								forceStepIndex, altNextStep)
+							
+							-- Send request to server to complete step 13 (which has altNextStep = 11)
+							-- Server will set tutorialStep = 10 (altNextStep - 1)
+							local sourceStepIndex = nil
+							for i = 1, TutorialConfig.GetStepCount() do
+								local stepConfig = TutorialConfig.GetStep(i)
+								if stepConfig and stepConfig.altNextStep == altNextStep then
+									sourceStepIndex = i
+									break
+								end
+							end
+							
+							if sourceStepIndex and self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+								Logger.debug("[TutorialHandler] Sending requestCompleteTutorialStep(%d, useAltNextStep=true) to server to trigger altNextStep rollback", 
+									sourceStepIndex)
+								self.NetworkClient.requestCompleteTutorialStep(sourceStepIndex, true)
+							end
+							
+							-- Wait for server to update tutorialStep before showing altNextStep
+							return
+						end
+					
+					-- If condition met, show the target step
+					if forceStepConditionMet then
+						Logger.debug("[TutorialHandler] forceStepOnGameLoad triggered: step %d has forceStepOnGameLoad = %d, showing step %d locally", 
+							nextStepIndex, forceStepIndex, forceStepIndex)
+						self:ShowTutorialStep(forceStepIndex, true)
+						return
+					end
+					
+					-- Condition not met and no altNextStep - wait for condition
+					Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, waiting for condition", forceStepIndex)
+					self:WaitForConditionalCondition(forceStepConfig, forceStepIndex)
+					return
+				end
+			else
+				warn(string.format("[TutorialHandler] Invalid forceStepOnGameLoad value: %s for step %d", tostring(forceStepIndex), nextStepIndex))
+			end
+		else
+			if step.forceStepOnGameLoad then
+				Logger.debug("[TutorialHandler] Step %d has forceStepOnGameLoad = %d but isInitialLoad = %s, ignoring", 
+					nextStepIndex, step.forceStepOnGameLoad, tostring(isInitialLoad))
+			end
+		end
+		
+		-- Normal handling: wait for condition
+		Logger.debug("[TutorialHandler] Step %d startCondition not met, waiting for condition (type: %s)", 
+			nextStepIndex, step.startCondition and step.startCondition.type or "unknown")
+		if step.startCondition.type == "conditional" then
+			self:WaitForConditionalCondition(step, nextStepIndex)
+		elseif step.startCondition.type == "hud_show" then
+			-- For hud_show, also listen to visibility changes, not just HudShown event
+			-- This handles cases where panel is already visible but event didn't fire
+			self.pendingStepIndex = nextStepIndex
+			Logger.debug("[TutorialHandler] Step %d pending, waiting for hud_show event or visibility change", nextStepIndex)
+			
+			-- Also set up property listener for immediate visibility check
+			task.spawn(function()
+				local panel = self:GetCachedUIObject(step.startCondition.target)
+				if panel then
+					-- Check immediately if already visible
+					if panel.Visible then
+						Logger.debug("[TutorialHandler] Step %d: panel %s is already visible, processing immediately", 
+							nextStepIndex, step.startCondition.target)
+						self.pendingStepIndex = nil
+						self:ProcessTutorialStep(nextStepIndex, false)
+						return
+					end
+					
+					-- Listen for visibility changes
+					local connection = panel:GetPropertyChangedSignal("Visible"):Connect(function()
+						if panel.Visible and self.pendingStepIndex == nextStepIndex then
+							Logger.debug("[TutorialHandler] Step %d: panel %s became visible, processing", 
+								nextStepIndex, step.startCondition.target)
+							self.pendingStepIndex = nil
+							if connection then
+								connection:Disconnect()
+							end
+							self:ProcessTutorialStep(nextStepIndex, false)
+						end
+					end)
+					if connection then
+						table.insert(self.Connections, connection)
+					end
+				else
+					-- Panel not found, wait for it to appear via HudShown event
+					Logger.debug("[TutorialHandler] Step %d: panel %s not found, waiting for HudShown event", 
+						nextStepIndex, step.startCondition.target)
+				end
+			end)
+		elseif step.startCondition.type == "window_open" then
+			-- For window_open, also check if window is already open
+			-- This handles cases where window opened before tutorial started listening
+			self.pendingStepIndex = nextStepIndex
+			Logger.debug("[TutorialHandler] Step %d pending, waiting for window_open event or window state change", nextStepIndex)
+			
+			-- Also set up immediate check and property listener
+			task.spawn(function()
+				local window = self:GetCachedUIObject(step.startCondition.target)
+				if window then
+					-- Check immediately if already open
+					local isOpen = false
+					if window:IsA("ScreenGui") then
+						isOpen = window.Enabled == true
+					else
+						isOpen = window.Visible == true
+					end
+					
+					if isOpen then
+						Logger.debug("[TutorialHandler] Step %d: window %s is already open, processing immediately", 
+							nextStepIndex, step.startCondition.target)
+						self.pendingStepIndex = nil
+						self:ProcessTutorialStep(nextStepIndex, false)
+						return
+					end
+					
+					-- Listen for window state changes
+					local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
+					local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
+						local isOpenNow = false
+						if window:IsA("ScreenGui") then
+							isOpenNow = window.Enabled == true
+						else
+							isOpenNow = window.Visible == true
+						end
+						
+						if isOpenNow and self.pendingStepIndex == nextStepIndex then
+							Logger.debug("[TutorialHandler] Step %d: window %s became open, processing", 
+								nextStepIndex, step.startCondition.target)
+							self.pendingStepIndex = nil
+							if connection then
+								connection:Disconnect()
+							end
+							self:ProcessTutorialStep(nextStepIndex, false)
+						end
+					end)
+					if connection then
+						table.insert(self.Connections, connection)
+					end
+				else
+					-- Window not found, wait for it to appear via WindowOpened event
+					Logger.debug("[TutorialHandler] Step %d: window %s not found, waiting for WindowOpened event", 
+						nextStepIndex, step.startCondition.target)
+				end
+			end)
+		else
+			self.pendingStepIndex = nextStepIndex
+			Logger.debug("[TutorialHandler] Step %d pending, waiting for event", nextStepIndex)
+		end
 		return
 	end
 	
-	-- Show tutorial step (pass step index, not step table)
-	self:ShowTutorialStep(nextStepIndex)
+	Logger.debug("[TutorialHandler] Step %d startCondition met, showing step", nextStepIndex)
+	-- Pass forceShow=true if this is a rollback (to allow showing already completed step)
+	self:ShowTutorialStep(nextStepIndex, isRollback == true)
 end
 
 function TutorialHandler:CheckStartCondition(step)
@@ -417,49 +1122,39 @@ function TutorialHandler:CheckStartCondition(step)
 	end
 	
 	local condition = step.startCondition
+	local result = false
 	
 	if condition.type == "window_open" then
-		-- Check if window is open
-		local window = self:FindUIObject(condition.target)
+		-- Check if window is open (use cached lookup for performance)
+		local window = self:GetCachedUIObject(condition.target)
 		if not window then
-			-- Only log once per second to avoid spam
-			local now = tick()
-			if not self._lastNotFoundLog or (now - self._lastNotFoundLog) > 1 then
-				print("📚 TutorialHandler: Window not found:", condition.target)
-				self._lastNotFoundLog = now
-			end
-			return false
-		end
-		
-		-- For ScreenGui, check Enabled; for other GuiObjects, check Visible
-		local isOpen = false
-		if window:IsA("ScreenGui") then
-			isOpen = window.Enabled == true
+			result = false
 		else
-			isOpen = window.Visible == true
-		end
-		
-		-- Only log when state changes or first check
-		local logKey = "window_" .. condition.target
-		local lastState = self._windowStates and self._windowStates[logKey]
-		if lastState ~= isOpen then
-			print("📚 TutorialHandler: Window", condition.target, "isOpen:", isOpen, "type:", window.ClassName)
-			if not self._windowStates then
-				self._windowStates = {}
+			-- For ScreenGui, check Enabled; for other GuiObjects, check Visible
+			if window:IsA("ScreenGui") then
+				result = window.Enabled == true
+			else
+				result = window.Visible == true
 			end
-			self._windowStates[logKey] = isOpen
 		end
-		
-		return isOpen
+	elseif condition.type == "hud_show" then
+		-- Check if HUD panel is visible (use cached lookup for performance)
+		local panel = self:GetCachedUIObject(condition.target)
+		if not panel then
+			result = false
+		else
+			-- HUD panels are GuiObjects, check Visible property
+			result = panel.Visible == true
+		end
 	elseif condition.type == "button_click" then
 		-- Button clicks are handled via event listeners
-		return false  -- Will be set to true when button is actually clicked
+		result = false  -- Will be set to true when button is actually clicked
 	elseif condition.type == "conditional" then
 		-- Conditional conditions are handled by execute methods
-		return self:CheckConditionalStartCondition(step)
+		result = self:CheckConditionalStartCondition(step)
 	end
 	
-	return false
+	return result
 end
 
 function TutorialHandler:CheckCompleteCondition(step)
@@ -470,7 +1165,8 @@ function TutorialHandler:CheckCompleteCondition(step)
 	local condition = step.completeCondition
 	
 	if condition.type == "window_open" then
-		local window = self:FindUIObject(condition.target)
+		-- Use cached lookup for better performance
+		local window = self:GetCachedUIObject(condition.target)
 		if not window then
 			return false
 		end
@@ -495,215 +1191,6 @@ function TutorialHandler:CheckCompleteCondition(step)
 	return false
 end
 
-function TutorialHandler:WaitForStepCondition(step, stepIndex)
-	-- Wait for the start condition to be met
-	if not step or not step.startCondition then
-		return
-	end
-	
-	local condition = step.startCondition
-	
-	-- Check if force = true in completeCondition
-	local hasForce = step.completeCondition and step.completeCondition.force == true
-	
-	if condition.type == "window_open" then
-		-- Check condition immediately first
-		local conditionMet = self:CheckStartCondition(step)
-		
-		if conditionMet then
-			-- Condition is already met, show step immediately
-			print("📚 TutorialHandler: Window condition already met, showing step", stepIndex)
-			if stepIndex then
-				self:ShowTutorialStep(stepIndex)
-			end
-			return
-		end
-		
-		-- If force = true and condition not met, complete step immediately
-		if hasForce then
-			print("📚 TutorialHandler: Window condition not met, but force=true, completing step", stepIndex, "immediately")
-			if stepIndex then
-				-- Complete the step without showing it
-				if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
-					self.NetworkClient.requestCompleteTutorialStep(stepIndex)
-				else
-					warn("📚 TutorialHandler: NetworkClient.requestCompleteTutorialStep not available")
-				end
-			end
-			return
-		end
-		
-		-- Otherwise, wait for window to open using event-based approach
-		print("📚 TutorialHandler: Waiting for window to open:", condition.target)
-		
-		-- Try to find window immediately first (without waiting)
-		local window = self:FindUIObject(condition.target)
-		
-		if window then
-			-- Window exists, set up property change listener immediately
-			local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
-			local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
-				if self:CheckStartCondition(step) then
-					print("📚 TutorialHandler: Window condition met via event, showing step", stepIndex)
-					if stepIndex then
-						self:ShowTutorialStep(stepIndex)
-					end
-					if connection then
-						connection:Disconnect()
-					end
-				end
-			end)
-			table.insert(self.Connections, connection)
-			
-			-- Check immediately in case window is already open
-			if self:CheckStartCondition(step) then
-				print("📚 TutorialHandler: Window condition already met, showing step", stepIndex)
-				if stepIndex then
-					self:ShowTutorialStep(stepIndex)
-				end
-				if connection then
-					connection:Disconnect()
-				end
-			end
-		else
-			-- Window doesn't exist yet, use WaitForUIObject in a separate thread
-			task.spawn(function()
-				local window = self:WaitForUIObject(condition.target, 10)
-				
-				if window then
-					-- Set up property change listener (event-based, no polling)
-					local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
-					local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
-						if self:CheckStartCondition(step) then
-							print("📚 TutorialHandler: Window condition met via event, showing step", stepIndex)
-							if stepIndex then
-								self:ShowTutorialStep(stepIndex)
-							end
-							if connection then
-								connection:Disconnect()
-							end
-						end
-					end)
-					table.insert(self.Connections, connection)
-					
-					-- Check immediately in case window is already open
-					if self:CheckStartCondition(step) then
-						print("📚 TutorialHandler: Window condition already met, showing step", stepIndex)
-						if stepIndex then
-							self:ShowTutorialStep(stepIndex)
-						end
-						if connection then
-							connection:Disconnect()
-						end
-					end
-				else
-					warn("📚 TutorialHandler: Window not found:", condition.target)
-				end
-			end)
-		end
-	elseif condition.type == "button_click" then
-		-- If force = true and condition not met, complete step immediately
-		if hasForce then
-			print("📚 TutorialHandler: Button click condition not met, but force=true, completing step", stepIndex, "immediately")
-			if stepIndex then
-				-- Complete the step without showing it
-				if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
-					self.NetworkClient.requestCompleteTutorialStep(stepIndex)
-				else
-					warn("📚 TutorialHandler: NetworkClient.requestCompleteTutorialStep not available")
-				end
-			end
-			return
-		end
-		
-		-- Set up button click listener
-		local button = self:FindUIObject(condition.target)
-		if button and (button:IsA("GuiButton") or button:IsA("TextButton") or button:IsA("ImageButton")) then
-			-- Button already exists, set up listener
-			local connection = button.MouseButton1Click:Connect(function()
-				if stepIndex and self._initialized then
-					self:ShowTutorialStep(stepIndex)
-				end
-				if connection then
-					connection:Disconnect()
-				end
-			end)
-			table.insert(self.Connections, connection)
-		else
-			-- Wait for button to appear using DescendantAdded (event-based, no polling)
-			task.spawn(function()
-				-- Extract button name from path (last part)
-				local pathParts = {}
-				for part in string.gmatch(condition.target, "([^%.]+)") do
-					table.insert(pathParts, part)
-				end
-				
-				if #pathParts == 0 then
-					warn("📚 TutorialHandler: Invalid button path:", condition.target)
-					return
-				end
-				
-				local buttonName = pathParts[#pathParts]
-				
-				-- Find parent container (UI root or specific parent)
-				local parent = self.UI
-				
-				-- Navigate to parent (all but last part)
-				for i = 1, #pathParts - 1 do
-					if parent then
-						parent = parent:FindFirstChild(pathParts[i])
-					end
-				end
-				
-				if parent then
-					-- Listen for descendant added (event-based)
-					local connection = parent.DescendantAdded:Connect(function(descendant)
-						if descendant.Name == buttonName and 
-						   (descendant:IsA("GuiButton") or descendant:IsA("TextButton") or descendant:IsA("ImageButton")) then
-							-- Found the button, set up click listener
-							local clickConnection = descendant.MouseButton1Click:Connect(function()
-								if stepIndex and self._initialized then
-									self:ShowTutorialStep(stepIndex)
-								end
-								if clickConnection then
-									clickConnection:Disconnect()
-								end
-								if connection then
-									connection:Disconnect()
-								end
-							end)
-							table.insert(self.Connections, clickConnection)
-							table.insert(self.Connections, connection)
-						end
-					end)
-					
-					-- Also check existing descendants immediately
-					local existingButton = parent:FindFirstChild(buttonName, true)
-					if existingButton and (existingButton:IsA("GuiButton") or existingButton:IsA("TextButton") or existingButton:IsA("ImageButton")) then
-						local clickConnection = existingButton.MouseButton1Click:Connect(function()
-							if stepIndex and self._initialized then
-								self:ShowTutorialStep(stepIndex)
-							end
-							if clickConnection then
-								clickConnection:Disconnect()
-							end
-							if connection then
-								connection:Disconnect()
-							end
-						end)
-						table.insert(self.Connections, clickConnection)
-						connection:Disconnect()
-					end
-				else
-					warn("📚 TutorialHandler: Parent container not found for button:", condition.target)
-				end
-			end)
-		end
-	elseif condition.type == "conditional" then
-		-- Wait for conditional condition
-		self:WaitForConditionalCondition(step, stepIndex)
-	end
-end
 
 -- Check conditional start condition
 function TutorialHandler:CheckConditionalStartCondition(step)
@@ -734,164 +1221,50 @@ function TutorialHandler:WaitForConditionalCondition(step, stepIndex)
 		return
 	end
 	
-	print("📚 TutorialHandler: Waiting for conditional condition:", step.startCondition.condition)
-	
-	-- Check if force = true in completeCondition
+	local conditionName = step.startCondition.condition
 	local hasForce = step.completeCondition and step.completeCondition.force == true
 	
 	-- Check condition immediately first
 	local conditionMet = self:CheckConditionalStartCondition(step)
 	
 	if conditionMet then
-		-- Condition is already met, show step immediately
-		print("📚 TutorialHandler: Conditional condition already met, showing step", stepIndex)
 		if stepIndex then
 			self:ShowTutorialStep(stepIndex)
 		end
 		return
 	end
 	
-	-- If force = true and condition not met, complete step immediately
 	if hasForce then
-		print("📚 TutorialHandler: Conditional condition not met, but force=true, completing step", stepIndex, "immediately")
-		if stepIndex then
-			-- Complete the step without showing it
-			if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
-				self.NetworkClient.requestCompleteTutorialStep(stepIndex)
-			else
-				warn("📚 TutorialHandler: NetworkClient.requestCompleteTutorialStep not available")
-			end
+		if stepIndex and self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+			self.NetworkClient.requestCompleteTutorialStep(stepIndex)
 		end
 		return
 	end
 	
-	-- Otherwise, wait for condition to be met using event-based approach
-	-- For playtime_reward_claimable, also listen for Playtime window visibility changes
-	local conditionName = step.startCondition.condition
 	if conditionName == "playtime_reward_claimable" then
-		-- Set up listener for Playtime window visibility
 		task.spawn(function()
 			local playtimeWindow = self:WaitForUIObject("Playtime", 10)
 			if playtimeWindow then
-				-- Listen for visibility changes
-				local visibilityConnection = playtimeWindow:GetPropertyChangedSignal("Visible"):Connect(function()
-					if self:CheckConditionalStartCondition(step) then
-						print("📚 TutorialHandler: Playtime reward claimable condition met via window visibility, showing step", stepIndex)
-						if stepIndex then
-							self:ShowTutorialStep(stepIndex)
-						end
-						if visibilityConnection then
-							visibilityConnection:Disconnect()
-						end
-					end
-				end)
-				table.insert(self.Connections, visibilityConnection)
-				
-				-- Check immediately in case window is already visible
-				if self:CheckConditionalStartCondition(step) then
-					print("📚 TutorialHandler: Playtime reward claimable condition already met, showing step", stepIndex)
-					if stepIndex then
-						self:ShowTutorialStep(stepIndex)
-					end
-					if visibilityConnection then
-						visibilityConnection:Disconnect()
-					end
-				end
+				local connections = {}
+				self:SetupConditionalPropertyListener(playtimeWindow, "Visible", step, stepIndex, connections)
 			end
 		end)
 	elseif conditionName == "playtime_reward_available" then
-		-- Set up listeners for LeftPanel visibility and marker visibility changes
 		task.spawn(function()
 			local leftPanel = self:WaitForUIObject("LeftPanel", 10)
 			if leftPanel then
-				local panelVisibilityConnection = nil
-				local markerVisibilityConnection = nil
+				local connections = {}
+				self:SetupConditionalPropertyListener(leftPanel, "Visible", step, stepIndex, connections)
 				
-				-- Listen for LeftPanel visibility changes
-				panelVisibilityConnection = leftPanel:GetPropertyChangedSignal("Visible"):Connect(function()
-					if self:CheckConditionalStartCondition(step) then
-						print("📚 TutorialHandler: Playtime reward available condition met via LeftPanel visibility, showing step", stepIndex)
-						if stepIndex then
-							self:ShowTutorialStep(stepIndex)
-						end
-						if panelVisibilityConnection then
-							panelVisibilityConnection:Disconnect()
-						end
-						if markerVisibilityConnection then
-							markerVisibilityConnection:Disconnect()
-						end
-					end
-				end)
-				table.insert(self.Connections, panelVisibilityConnection)
-				
-				-- Also listen for marker visibility changes
 				local btnPlaytime = leftPanel:FindFirstChild("BtnPlaytime")
 				if btnPlaytime then
 					local marker = btnPlaytime:FindFirstChild("Marker")
 					if marker then
-						markerVisibilityConnection = marker:GetPropertyChangedSignal("Visible"):Connect(function()
-							if self:CheckConditionalStartCondition(step) then
-								print("📚 TutorialHandler: Playtime reward available condition met via marker visibility, showing step", stepIndex)
-								if stepIndex then
-									self:ShowTutorialStep(stepIndex)
-								end
-								if panelVisibilityConnection then
-									panelVisibilityConnection:Disconnect()
-								end
-								if markerVisibilityConnection then
-									markerVisibilityConnection:Disconnect()
-								end
-							end
-						end)
-						table.insert(self.Connections, markerVisibilityConnection)
-						
-						-- Check immediately in case marker is already visible
-						if marker.Visible and self:CheckConditionalStartCondition(step) then
-							print("📚 TutorialHandler: Playtime reward available condition already met, showing step", stepIndex)
-							if stepIndex then
-								self:ShowTutorialStep(stepIndex)
-							end
-							if panelVisibilityConnection then
-								panelVisibilityConnection:Disconnect()
-							end
-							if markerVisibilityConnection then
-								markerVisibilityConnection:Disconnect()
-							end
-						end
+						self:SetupConditionalPropertyListener(marker, "Visible", step, stepIndex, connections)
 					else
-						-- Wait for marker to appear
 						local markerConnection = btnPlaytime.ChildAdded:Connect(function(child)
 							if child.Name == "Marker" then
-								markerVisibilityConnection = child:GetPropertyChangedSignal("Visible"):Connect(function()
-									if self:CheckConditionalStartCondition(step) then
-										print("📚 TutorialHandler: Playtime reward available condition met via marker visibility, showing step", stepIndex)
-										if stepIndex then
-											self:ShowTutorialStep(stepIndex)
-										end
-										if panelVisibilityConnection then
-											panelVisibilityConnection:Disconnect()
-										end
-										if markerVisibilityConnection then
-											markerVisibilityConnection:Disconnect()
-										end
-									end
-								end)
-								table.insert(self.Connections, markerVisibilityConnection)
-								
-								-- Check immediately
-								if child.Visible and self:CheckConditionalStartCondition(step) then
-									print("📚 TutorialHandler: Playtime reward available condition already met, showing step", stepIndex)
-									if stepIndex then
-										self:ShowTutorialStep(stepIndex)
-									end
-									if panelVisibilityConnection then
-										panelVisibilityConnection:Disconnect()
-									end
-									if markerVisibilityConnection then
-										markerVisibilityConnection:Disconnect()
-									end
-								end
-								
+								self:SetupConditionalPropertyListener(child, "Visible", step, stepIndex, connections)
 								if markerConnection then
 									markerConnection:Disconnect()
 								end
@@ -900,164 +1273,68 @@ function TutorialHandler:WaitForConditionalCondition(step, stepIndex)
 						table.insert(self.Connections, markerConnection)
 					end
 				end
-				
-				-- Check immediately in case LeftPanel is already visible
-				if leftPanel.Visible and self:CheckConditionalStartCondition(step) then
-					print("📚 TutorialHandler: Playtime reward available condition already met, showing step", stepIndex)
+			end
+		end)
+	elseif conditionName == "lootbox_available" then
+		-- Check condition immediately first
+		if conditionMet then
+			if stepIndex then
+				self:ShowTutorialStep(stepIndex)
+			end
+			return
+		end
+		
+		-- If condition not met, wait for BottomPanel to become visible first
+		-- This gives time for profile to update after victory (lootbox added to profile)
+		-- Only show altNextStep after BottomPanel is shown and condition still not met
+		Logger.debug("[TutorialHandler] WaitForConditionalCondition: lootbox_available not met yet, waiting for HudShown(BottomPanel)")
+		local hudShownConnection = EventBus:On("HudShown", function(panelName)
+			if panelName == "BottomPanel" then
+				-- BottomPanel became visible, check condition again
+				-- This gives time for profile to update with lootbox after victory
+				local conditionMetNow = self:CheckConditionalStartCondition(step)
+				if conditionMetNow then
+					Logger.debug("[TutorialHandler] WaitForConditionalCondition: lootbox_available condition met after HudShown(BottomPanel)")
+					if hudShownConnection then
+						hudShownConnection()
+						hudShownConnection = nil
+					end
 					if stepIndex then
 						self:ShowTutorialStep(stepIndex)
 					end
-					if panelVisibilityConnection then
-						panelVisibilityConnection:Disconnect()
+				elseif step.altNextStep then
+					-- Still no lootbox after BottomPanel shown, show altNextStep
+					local altNextStep = step.altNextStep
+					Logger.debug("[TutorialHandler] WaitForConditionalCondition: lootbox_available still not met after HudShown(BottomPanel), showing altNextStep %d", altNextStep)
+					if hudShownConnection then
+						hudShownConnection()
+						hudShownConnection = nil
 					end
+					self.currentStepIndex = altNextStep - 1
+					self:ShowTutorialStep(altNextStep, true)
 				end
 			end
 		end)
+		
+		if hudShownConnection then
+			table.insert(self.Connections, hudShownConnection)
+		end
 	elseif conditionName == "lootbox_claim_available" then
-		-- Set up listeners for LootboxOpening window and BtnClaim visibility changes
 		task.spawn(function()
 			local lootboxWindow = self:WaitForUIObject("LootboxOpening", 10)
 			if lootboxWindow then
-				local windowVisibilityConnection = nil
-				local buttonVisibilityConnection = nil
-				local buttonActiveConnection = nil
+				local connections = {}
+				self:SetupConditionalPropertyListener(lootboxWindow, "Visible", step, stepIndex, connections)
 				
-				-- Listen for window visibility changes
-				windowVisibilityConnection = lootboxWindow:GetPropertyChangedSignal("Visible"):Connect(function()
-					if self:CheckConditionalStartCondition(step) then
-						print("📚 TutorialHandler: Lootbox claim available condition met via window visibility, showing step", stepIndex)
-						if stepIndex then
-							self:ShowTutorialStep(stepIndex)
-						end
-						if windowVisibilityConnection then
-							windowVisibilityConnection:Disconnect()
-						end
-						if buttonVisibilityConnection then
-							buttonVisibilityConnection:Disconnect()
-						end
-						if buttonActiveConnection then
-							buttonActiveConnection:Disconnect()
-						end
-					end
-				end)
-				table.insert(self.Connections, windowVisibilityConnection)
-				
-				-- Also listen for BtnClaim visibility and active changes
 				local btnClaim = lootboxWindow:FindFirstChild("BtnClaim")
 				if btnClaim then
-					buttonVisibilityConnection = btnClaim:GetPropertyChangedSignal("Visible"):Connect(function()
-						if self:CheckConditionalStartCondition(step) then
-							print("📚 TutorialHandler: Lootbox claim available condition met via button visibility, showing step", stepIndex)
-							if stepIndex then
-								self:ShowTutorialStep(stepIndex)
-							end
-							if windowVisibilityConnection then
-								windowVisibilityConnection:Disconnect()
-							end
-							if buttonVisibilityConnection then
-								buttonVisibilityConnection:Disconnect()
-							end
-							if buttonActiveConnection then
-								buttonActiveConnection:Disconnect()
-							end
-						end
-					end)
-					table.insert(self.Connections, buttonVisibilityConnection)
-					
-					buttonActiveConnection = btnClaim:GetPropertyChangedSignal("Active"):Connect(function()
-						if self:CheckConditionalStartCondition(step) then
-							print("📚 TutorialHandler: Lootbox claim available condition met via button active, showing step", stepIndex)
-							if stepIndex then
-								self:ShowTutorialStep(stepIndex)
-							end
-							if windowVisibilityConnection then
-								windowVisibilityConnection:Disconnect()
-							end
-							if buttonVisibilityConnection then
-								buttonVisibilityConnection:Disconnect()
-							end
-							if buttonActiveConnection then
-								buttonActiveConnection:Disconnect()
-							end
-						end
-					end)
-					table.insert(self.Connections, buttonActiveConnection)
-					
-					-- Check immediately in case button is already visible and active
-					if btnClaim.Visible and btnClaim.Active and self:CheckConditionalStartCondition(step) then
-						print("📚 TutorialHandler: Lootbox claim available condition already met, showing step", stepIndex)
-						if stepIndex then
-							self:ShowTutorialStep(stepIndex)
-						end
-						if windowVisibilityConnection then
-							windowVisibilityConnection:Disconnect()
-						end
-						if buttonVisibilityConnection then
-							buttonVisibilityConnection:Disconnect()
-						end
-						if buttonActiveConnection then
-							buttonActiveConnection:Disconnect()
-						end
-					end
+					self:SetupConditionalPropertyListener(btnClaim, "Visible", step, stepIndex, connections)
+					self:SetupConditionalPropertyListener(btnClaim, "Active", step, stepIndex, connections)
 				else
-					-- Wait for BtnClaim to appear
 					local buttonConnection = lootboxWindow.ChildAdded:Connect(function(child)
 						if child.Name == "BtnClaim" then
-							buttonVisibilityConnection = child:GetPropertyChangedSignal("Visible"):Connect(function()
-								if self:CheckConditionalStartCondition(step) then
-									print("📚 TutorialHandler: Lootbox claim available condition met via button visibility, showing step", stepIndex)
-									if stepIndex then
-										self:ShowTutorialStep(stepIndex)
-									end
-									if windowVisibilityConnection then
-										windowVisibilityConnection:Disconnect()
-									end
-									if buttonVisibilityConnection then
-										buttonVisibilityConnection:Disconnect()
-									end
-									if buttonActiveConnection then
-										buttonActiveConnection:Disconnect()
-									end
-								end
-							end)
-							table.insert(self.Connections, buttonVisibilityConnection)
-							
-							buttonActiveConnection = child:GetPropertyChangedSignal("Active"):Connect(function()
-								if self:CheckConditionalStartCondition(step) then
-									print("📚 TutorialHandler: Lootbox claim available condition met via button active, showing step", stepIndex)
-									if stepIndex then
-										self:ShowTutorialStep(stepIndex)
-									end
-									if windowVisibilityConnection then
-										windowVisibilityConnection:Disconnect()
-									end
-									if buttonVisibilityConnection then
-										buttonVisibilityConnection:Disconnect()
-									end
-									if buttonActiveConnection then
-										buttonActiveConnection:Disconnect()
-									end
-								end
-							end)
-							table.insert(self.Connections, buttonActiveConnection)
-							
-							-- Check immediately
-							if child.Visible and child.Active and self:CheckConditionalStartCondition(step) then
-								print("📚 TutorialHandler: Lootbox claim available condition already met, showing step", stepIndex)
-								if stepIndex then
-									self:ShowTutorialStep(stepIndex)
-								end
-								if windowVisibilityConnection then
-									windowVisibilityConnection:Disconnect()
-								end
-								if buttonVisibilityConnection then
-									buttonVisibilityConnection:Disconnect()
-								end
-								if buttonActiveConnection then
-									buttonActiveConnection:Disconnect()
-								end
-							end
-							
+							self:SetupConditionalPropertyListener(child, "Visible", step, stepIndex, connections)
+							self:SetupConditionalPropertyListener(child, "Active", step, stepIndex, connections)
 							if buttonConnection then
 								buttonConnection:Disconnect()
 							end
@@ -1065,26 +1342,125 @@ function TutorialHandler:WaitForConditionalCondition(step, stepIndex)
 					end)
 					table.insert(self.Connections, buttonConnection)
 				end
+			end
+		end)
+	elseif conditionName == "reward_window_open" then
+		-- Handle Reward window opening (event-based)
+		task.spawn(function()
+			local rewardWindow = self:WaitForUIObject("Reward", 10)
+			if rewardWindow then
+				local connections = {}
+				-- Listen for window visibility
+				self:SetupConditionalPropertyListener(rewardWindow, "Visible", step, stepIndex, connections)
 				
-				-- Check immediately in case window is already visible
-				if lootboxWindow.Visible and self:CheckConditionalStartCondition(step) then
-					print("📚 TutorialHandler: Lootbox claim available condition already met, showing step", stepIndex)
+				-- Also listen for Victory/Loss frames appearing (they might appear after window opens)
+				local function setupVictoryLossListeners()
+					local victoryFrame = rewardWindow:FindFirstChild("Victory")
+					local lossFrame = rewardWindow:FindFirstChild("Loss")
+					
+					if victoryFrame then
+						self:SetupConditionalPropertyListener(victoryFrame, "Visible", step, stepIndex, connections)
+					end
+					if lossFrame then
+						self:SetupConditionalPropertyListener(lossFrame, "Visible", step, stepIndex, connections)
+					end
+					
+					-- Also check for BtnClaim button
+					local buttonsFrame = rewardWindow:FindFirstChild("Buttons")
+					if buttonsFrame then
+						local btnClaim = buttonsFrame:FindFirstChild("BtnClaim")
+						if btnClaim then
+							self:SetupConditionalPropertyListener(btnClaim, "Visible", step, stepIndex, connections)
+						end
+					end
+				end
+				
+				-- Setup listeners immediately if frames already exist
+				setupVictoryLossListeners()
+				
+				-- Also listen for frames being added
+				local frameAddedConnection = rewardWindow.DescendantAdded:Connect(function(descendant)
+					if descendant.Name == "Victory" or descendant.Name == "Loss" then
+						self:SetupConditionalPropertyListener(descendant, "Visible", step, stepIndex, connections)
+					end
+				end)
+				table.insert(self.Connections, frameAddedConnection)
+				
+				-- Also check ChildAdded for Buttons frame
+				local buttonsConnection = rewardWindow.ChildAdded:Connect(function(child)
+					if child.Name == "Buttons" then
+						local btnClaim = child:FindFirstChild("BtnClaim")
+						if btnClaim then
+							self:SetupConditionalPropertyListener(btnClaim, "Visible", step, stepIndex, connections)
+						end
+					end
+				end)
+				table.insert(self.Connections, buttonsConnection)
+			end
+		end)
+	elseif conditionName == "collection_count" then
+		-- Check condition immediately - if not met and has forceStepOnGameLoad, skip to next step
+		if not conditionMet and stepIndex == 9 then
+			-- Step 9: if no 3rd card, skip to step 10
+			-- Check if step 8 has forceStepOnGameLoad = 10
+			local step8Config = TutorialConfig.GetStep(8)
+			if step8Config and step8Config.forceStepOnGameLoad == 10 then
+				Logger.debug("[TutorialHandler] WaitForConditionalCondition: collection_count not met for step 9, skipping to step 10")
+				-- Update currentStepIndex to 9 to allow showing step 10
+				self.currentStepIndex = 9
+				self:ShowTutorialStep(10, true)
+				return
+			end
+		end
+		
+		-- If condition met, show the step
+		if conditionMet then
+			if stepIndex then
+				self:ShowTutorialStep(stepIndex)
+			end
+			return
+		end
+		
+		-- Wait for Deck window to become visible, then check condition
+		Logger.debug("[TutorialHandler] WaitForConditionalCondition: collection_count not met yet, waiting for Deck window")
+		local windowOpenedConnection = EventBus:On("WindowOpened", function(windowName)
+			if windowName == "Deck" then
+				-- Deck window opened, check condition again
+				local conditionMetNow = self:CheckConditionalStartCondition(step)
+				if conditionMetNow then
+					Logger.debug("[TutorialHandler] WaitForConditionalCondition: collection_count condition met after Deck window opened")
+					if windowOpenedConnection then
+						windowOpenedConnection()
+						windowOpenedConnection = nil
+					end
 					if stepIndex then
 						self:ShowTutorialStep(stepIndex)
 					end
-					if windowVisibilityConnection then
-						windowVisibilityConnection:Disconnect()
+				elseif stepIndex == 9 then
+					-- Still no 3rd card, skip to step 10
+					local step8Config = TutorialConfig.GetStep(8)
+					if step8Config and step8Config.forceStepOnGameLoad == 10 then
+						Logger.debug("[TutorialHandler] WaitForConditionalCondition: collection_count still not met, skipping to step 10")
+						if windowOpenedConnection then
+							windowOpenedConnection()
+							windowOpenedConnection = nil
+						end
+						self.currentStepIndex = 9
+						self:ShowTutorialStep(10, true)
 					end
 				end
 			end
 		end)
+		
+		if windowOpenedConnection then
+			table.insert(self.Connections, windowOpenedConnection)
+		end
 	end
 	
 	-- Subscribe to ProfileUpdated for tracking changes (no polling needed)
 	if self.NetworkClient then
 		local profileConnection = self.NetworkClient.onProfileUpdated(function(payload)
 			if self:CheckConditionalStartCondition(step) then
-				print("📚 TutorialHandler: Conditional condition met via event, showing step", stepIndex)
 				if stepIndex then
 					self:ShowTutorialStep(stepIndex)
 				end
@@ -1094,8 +1470,6 @@ function TutorialHandler:WaitForConditionalCondition(step, stepIndex)
 			end
 		end)
 		table.insert(self.Connections, profileConnection)
-	else
-		warn("📚 TutorialHandler: NetworkClient not available for conditional condition tracking")
 	end
 end
 
@@ -1178,43 +1552,40 @@ function TutorialHandler:HandleAddCardToDeck(step)
 		return false
 	end
 	
-	-- Store the target for "conditional" replacement
-	-- Build path from UI root to card instance
-	local pathParts = {}
-	local current = cardInstance
-	local uiRoot = self.UI
-	
-	while current and current ~= uiRoot and current.Parent do
-		table.insert(pathParts, 1, current.Name)
-		current = current.Parent
-	end
-	
-	-- If we reached UI root, build the path
-	if current == uiRoot then
-		local relativePath = table.concat(pathParts, ".")
+	local relativePath = self:GetRelativePath(cardInstance, self.UI)
+	if relativePath then
 		self.conditionalTargets = {
 			highlight = relativePath,
 			arrow = relativePath,
 			complete = relativePath .. ".BtnInfo"
 		}
 		return true
-	else
-		-- Fallback: use FindUIObject approach with card name
-		local cardName = "Card_" .. targetCard.cardId
-		-- Try to find using the card name directly
-		local foundCard = self:FindUIObject(cardName)
-		if foundCard then
-			-- Use a simpler path approach
-			self.conditionalTargets = {
-				highlight = cardName,
-				arrow = cardName,
-				complete = cardName .. ".BtnInfo"
-			}
-			return true
-		end
+	end
+	
+	local cardName = "Card_" .. targetCard.cardId
+	local foundCard = self:FindUIObject(cardName)
+	if foundCard then
+		self.conditionalTargets = {
+			highlight = cardName,
+			arrow = cardName,
+			complete = cardName .. ".BtnInfo"
+		}
+		return true
 	end
 	
 	return false
+end
+
+-- Execute method: HandleLootboxAvailable
+-- Checks if player has any lootbox in inventory
+function TutorialHandler:HandleLootboxAvailable(step)
+	local profile = self.ClientState and self.ClientState.getProfile and self.ClientState:getProfile()
+	if not profile then
+		return false
+	end
+	
+	local hasLootbox = profile.lootboxes and #profile.lootboxes > 0
+	return hasLootbox
 end
 
 -- Execute method: HandlePlaytimeRewardAvailable
@@ -1227,7 +1598,7 @@ function TutorialHandler:HandlePlaytimeRewardAvailable(step)
 	end)
 	
 	if not success or not NotificationMarkerHandler then
-		warn("📚 TutorialHandler: NotificationMarkerHandler not available")
+		warn("TutorialHandler: NotificationMarkerHandler not available")
 		return false
 	end
 	
@@ -1308,6 +1679,7 @@ function TutorialHandler:HandleClaimPlaytimeReward(step)
 	-- Find first available reward with claimable button
 	local targetBtnClaim = nil
 	local targetRewardIndex = nil
+	local targetContent = nil
 	
 	-- Check rewards from 1 to 7
 	for i = 1, 7 do
@@ -1327,6 +1699,7 @@ function TutorialHandler:HandleClaimPlaytimeReward(step)
 						end
 						
 						if isAvailable then
+							targetContent = content:FindFirstChild("Content")
 							targetBtnClaim = btnClaim
 							targetRewardIndex = i
 							break
@@ -1341,45 +1714,128 @@ function TutorialHandler:HandleClaimPlaytimeReward(step)
 		return false
 	end
 	
-	-- Store the target for "conditional" replacement
-	-- Build path from UI root to BtnClaim
-	local pathParts = {}
-	local current = targetBtnClaim
-	local uiRoot = self.UI
-	
-	while current and current ~= uiRoot and current.Parent do
-		table.insert(pathParts, 1, current.Name)
-		current = current.Parent
-	end
-	
-	-- If we reached UI root, build the path
-	if current == uiRoot then
-		local relativePath = table.concat(pathParts, ".")
+	local contentPath = targetContent and self:GetRelativePath(targetContent, self.UI) or nil
+	local relativePath = self:GetRelativePath(targetBtnClaim, self.UI)
+	if relativePath then
+		local highlightPath = contentPath and (contentPath .. "," .. relativePath) or relativePath
 		self.conditionalTargets = {
-			highlight = relativePath,
+			highlight = highlightPath,
 			arrow = relativePath,
 			complete = relativePath
 		}
 		return true
-	else
-		-- Fallback: use FindUIObject approach
-		local rewardName = "Reward" .. targetRewardIndex
-		local fallbackPath = "Playtime.List." .. rewardName .. ".Content.BtnClaim"
-		local foundBtn = self:FindUIObject(fallbackPath)
-		if foundBtn then
-			self.conditionalTargets = {
-				highlight = fallbackPath,
-				arrow = fallbackPath,
-				complete = fallbackPath
-			}
-			return true
-		end
+	end
+	
+	local fallbackContentPath = "Playtime.List.Reward" .. targetRewardIndex .. ".Content.Content"
+	local fallbackBtnPath = "Playtime.List.Reward" .. targetRewardIndex .. ".Content.BtnClaim"
+	local foundContent = self:FindUIObject(fallbackContentPath)
+	local foundBtn = self:FindUIObject(fallbackBtnPath)
+	if foundBtn then
+		local fallbackHighlight = foundContent and (fallbackContentPath .. "," .. fallbackBtnPath) or fallbackBtnPath
+		self.conditionalTargets = {
+			highlight = fallbackHighlight,
+			arrow = fallbackBtnPath,
+			complete = fallbackBtnPath
+		}
+		return true
 	end
 	
 	return false
 end
 
--- Helper: Get relative path from UI root
+-- Execute method: HandleRewardWindowOpen
+-- Checks if Reward window is open and determines victory/loss to set appropriate text and nextStep
+function TutorialHandler:HandleRewardWindowOpen(step)
+	-- Check if Reward window is open and visible
+	local rewardWindow = self:FindUIObject("Reward")
+	if not rewardWindow or not rewardWindow.Visible then
+		return false
+	end
+	
+	-- Check Victory and Loss frames to determine battle result
+	local victoryFrame = rewardWindow:FindFirstChild("Victory")
+	local lossFrame = rewardWindow:FindFirstChild("Loss")
+	
+	local isVictory = victoryFrame and victoryFrame.Visible
+	local isLoss = lossFrame and lossFrame.Visible
+	
+	-- If neither frame is visible yet, wait
+	if not isVictory and not isLoss then
+		return false
+	end
+	
+	-- Find BtnClaim button
+	local buttonsFrame = rewardWindow:FindFirstChild("Buttons")
+	local btnClaim = buttonsFrame and buttonsFrame:FindFirstChild("BtnClaim")
+	if not btnClaim then
+		return false
+	end
+	
+	-- Get relative path for BtnClaim
+	local btnClaimPath = self:GetRelativePath(btnClaim, self.UI)
+	if not btnClaimPath then
+		btnClaimPath = "Reward.Buttons.BtnClaim"
+	end
+	
+	if isVictory then
+		-- Victory case: use normal text and highlight Victory frame
+		local victoryPath = self:GetRelativePath(victoryFrame, self.UI) or "Reward.Victory"
+		
+		-- Find PacksSelector.Packs for highlighting
+		local packsSelectorFrame = rewardWindow:FindFirstChild("PacksSelector")
+		local packsFrame = packsSelectorFrame and packsSelectorFrame:FindFirstChild("Packs")
+		local packsPath = nil
+		if packsFrame then
+			packsPath = self:GetRelativePath(packsFrame, self.UI)
+		end
+		if not packsPath then
+			packsPath = "Reward.PacksSelector.Packs"
+		end
+		
+		-- Use normal text (already set in config)
+		-- Combine victoryPath and packsPath for highlights
+		self.conditionalTargets = {
+			highlight = victoryPath .. "," .. packsPath .."," .. btnClaimPath,
+			arrow = btnClaimPath,
+			complete = btnClaimPath
+		}
+		
+		-- Очистить override для победы (использовать исходный nextStep из конфига)
+		-- Удалить override полностью, чтобы использовать исходные значения из конфига
+		self.stepOverrides[13] = nil
+		
+		return true
+	elseif isLoss then
+		-- Loss case: use altText and highlight Loss frame
+		local lossPath = self:GetRelativePath(lossFrame, self.UI) or "Reward.Loss"
+		
+		-- Сохранить override значения, не модифицируя оригинальный конфиг
+		if not self.stepOverrides[13] then
+			self.stepOverrides[13] = {}
+		end
+		
+		-- Использовать altText для отображения
+		if step.altText then
+			self.stepOverrides[13].text = step.altText
+		end
+		
+		-- Использовать altNextStep для следующего шага
+		if step.altNextStep then
+			self.stepOverrides[13].nextStep = step.altNextStep
+		end
+		
+		self.conditionalTargets = {
+			highlight = lossPath .. "," .. btnClaimPath,
+			arrow = btnClaimPath,
+			complete = btnClaimPath
+		}
+		
+		return true
+	end
+	
+	return false
+end
+
 function TutorialHandler:GetRelativePath(object, root)
 	if not object or not root then
 		return nil
@@ -1394,6 +1850,56 @@ function TutorialHandler:GetRelativePath(object, root)
 	end
 	
 	return table.concat(pathParts, ".")
+end
+
+local function disconnectConnections(connections)
+	if not connections then return end
+	for _, conn in ipairs(connections) do
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+	end
+end
+
+function TutorialHandler:CheckConditionAndShowStep(step, stepIndex, connections)
+	-- Don't show steps that have already been completed
+	-- This prevents showing step 13 again after it was completed
+	if self.currentStepIndex and self.currentStepIndex >= stepIndex then
+		-- Step already completed, disconnect connections and return
+		disconnectConnections(connections)
+		return false
+	end
+	
+	-- Don't show if tutorial is active and showing this step
+	if self.isTutorialActive and self.showingStepIndex == stepIndex then
+		return false
+	end
+	
+	if self:CheckConditionalStartCondition(step) then
+		if stepIndex then
+			self:ShowTutorialStep(stepIndex)
+		end
+		disconnectConnections(connections)
+		return true
+	end
+	return false
+end
+
+function TutorialHandler:SetupConditionalPropertyListener(object, propertyName, step, stepIndex, connections)
+	if not object then return nil end
+	
+	local connection = object:GetPropertyChangedSignal(propertyName):Connect(function()
+		self:CheckConditionAndShowStep(step, stepIndex, connections)
+	end)
+	
+	table.insert(self.Connections, connection)
+	if connections then
+		table.insert(connections, connection)
+	end
+	
+	self:CheckConditionAndShowStep(step, stepIndex, connections)
+	
+	return connection
 end
 
 -- Helper function to wait for UI object using events instead of polling
@@ -1490,7 +1996,21 @@ function TutorialHandler:WaitForUIObject(objectPath, timeoutSeconds)
 	return foundObject
 end
 
-function TutorialHandler:ShowTutorialStep(stepIndex)
+function TutorialHandler:ShowTutorialStep(stepIndex, forceShow)
+	-- Don't show steps that have already been completed
+	-- UNLESS forceShow is true (for forceStepOnGameLoad)
+	if not forceShow and self.currentStepIndex and self.currentStepIndex >= stepIndex then
+		Logger.debug("[TutorialHandler] ShowTutorialStep: Step %d already completed (currentStepIndex=%d), skipping", 
+			stepIndex, self.currentStepIndex)
+		return
+	end
+	
+	-- Don't show the same step twice
+	if self.showingStepIndex == stepIndex and self.isTutorialActive then
+		Logger.debug("[TutorialHandler] ShowTutorialStep: Step %d already showing, skipping", stepIndex)
+		return
+	end
+	
 	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
 	
 	-- Ensure stepIndex is a number
@@ -1499,10 +2019,9 @@ function TutorialHandler:ShowTutorialStep(stepIndex)
 		return
 	end
 	
-	-- Prevent showing the same step multiple times
-	if self.isTutorialActive and self.showingStepIndex == stepIndex then
-		print("📚 TutorialHandler: Step", stepIndex, "already showing, skipping duplicate call")
-		return
+	-- Clear pending flag if this step was scheduled
+	if self.pendingNextStepIndex == stepIndex then
+		self.pendingNextStepIndex = nil
 	end
 	
 	local step = TutorialConfig.GetStep(stepIndex)
@@ -1512,45 +2031,35 @@ function TutorialHandler:ShowTutorialStep(stepIndex)
 		return
 	end
 	
-	print("📚 TutorialHandler: Showing tutorial step", stepIndex)
-	
-	-- Hide previous tutorial step if any
 	if self.isTutorialActive then
-		print("📚 TutorialHandler: Hiding previous tutorial step before showing new one")
 		self:HideTutorialStep()
-		-- Wait a tiny bit for hide animation to start
-		task.wait(0.05)
+		-- This ensures UI is fully hidden before showing next step
+		task.wait(0.15)
 	end
 	
 	self.currentStep = step
 	self.showingStepIndex = stepIndex  -- Store the index of the step currently being shown
+	self.lastShownStepIndex = stepIndex  -- Store last shown step for tracking
 	-- Note: self.currentStepIndex stores the last completed step (from profile), not the currently showing step
 	self.isTutorialActive = true
 	
-	-- Проверить видимость окна StartBattle перед показом туториала
 	if step.startCondition and step.startCondition.target == "StartBattle" then
-		local startBattleWindow = self:FindUIObject("StartBattle")
+		local startBattleWindow = self:GetCachedUIObject("StartBattle")
 		if not startBattleWindow or not startBattleWindow.Visible then
-			print("📚 TutorialHandler: StartBattle window is not open, skipping tutorial")
 			return
 		end
 		
-		-- Временно отключить BtnStart до появления туториала
-		local startButton = self:FindUIObject("StartBattle.Buttons.BtnStart")
+		local startButton = self:GetCachedUIObject("StartBattle.Buttons.BtnStart")
 		if startButton and startButton:IsA("GuiButton") then
-			print("📚 TutorialHandler: Temporarily disabling BtnStart until tutorial appears")
 			startButton.Active = false
-			-- Сохранить ссылку для последующего включения
 			self._tutorialBlockedButton = startButton
 		end
 	end
 	
-	-- Enable tutorial GUI
 	if self.tutorialGui then
 		self.tutorialGui.Enabled = true
-		print("📚 TutorialHandler: Tutorial GUI enabled")
 	else
-		warn("📚 TutorialHandler: Tutorial GUI is nil!")
+		warn("TutorialHandler: Tutorial GUI is nil")
 	end
 	
 	-- Create all tutorial elements first (before animation, so TweenUI can capture their base transparency values)
@@ -1561,16 +2070,26 @@ function TutorialHandler:ShowTutorialStep(stepIndex)
 			if objName == "conditional" then
 				local conditionalTarget = self.conditionalTargets and self.conditionalTargets.highlight
 				if conditionalTarget then
-					table.insert(highlightTargets, conditionalTarget)
+					-- Check if conditionalTarget contains multiple paths (comma-separated)
+					if string.find(conditionalTarget, ",") then
+						-- Split by comma and add each path
+						for path in string.gmatch(conditionalTarget, "([^,]+)") do
+							path = string.match(path, "^%s*(.-)%s*$")  -- Trim whitespace
+							if path and path ~= "" then
+								table.insert(highlightTargets, path)
+							end
+						end
+					else
+						table.insert(highlightTargets, conditionalTarget)
+					end
 				else
-					warn("📚 TutorialHandler: 'conditional' in highlightObjects but no target computed")
+					warn("TutorialHandler: 'conditional' in highlightObjects but no target computed")
 				end
 			else
 				table.insert(highlightTargets, objName)
 			end
 		end
 		if #highlightTargets > 0 then
-			print("📚 TutorialHandler: Highlighting objects:", table.concat(highlightTargets, ", "))
 			self:HighlightObjects(highlightTargets)
 		end
 	end
@@ -1581,48 +2100,51 @@ function TutorialHandler:ShowTutorialStep(stepIndex)
 		if arrowTarget == "conditional" then
 			arrowTarget = self.conditionalTargets and self.conditionalTargets.arrow
 			if not arrowTarget then
-				warn("📚 TutorialHandler: 'conditional' in arrow.objectName but no target computed")
-				arrowTarget = nil
+				warn("TutorialHandler: 'conditional' in arrow.objectName but no target computed")
 			end
 		end
 		if arrowTarget then
-			print("📚 TutorialHandler: Showing arrow for", arrowTarget, "side:", step.arrow.side)
 			self:ShowArrow(arrowTarget, step.arrow.side)
-		else
-			print("📚 TutorialHandler: No arrow to show or arrow config incomplete")
 		end
-	else
-		print("📚 TutorialHandler: No arrow to show or arrow config incomplete")
 	end
 	
-	-- Show path if specified
 	if step.path then
-		print("📚 TutorialHandler: Showing path to", step.path)
 		self:ShowPath(step.path)
 	end
 	
-	-- Show text
-	if step.text then
-		print("📚 TutorialHandler: Showing text:", step.text)
-		self:ShowText(step.text)
+	-- Использовать override текст, если он есть, иначе использовать текст из конфига
+	local textToShow = step.text
+	if self.stepOverrides[stepIndex] and self.stepOverrides[stepIndex].text then
+		textToShow = self.stepOverrides[stepIndex].text
 	end
 	
-	-- Show tutorial with animation (after all elements are created, so TweenUI captures their base values)
-	self:ShowTutorialWithAnimation()
+	if textToShow then
+		self:ShowText(textToShow)
+	end
 	
-	-- Set up complete condition listener
+	-- Disable all ProximityPrompts when tutorial overlay is shown
+	self:DisableAllProximityPrompts()
+	
+	-- If step requires prompt_click, re-enable required prompts
+	if step.completeCondition and step.completeCondition.type == "prompt_click" then
+		Logger.debug("[TutorialHandler] ShowTutorialStep: Step requires prompt_click, enabling required ProximityPrompts")
+		self:EnableRequiredProximityPrompts(step)
+	end
+	
+	self:ShowTutorialWithAnimation()
 	self:SetupCompleteConditionListener(step)
 end
 
 function TutorialHandler:HideTutorialStep()
 	self.isTutorialActive = false
-	self.isTutorialTemporarilyHidden = false  -- Сбросить флаг
+	self.isTutorialTemporarilyHidden = false
 	self.currentStep = nil
-	self.showingStepIndex = nil  -- Clear showing step index
+	self.showingStepIndex = nil
+	self.pendingStepIndex = nil
+	self.pendingNextStepIndex = nil  -- Clear pending next step flag
 	
-	-- Очистить соединения для отслеживания окон
 	for _, conn in ipairs(self.windowVisibilityConnections) do
-		if conn then
+		if conn and typeof(conn) == "RBXScriptConnection" then
 			conn:Disconnect()
 		end
 	end
@@ -1640,9 +2162,12 @@ function TutorialHandler:HideTutorialStep()
 	-- Clear conditional targets
 	self.conditionalTargets = {}
 	
+	-- Clear UI object cache to ensure fresh lookups on next step
+	self._uiObjectCache = {}
+	
 	-- Clean up update connections (for position updates)
 	for _, conn in ipairs(self.updateConnections) do
-		if conn then
+		if conn and typeof(conn) == "RBXScriptConnection" then
 			conn:Disconnect()
 		end
 	end
@@ -1651,18 +2176,19 @@ function TutorialHandler:HideTutorialStep()
 	-- Clean up temporary tutorial connections (complete condition listeners, etc.)
 	-- But keep persistent connections (ProfileUpdated) active
 	for _, conn in ipairs(self.Connections) do
-		if conn then
+		if conn and typeof(conn) == "RBXScriptConnection" then
 			conn:Disconnect()
 		end
 	end
 	self.Connections = {}
 	
-	-- Убедиться, что BtnStart включен, если туториал был скрыт
 	if self._tutorialBlockedButton then
-		print("📚 TutorialHandler: Tutorial hidden, re-enabling BtnStart")
 		self._tutorialBlockedButton.Active = true
 		self._tutorialBlockedButton = nil
 	end
+	
+	-- Restore all ProximityPrompts when tutorial overlay is hidden
+	self:RestoreAllProximityPrompts()
 end
 
 function TutorialHandler:ShowTutorialWithAnimation()
@@ -1670,29 +2196,38 @@ function TutorialHandler:ShowTutorialWithAnimation()
 		-- Fallback: just enable GUI if container not found
 		if self.tutorialGui then
 			self.tutorialGui.Enabled = true
+			Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: Enabled GUI (no container)")
+		else
+			warn("[TutorialHandler] ShowTutorialWithAnimation: No tutorialGui or tutorialContainer")
 		end
 		return
 	end
 	
+	Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: Showing tutorial container")
+	
+	-- Enable GUI BEFORE animation to prevent race condition with FadeOut callback
+	if self.tutorialGui then
+		self.tutorialGui.Enabled = true
+		Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: GUI enabled before animation")
+	end
+	
 	local TweenUI = self.Utilities and self.Utilities.TweenUI
 	if TweenUI and TweenUI.FadeIn then
-		TweenUI.FadeIn(self.tutorialContainer, 0.3, function()
-			-- После завершения анимации включить BtnStart обратно
+		Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: Using TweenUI.FadeIn")
+		TweenUI.FadeIn(self.tutorialContainer, 0.1, function()
 			if self._tutorialBlockedButton then
-				print("📚 TutorialHandler: Tutorial appeared, re-enabling BtnStart")
 				self._tutorialBlockedButton.Active = true
 				self._tutorialBlockedButton = nil
 			end
+			Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: FadeIn complete")
 		end)
 	else
-		-- Fallback: just show
+		Logger.debug("[TutorialHandler] ShowTutorialWithAnimation: Using fallback (no TweenUI)")
 		self.tutorialContainer.Visible = true
 		if self.tutorialGui then
 			self.tutorialGui.Enabled = true
 		end
-		-- Включить BtnStart сразу, если нет анимации
 		if self._tutorialBlockedButton then
-			print("📚 TutorialHandler: Tutorial appeared (no animation), re-enabling BtnStart")
 			self._tutorialBlockedButton.Active = true
 			self._tutorialBlockedButton = nil
 		end
@@ -1704,23 +2239,44 @@ function TutorialHandler:HideTutorialWithAnimation()
 		-- Fallback: just disable GUI if container not found
 		if self.tutorialGui then
 			self.tutorialGui.Enabled = false
+			Logger.debug("[TutorialHandler] HideTutorialWithAnimation: Disabled GUI (no container)")
+		else
+			Logger.debug("[TutorialHandler] HideTutorialWithAnimation: No tutorialGui or tutorialContainer")
 		end
 		return
 	end
 	
+	Logger.debug("[TutorialHandler] HideTutorialWithAnimation: Hiding tutorial container")
+	
 	local TweenUI = self.Utilities and self.Utilities.TweenUI
 	if TweenUI and TweenUI.FadeOut then
-		TweenUI.FadeOut(self.tutorialContainer, 0.3, function()
-			if self.tutorialGui then
-				self.tutorialGui.Enabled = false
+		Logger.debug("[TutorialHandler] HideTutorialWithAnimation: Using TweenUI.FadeOut")
+		-- Store current isTutorialActive state to check in callback
+		local wasTutorialActive = self.isTutorialActive
+		-- Pass skipHide=true to prevent TweenUI from hiding container, we'll do it in callback if needed
+		TweenUI.FadeOut(self.tutorialContainer, 0.1, function()
+			-- Only hide container and disable GUI if tutorial is still not active (prevent race condition)
+			-- If a new step was shown while FadeOut was animating, isTutorialActive will be true
+			if not self.isTutorialActive and wasTutorialActive == false then
+				if self.tutorialContainer then
+					self.tutorialContainer.Visible = false
+				end
+				if self.tutorialGui then
+					self.tutorialGui.Enabled = false
+				end
+				Logger.debug("[TutorialHandler] HideTutorialWithAnimation: FadeOut complete, container hidden (tutorial not active)")
+			else
+				Logger.debug("[TutorialHandler] HideTutorialWithAnimation: FadeOut complete, but tutorial is active again, keeping container visible")
 			end
-		end)
+		end, true)  -- skipHide = true to prevent TweenUI from hiding container automatically
 	else
+		Logger.debug("[TutorialHandler] HideTutorialWithAnimation: Using fallback (no TweenUI)")
 		-- Fallback: just hide
 		self.tutorialContainer.Visible = false
-		if self.tutorialGui then
+		if self.tutorialGui and not self.isTutorialActive then
 			self.tutorialGui.Enabled = false
 		end
+		Logger.debug("[TutorialHandler] HideTutorialWithAnimation: Fallback complete, container hidden")
 	end
 end
 
@@ -1790,7 +2346,7 @@ function TutorialHandler:HighlightObjects(objectNames)
 						allFound = true
 						-- Disconnect all connections
 						for _, conn in ipairs(connections) do
-							if conn and conn.Connected then
+							if conn and typeof(conn) == "RBXScriptConnection" and conn.Connected then
 								conn:Disconnect()
 							end
 						end
@@ -1833,7 +2389,7 @@ function TutorialHandler:HighlightObjects(objectNames)
 						if not allFound then
 							allFound = true
 							for _, conn in ipairs(connections) do
-								if conn and conn.Connected then
+								if conn and typeof(conn) == "RBXScriptConnection" and conn.Connected then
 									conn:Disconnect()
 								end
 							end
@@ -2156,7 +2712,7 @@ end
 function TutorialHandler:HideHighlight()
 	-- Disconnect update connections
 	for _, conn in ipairs(self.updateConnections) do
-		if conn then
+		if conn and typeof(conn) == "RBXScriptConnection" then
 			conn:Disconnect()
 		end
 	end
@@ -2181,7 +2737,18 @@ function TutorialHandler:HideHighlight()
 		end
 	end
 	
+	-- Check if tutorial is not active before clearing highlights
+	-- If tutorial is not active, restore ProximityPrompts when overlay is hidden
+	local wasTutorialActive = self.isTutorialActive
+	
 	self.highlightObjects = {}
+	
+	-- If tutorial is not active and highlights are being hidden, restore ProximityPrompts
+	-- This handles cases where overlay is hidden but tutorial was active
+	if not wasTutorialActive then
+		Logger.debug("[TutorialHandler] HideHighlight: Tutorial not active, restoring ProximityPrompts")
+		self:RestoreAllProximityPrompts()
+	end
 end
 
 function TutorialHandler:ShowArrow(objectName, side)
@@ -2419,7 +2986,6 @@ function TutorialHandler:ShowPath(targetName)
 			
 			-- If not found, wait for it to appear using events only
 			if not targetObject then
-				print("📚 TutorialHandler: Path target not found, waiting for:", targetName)
 				-- Parse path to find parent and child name
 				local pathParts = {}
 				for part in string.gmatch(path, "([^%.]+)") do
@@ -2443,8 +3009,6 @@ function TutorialHandler:ShowPath(targetName)
 						local connection = parent.DescendantAdded:Connect(function(descendant)
 							if descendant.Name == childName then
 								targetObject = descendant
-								print("📚 TutorialHandler: Path target appeared via event:", targetName)
-								-- Continue with path setup
 								self:SetupPathForObject(targetObject, targetName)
 								if connection then
 									connection:Disconnect()
@@ -2462,7 +3026,7 @@ function TutorialHandler:ShowPath(targetName)
 						end
 					else
 						-- Parent not found, need to wait for parent first
-						warn("📚 TutorialHandler: Path parent not found:", parentPath or "Workspace")
+						warn("TutorialHandler: Path parent not found:", parentPath or "Workspace")
 					end
 				end
 			else
@@ -2479,7 +3043,7 @@ function TutorialHandler:ShowPath(targetName)
 			else
 				-- UI objects are handled differently - they appear through UI system
 				-- For now, we'll use a simple check (UI objects usually appear quickly)
-				warn("📚 TutorialHandler: Path target not found in UI:", targetName)
+				warn("TutorialHandler: Path target not found in UI:", targetName)
 			end
 		end
 	end)
@@ -2623,6 +3187,197 @@ function TutorialHandler:HidePath()
 	self.pathObjects = {}
 end
 
+-- Helper: Find Deck container
+function TutorialHandler:FindDeckContainer()
+	local deckWindow = self:FindUIObject("Deck")
+	if not deckWindow then
+		return nil
+	end
+	
+	local container = deckWindow:FindFirstChild("Deck")
+	if container then
+		container = container:FindFirstChild("Content")
+		if container then
+			container = container:FindFirstChild("Content")
+		end
+	end
+	return container
+end
+
+-- Helper: Find Collection container
+function TutorialHandler:FindCollectionContainer()
+	local deckWindow = self:FindUIObject("Deck")
+	if not deckWindow then
+		return nil
+	end
+	
+	local container = deckWindow:FindFirstChild("Collection")
+	if container then
+		container = container:FindFirstChild("Content")
+		if container then
+			container = container:FindFirstChild("Content")
+			if container then
+				container = container:FindFirstChild("ScrollingFrame")
+			end
+		end
+	end
+	return container
+end
+
+-- Helper: Setup button listener
+function TutorialHandler:SetupButtonClickListener(button)
+	if not button or not button.Parent then
+		return false
+	end
+	
+	if not (button:IsA("GuiButton") or button:IsA("TextButton") or button:IsA("ImageButton")) then
+		warn("TutorialHandler: Found object but it's not a button type:", button.ClassName)
+		return false
+	end
+	
+	local function completeStep()
+		if self.isTutorialActive and self.showingStepIndex then
+			self:CompleteCurrentStep()
+		end
+	end
+	
+	local clickConnection = button.MouseButton1Click:Connect(completeStep)
+	local activatedConnection = button.Activated:Connect(completeStep)
+	
+	table.insert(self.Connections, clickConnection)
+	table.insert(self.Connections, activatedConnection)
+	return true
+end
+
+-- Helper: Setup listener on card button (BtnInfo)
+function TutorialHandler:SetupCardButtonListener(card, buttonName)
+	if not card then
+		return false
+	end
+	
+	local btnInfo = card:FindFirstChild(buttonName or "BtnInfo")
+	if btnInfo then
+		return self:SetupButtonClickListener(btnInfo)
+	end
+	
+	local btnInfoConnection = card.ChildAdded:Connect(function(child)
+		if child.Name == (buttonName or "BtnInfo") then
+			if self:SetupButtonClickListener(child) then
+				if btnInfoConnection then
+					btnInfoConnection:Disconnect()
+				end
+			end
+		end
+	end)
+	table.insert(self.Connections, btnInfoConnection)
+	
+	btnInfo = card:FindFirstChild(buttonName or "BtnInfo")
+	if btnInfo then
+		if btnInfoConnection then
+			btnInfoConnection:Disconnect()
+		end
+		return self:SetupButtonClickListener(btnInfo)
+	end
+	
+	return false
+end
+
+-- Helper: Setup listener for DeckCard button
+function TutorialHandler:SetupDeckCardButtonListener(target, condition)
+	local cardIdPattern = string.match(condition.target, "DeckCard_([^_]+)_")
+	if not cardIdPattern then
+		return false
+	end
+	
+	local deckContainer = self:FindDeckContainer()
+	if not deckContainer then
+		return false
+	end
+	
+	local function setupListenerOnCard(card)
+		return self:SetupCardButtonListener(card)
+	end
+	
+	local descendantConnection = deckContainer.ChildAdded:Connect(function(child)
+		if child.Name:match("^DeckCard_" .. cardIdPattern .. "_") then
+			setupListenerOnCard(child)
+		end
+	end)
+	table.insert(self.Connections, descendantConnection)
+	
+	task.spawn(function()
+		if not self.isTutorialActive then
+			return
+		end
+		
+		for _, child in pairs(deckContainer:GetChildren()) do
+			if child.Name:match("^DeckCard_" .. cardIdPattern .. "_") then
+				if not setupListenerOnCard(child) then
+					task.wait(0.1)
+					setupListenerOnCard(child)
+				end
+			end
+		end
+	end)
+	
+	return true
+end
+
+-- Helper: Setup listener for Collection Card button
+function TutorialHandler:SetupCollectionCardButtonListener(target, condition)
+	local cardIdPattern = string.match(target, "Card_([^%.]+)")
+	if not cardIdPattern then
+		return false
+	end
+	
+	local collectionContainer = self:FindCollectionContainer()
+	if not collectionContainer then
+		return false
+	end
+	
+	local function setupListenerOnCard(card)
+		return self:SetupCardButtonListener(card)
+	end
+	
+	local descendantConnection = collectionContainer.ChildAdded:Connect(function(child)
+		if child.Name == "Card_" .. cardIdPattern then
+			setupListenerOnCard(child)
+		end
+	end)
+	table.insert(self.Connections, descendantConnection)
+	
+	task.spawn(function()
+		if not self.isTutorialActive then
+			return
+		end
+		
+		for _, child in pairs(collectionContainer:GetChildren()) do
+			if child.Name == "Card_" .. cardIdPattern then
+				if setupListenerOnCard(child) then
+					break
+				end
+			end
+		end
+	end)
+	
+	return true
+end
+
+-- Helper: Setup listener for generic button
+function TutorialHandler:SetupGenericButtonListener(target)
+	local button = self:FindUIObject(target)
+	if button and self:SetupButtonClickListener(button) then
+		return
+	end
+	
+	task.spawn(function()
+		local foundButton = self:WaitForUIObject(target, 10)
+		if foundButton then
+			self:SetupButtonClickListener(foundButton)
+		end
+	end)
+end
+
 function TutorialHandler:SetupCompleteConditionListener(step)
 	if not step or not step.completeCondition then
 		return
@@ -2630,430 +3385,72 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 	
 	local condition = step.completeCondition
 	
-	-- Сохранить оригинальное значение target для проверки
-	local originalTarget = condition.target
-	
 	-- Resolve "conditional" target
 	local target = condition.target
 	if target == "conditional" then
-		-- For prompt_click, get target from path
 		if condition.type == "prompt_click" and step.path then
 			target = step.path
 		else
-			-- Get from conditionalTargets
 			target = self.conditionalTargets and self.conditionalTargets.complete
 			if not target then
-				warn("📚 TutorialHandler: 'conditional' in completeCondition.target but no target computed")
+				warn("TutorialHandler: 'conditional' in completeCondition.target but no target computed")
 				return
 			end
 		end
 	end
 	
-	-- Если это prompt_click с conditional target, настроить отслеживание окон
-	if condition.type == "prompt_click" and originalTarget == "conditional" then
-		print("📚 TutorialHandler: Setting up window visibility tracking for prompt_click with conditional target")
-		self:SetupWindowVisibilityTracking(step, stepIndex)
+	if condition.type == "prompt_click" and condition.target == "conditional" then
+		self:SetupWindowVisibilityTracking(step)
 	end
 	
-	if condition.type == "window_open" then
-		-- Use event-based approach instead of polling
+	if condition.type == "window_open" or condition.type == "window_close" then
 		task.spawn(function()
-			-- Find window using event-based waiting
 			local window = self:WaitForUIObject(target, 10)
+			if not window then
+				warn("TutorialHandler: Window not found for complete condition:", target)
+				return
+			end
 			
-			if window then
-				-- Set up property change listener
-				local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
-				local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
+			local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
+			local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
+				if condition.type == "window_open" then
 					if self:CheckCompleteCondition(step) then
 						self:CompleteCurrentStep()
-						if connection then
-							connection:Disconnect()
-						end
-					end
-				end)
-				table.insert(self.Connections, connection)
-				
-				-- Check immediately in case window is already open
-				if self:CheckCompleteCondition(step) then
-					self:CompleteCurrentStep()
-					if connection then
 						connection:Disconnect()
 					end
-				end
-			else
-				warn("📚 TutorialHandler: Window not found for complete condition:", target)
-			end
-		end)
-	elseif condition.type == "window_close" then
-		-- Set up window close listener (event-based)
-		print("📚 TutorialHandler: Setting up complete condition listener for window close:", target)
-		
-		task.spawn(function()
-			-- Find window object using event-based waiting
-			local window = self:WaitForUIObject(target, 10)
-			
-			if window then
-				-- Set up property change listener (event-based, no polling)
-				local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
-				local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
-					-- Check if window is closed
-					local isClosed = false
-					if window:IsA("ScreenGui") then
-						isClosed = window.Enabled == false
-					else
-						isClosed = window.Visible == false
-					end
-					
+				elseif condition.type == "window_close" then
+					local isClosed = window:IsA("ScreenGui") and not window.Enabled or not window.Visible
 					if isClosed and self.isTutorialActive then
-						print("📚 TutorialHandler: Window closed, completing step:", target)
 						self:CompleteCurrentStep()
-						if connection then
-							connection:Disconnect()
-						end
-					end
-				end)
-				table.insert(self.Connections, connection)
-				
-				-- Check immediately in case window is already closed
-				local isClosed = false
-				if window:IsA("ScreenGui") then
-					isClosed = window.Enabled == false
-				else
-					isClosed = window.Visible == false
-				end
-				
-				if isClosed and self.isTutorialActive then
-					print("📚 TutorialHandler: Window already closed, completing step:", target)
-					self:CompleteCurrentStep()
-					if connection then
 						connection:Disconnect()
 					end
 				end
-			else
-				warn("📚 TutorialHandler: Window not found for close condition:", target)
+			end)
+			table.insert(self.Connections, connection)
+			
+			if condition.type == "window_open" and self:CheckCompleteCondition(step) then
+				self:CompleteCurrentStep()
+				connection:Disconnect()
+			elseif condition.type == "window_close" then
+				local isClosed = window:IsA("ScreenGui") and not window.Enabled or not window.Visible
+				if isClosed and self.isTutorialActive then
+					self:CompleteCurrentStep()
+					connection:Disconnect()
+				end
 			end
 		end)
 	elseif condition.type == "button_click" then
-		-- Set up button click listener
-		print("📚 TutorialHandler: Setting up complete condition listener for button:", target)
-		
-		-- For deck cards, we need to handle the case where cards are recreated
-		local function setupButtonListener(button)
-			if not button then
-				return nil
-			end
-			
-			-- Check if button still exists and is valid
-			if not button.Parent then
-				warn("📚 TutorialHandler: ⚠️ Button found but has no parent:", button:GetFullName())
-				return nil
-			end
-			
-			print("📚 TutorialHandler: ✅ Found button:", button.Name, "Type:", button.ClassName, "FullName:", button:GetFullName())
-			print("📚 TutorialHandler: Button parent:", button.Parent:GetFullName())
-			print("📚 TutorialHandler: Button parent parent:", button.Parent.Parent and button.Parent.Parent:GetFullName() or "nil")
-			
-			if button:IsA("GuiButton") or button:IsA("TextButton") or button:IsA("ImageButton") then
-				-- Check if button is active and visible
-				print("📚 TutorialHandler: Button state - Active:", button.Active, "Visible:", button.Visible, "ZIndex:", button.ZIndex)
-				
-				-- Check if button is already connected (prevent duplicates)
-				local alreadyConnected = false
-				for _, conn in ipairs(self.Connections) do
-					if conn and conn.Connected then
-						-- Try to check if this connection is for this button
-						-- (we can't directly check, but we can log)
-					end
-				end
-				
-				local clickConnection = button.MouseButton1Click:Connect(function()
-					print("📚 TutorialHandler: 🔔 Complete condition button clicked (MouseButton1Click):", target)
-					print("📚 TutorialHandler: Button still exists:", button.Parent ~= nil, "Button Active:", button.Active)
-					-- Complete step immediately (synchronously) before window might close
-					if self.isTutorialActive then
-						print("📚 TutorialHandler: Tutorial is active, completing step...")
-						-- Use task.spawn to ensure completion happens even if window closes
-						task.spawn(function()
-							-- Double-check tutorial is still active (window might have closed)
-							if self.isTutorialActive and self.showingStepIndex then
-								self:CompleteCurrentStep()
-							end
-						end)
-					else
-						warn("📚 TutorialHandler: Button clicked but tutorial not active! isTutorialActive:", self.isTutorialActive)
-					end
-				end)
-				
-				local activatedConnection = button.Activated:Connect(function()
-					print("📚 TutorialHandler: 🔔 Complete condition button activated (Activated):", target)
-					print("📚 TutorialHandler: Button still exists:", button.Parent ~= nil, "Button Active:", button.Active)
-					-- Complete step immediately (synchronously) before window might close
-					if self.isTutorialActive then
-						print("📚 TutorialHandler: Tutorial is active, completing step...")
-						-- Use task.spawn to ensure completion happens even if window closes
-						task.spawn(function()
-							-- Double-check tutorial is still active (window might have closed)
-							if self.isTutorialActive and self.showingStepIndex then
-								self:CompleteCurrentStep()
-							end
-						end)
-					else
-						warn("📚 TutorialHandler: Button activated but tutorial not active! isTutorialActive:", self.isTutorialActive)
-					end
-				end)
-				
-				table.insert(self.Connections, clickConnection)
-				table.insert(self.Connections, activatedConnection)
-				print("📚 TutorialHandler: ✅ Complete condition listener connected successfully (both MouseButton1Click and Activated)")
-				print("📚 TutorialHandler: Total connections:", #self.Connections)
-				
-				return true
-			else
-				warn("📚 TutorialHandler: ❌ Found object but it's not a button type:", button.ClassName, "Path:", target)
-				return false
-			end
-		end
-		
-		-- For deck cards, always use ChildAdded listener to handle recreation
 		if string.find(target, "DeckCard_") then
-			-- Extract card ID pattern from path
-			local cardIdPattern = string.match(condition.target, "DeckCard_([^_]+)_")
-			print("📚 TutorialHandler: Card ID pattern:", cardIdPattern)
-			
-			if cardIdPattern then
-				-- Find Deck container
-				local deckWindow = self:FindUIObject("Deck")
-				if deckWindow then
-					local deckContainer = deckWindow:FindFirstChild("Deck")
-					if deckContainer then
-						deckContainer = deckContainer:FindFirstChild("Content")
-						if deckContainer then
-							deckContainer = deckContainer:FindFirstChild("Content")
-							if deckContainer then
-								print("📚 TutorialHandler: Found deck container, setting up ChildAdded listener")
-								
-								-- Function to set up listener on a card
-								local function setupListenerOnCard(card)
-									if not card then return false end
-									
-									-- Use ChildAdded to wait for BtnInfo instead of task.wait
-									local btnInfo = card:FindFirstChild("BtnInfo")
-									if btnInfo then
-										print("📚 TutorialHandler: Found BtnInfo in card:", card.Name)
-										return setupButtonListener(btnInfo) ~= nil
-									else
-										-- Wait for BtnInfo to be added using events
-										local btnInfoConnection = card.ChildAdded:Connect(function(child)
-											if child.Name == "BtnInfo" then
-												print("📚 TutorialHandler: BtnInfo added to card:", card.Name)
-												if setupButtonListener(child) then
-													if btnInfoConnection then
-														btnInfoConnection:Disconnect()
-													end
-												end
-											end
-										end)
-										table.insert(self.Connections, btnInfoConnection)
-										
-										-- Check existing children immediately (in case BtnInfo was added between checks)
-										btnInfo = card:FindFirstChild("BtnInfo")
-										if btnInfo then
-											if btnInfoConnection then
-												btnInfoConnection:Disconnect()
-											end
-											return setupButtonListener(btnInfo) ~= nil
-										end
-										
-										return false
-									end
-								end
-								
-								-- Listen for new deck cards being added (this handles recreation)
-								local descendantConnection = deckContainer.ChildAdded:Connect(function(child)
-									print("📚 TutorialHandler: ChildAdded event fired for:", child.Name)
-									if child.Name:match("^DeckCard_" .. cardIdPattern .. "_") then
-										print("📚 TutorialHandler: Matching deck card added:", child.Name)
-										-- setupListenerOnCard will handle waiting for BtnInfo using events
-										setupListenerOnCard(child)
-									end
-								end)
-								table.insert(self.Connections, descendantConnection)
-								
-								-- Also check existing children (in case card already exists)
-								-- But wait a bit first to let DeckHandler finish updating
-								task.spawn(function()
-									--task.wait(0.2)  -- Give DeckHandler time to update display
-									if not self.isTutorialActive then return end
-									
-									for _, child in pairs(deckContainer:GetChildren()) do
-										if child.Name:match("^DeckCard_" .. cardIdPattern .. "_") then
-											print("📚 TutorialHandler: Found existing deck card after delay:", child.Name)
-											if not setupListenerOnCard(child) then
-												-- Try again
-												task.wait(0.1)
-												setupListenerOnCard(child)
-											end
-										end
-									end
-								end)
-								
-								print("📚 TutorialHandler: ✅ Set up ChildAdded listener for deck card recreation")
-							end
-						end
-					end
-				end
-			end
+			self:SetupDeckCardButtonListener(target, condition)
 		elseif string.find(target, "Card_") and not string.find(target, "DeckCard_") then
-			-- For collection cards, handle recreation similar to deck cards
-			-- Extract card ID pattern from path (e.g., "Card_600" or "Collection.Content.Content.ScrollingFrame.Card_600.BtnInfo")
-			local cardIdPattern = string.match(target, "Card_([^%.]+)")
-			print("📚 TutorialHandler: Collection card ID pattern:", cardIdPattern)
-			
-			if cardIdPattern then
-				-- Find Collection container
-				local deckWindow = self:FindUIObject("Deck")
-				if deckWindow then
-					local collectionContainer = deckWindow:FindFirstChild("Collection")
-					if collectionContainer then
-						collectionContainer = collectionContainer:FindFirstChild("Content")
-						if collectionContainer then
-							collectionContainer = collectionContainer:FindFirstChild("Content")
-							if collectionContainer then
-								collectionContainer = collectionContainer:FindFirstChild("ScrollingFrame")
-							end
-						end
-					end
-					
-					if collectionContainer then
-						print("📚 TutorialHandler: Found collection container, setting up ChildAdded listener")
-						
-						-- Function to set up listener on a card
-						local function setupListenerOnCard(card)
-							if not card then return false end
-							
-							-- Use ChildAdded to wait for BtnInfo instead of task.wait
-							local btnInfo = card:FindFirstChild("BtnInfo")
-							if btnInfo then
-								print("📚 TutorialHandler: Found BtnInfo in collection card:", card.Name)
-								return setupButtonListener(btnInfo) ~= nil
-							else
-								-- Wait for BtnInfo to be added using events
-								local btnInfoConnection = card.ChildAdded:Connect(function(child)
-									if child.Name == "BtnInfo" then
-										print("📚 TutorialHandler: BtnInfo added to collection card:", card.Name)
-										if setupButtonListener(child) then
-											if btnInfoConnection then
-												btnInfoConnection:Disconnect()
-											end
-										end
-									end
-								end)
-								table.insert(self.Connections, btnInfoConnection)
-								
-								-- Check existing children immediately (in case BtnInfo was added between checks)
-								btnInfo = card:FindFirstChild("BtnInfo")
-								if btnInfo then
-									if btnInfoConnection then
-										btnInfoConnection:Disconnect()
-									end
-									return setupButtonListener(btnInfo) ~= nil
-								end
-								
-								return false
-							end
-						end
-						
-						-- Listen for new collection cards being added (this handles recreation)
-						local descendantConnection = collectionContainer.ChildAdded:Connect(function(child)
-							print("📚 TutorialHandler: ChildAdded event fired for collection card:", child.Name)
-							if child.Name == "Card_" .. cardIdPattern then
-								print("📚 TutorialHandler: Matching collection card added:", child.Name)
-								-- setupListenerOnCard will handle waiting for BtnInfo using events
-								setupListenerOnCard(child)
-							end
-						end)
-						table.insert(self.Connections, descendantConnection)
-						
-						-- Also check existing children (in case card already exists)
-						-- But wait a bit first to let DeckHandler finish updating
-						task.spawn(function()
-							--task.wait(0.2)  -- Give DeckHandler time to update display
-							if not self.isTutorialActive then return end
-							
-							for _, child in pairs(collectionContainer:GetChildren()) do
-								if child.Name == "Card_" .. cardIdPattern then
-									print("📚 TutorialHandler: Found existing collection card:", child.Name)
-									if setupListenerOnCard(child) then
-										print("📚 TutorialHandler: ✅ Set up listener on existing collection card")
-										break
-									end
-								end
-							end
-						end)
-						
-						print("📚 TutorialHandler: ✅ Set up ChildAdded listener for collection card recreation")
-					else
-						warn("📚 TutorialHandler: Collection container not found, falling back to normal approach")
-						-- Fall through to normal approach
-						local button = self:FindUIObject(target)
-						if button and setupButtonListener(button) then
-							print("📚 TutorialHandler: ✅ Listener set up on initial button (fallback)")
-						else
-							warn("📚 TutorialHandler: ❌ Button not found in fallback, waiting for it to appear:", target)
-							task.spawn(function()
-								local foundButton = self:WaitForUIObject(target, 10)
-								if foundButton and setupButtonListener(foundButton) then
-									print("📚 TutorialHandler: ✅ Found button using event-based waiting (fallback)")
-								end
-							end)
-						end
-					end
-				else
-					warn("📚 TutorialHandler: Deck window not found, falling back to normal approach")
-					-- Fall through to normal approach
-					local button = self:FindUIObject(target)
-					if button and setupButtonListener(button) then
-						print("📚 TutorialHandler: ✅ Listener set up on initial button (fallback)")
-					else
-						warn("📚 TutorialHandler: ❌ Button not found in fallback, waiting for it to appear:", target)
-						task.spawn(function()
-							local foundButton = self:WaitForUIObject(target, 10)
-							if foundButton and setupButtonListener(foundButton) then
-								print("📚 TutorialHandler: ✅ Found button using event-based waiting (fallback)")
-							end
-						end)
-					end
-				end
-			else
-				-- Fall through to normal approach
+			if not self:SetupCollectionCardButtonListener(target, condition) then
+				self:SetupGenericButtonListener(target)
 			end
 		else
-			-- For non-deck cards, use normal approach
-			-- Try to find button immediately
-			local button = self:FindUIObject(target)
-			print("📚 TutorialHandler: Initial button search result:", button and button:GetFullName() or "nil")
-			
-			if button and setupButtonListener(button) then
-				-- Successfully set up listener
-				print("📚 TutorialHandler: ✅ Listener set up on initial button")
-			else
-				warn("📚 TutorialHandler: ❌ Button not found immediately, waiting for it to appear:", target)
-				
-				-- Also wait for button to appear using event-based approach
-				task.spawn(function()
-					local foundButton = self:WaitForUIObject(target, 10)
-					if foundButton and setupButtonListener(foundButton) then
-						print("📚 TutorialHandler: ✅ Found button using event-based waiting")
-					else
-						warn("📚 TutorialHandler: ❌ Timeout waiting for complete condition button:", target)
-					end
-				end)
-			end
+			self:SetupGenericButtonListener(target)
 		end
 	elseif condition.type == "prompt_click" then
 		-- Set up ProximityPrompt listener
-		print("📚 TutorialHandler: Setting up complete condition listener for ProximityPrompt:", target)
 		
 		-- Wait for target object and ProximityPrompt to appear using events only
 		task.spawn(function()
@@ -3068,7 +3465,6 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 				
 				-- If not found, wait for it to appear using events only
 				if not targetObject then
-					print("📚 TutorialHandler: ProximityPrompt target not found, waiting for:", target)
 					-- Parse path to find parent and child name
 					local pathParts = {}
 					for part in string.gmatch(path, "([^%.]+)") do
@@ -3087,14 +3483,13 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 							parent = workspace:FindFirstChild(parentPath, true)
 						end
 						
-						if parent then
+							if parent then
 							-- Use event-based approach only (no polling)
 							local connection = parent.DescendantAdded:Connect(function(descendant)
 								if descendant.Name == childName then
 									targetObject = descendant
-									print("📚 TutorialHandler: ProximityPrompt target appeared via event:", target)
 									-- Now wait for ProximityPrompt
-									self:WaitForProximityPrompt(targetObject, step, stepIndex)
+									self:WaitForProximityPrompt(targetObject, step)
 									if connection then
 										connection:Disconnect()
 									end
@@ -3107,15 +3502,15 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 							if existingObject then
 								targetObject = existingObject
 								connection:Disconnect()
-								self:WaitForProximityPrompt(targetObject, step, stepIndex)
+								self:WaitForProximityPrompt(targetObject, step)
 							end
 						else
-							warn("📚 TutorialHandler: ProximityPrompt target parent not found:", parentPath or "Workspace")
+							warn("TutorialHandler: ProximityPrompt target parent not found:", parentPath or "Workspace")
 						end
 					end
 				else
 					-- Object already found, wait for ProximityPrompt
-					self:WaitForProximityPrompt(targetObject, step, stepIndex)
+					self:WaitForProximityPrompt(targetObject, step)
 				end
 			else
 				-- Try to find in workspace directly
@@ -3123,9 +3518,9 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 				
 				if targetObject then
 					-- Object already found, wait for ProximityPrompt
-					self:WaitForProximityPrompt(targetObject, step, stepIndex)
+					self:WaitForProximityPrompt(targetObject, step)
 				else
-					warn("📚 TutorialHandler: ProximityPrompt target not found:", target)
+					warn("TutorialHandler: ProximityPrompt target not found:", target)
 				end
 			end
 		end)
@@ -3133,9 +3528,9 @@ function TutorialHandler:SetupCompleteConditionListener(step)
 end
 
 -- Wait for ProximityPrompt to appear in target object (event-based only)
-function TutorialHandler:WaitForProximityPrompt(targetObject, step, stepIndex)
+function TutorialHandler:WaitForProximityPrompt(targetObject, step)
 	if not targetObject then
-		warn("📚 TutorialHandler: WaitForProximityPrompt called with nil targetObject")
+		warn("TutorialHandler: WaitForProximityPrompt called with nil targetObject")
 		return
 	end
 	
@@ -3146,22 +3541,15 @@ function TutorialHandler:WaitForProximityPrompt(targetObject, step, stepIndex)
 	end
 	
 	if prompt then
-		-- ProximityPrompt already exists
-		self:SetupProximityPromptListener(prompt, step, stepIndex)
+		self:SetupProximityPromptListener(prompt)
 	else
-		-- Wait for ProximityPrompt to appear using events only
-		print("📚 TutorialHandler: ProximityPrompt not found, waiting for it to appear")
-		
-		-- Declare connections first
 		local descendantConnection = nil
 		local childConnection = nil
 		
-		-- Listen for DescendantAdded (covers all descendants)
 		descendantConnection = targetObject.DescendantAdded:Connect(function(descendant)
 			if descendant:IsA("ProximityPrompt") then
 				prompt = descendant
-				print("📚 TutorialHandler: ProximityPrompt appeared via DescendantAdded")
-				self:SetupProximityPromptListener(prompt, step, stepIndex)
+				self:SetupProximityPromptListener(prompt)
 				if descendantConnection then
 					descendantConnection:Disconnect()
 				end
@@ -3172,12 +3560,10 @@ function TutorialHandler:WaitForProximityPrompt(targetObject, step, stepIndex)
 		end)
 		table.insert(self.Connections, descendantConnection)
 		
-		-- Also listen for direct ChildAdded (faster for direct children)
 		childConnection = targetObject.ChildAdded:Connect(function(child)
 			if child:IsA("ProximityPrompt") then
 				prompt = child
-				print("📚 TutorialHandler: ProximityPrompt appeared via ChildAdded")
-				self:SetupProximityPromptListener(prompt, step, stepIndex)
+				self:SetupProximityPromptListener(prompt)
 				if childConnection then
 					childConnection:Disconnect()
 				end
@@ -3190,73 +3576,321 @@ function TutorialHandler:WaitForProximityPrompt(targetObject, step, stepIndex)
 	end
 end
 
--- Setup listener for ProximityPrompt
-function TutorialHandler:SetupProximityPromptListener(prompt, step, stepIndex)
-	if not prompt then
-		warn("📚 TutorialHandler: SetupProximityPromptListener called with nil prompt")
+-- Enable ProximityPrompts that match promptTargets for the current step
+function TutorialHandler:EnableRequiredProximityPrompts(step)
+	if not step or not step.promptTargets or #step.promptTargets == 0 then
 		return
 	end
 	
-	print("📚 TutorialHandler: ✅ Found ProximityPrompt:", prompt:GetFullName())
+	local workspace = game:GetService("Workspace")
 	
-	-- Connect to ProximityPrompt activation
+	-- Find and enable prompts that match promptTargets
+	for _, promptTarget in ipairs(step.promptTargets) do
+		-- Search for objects with matching names
+		local targetObject = workspace:FindFirstChild(promptTarget, true)
+		if targetObject then
+			-- Find ProximityPrompt in target object
+			local prompt = targetObject:FindFirstChildOfClass("ProximityPrompt")
+			if not prompt then
+				prompt = targetObject:FindFirstChild("ProximityPrompt", true)
+			end
+			
+			if prompt then
+				-- Re-enable this prompt if it was disabled
+				if self.proximityPromptsState[prompt] ~= nil then
+					local success, err = pcall(function()
+						prompt.Enabled = true
+					end)
+					if not success then
+						warn("TutorialHandler: Failed to re-enable ProximityPrompt for target:", promptTarget, err)
+					else
+						Logger.debug("[TutorialHandler] EnableRequiredProximityPrompts: Re-enabled ProximityPrompt for target:", promptTarget)
+					end
+				else
+					-- Prompt wasn't disabled, but ensure it's enabled
+					local success, err = pcall(function()
+						if not prompt.Enabled then
+							prompt.Enabled = true
+							Logger.debug("[TutorialHandler] EnableRequiredProximityPrompts: Enabled ProximityPrompt for target:", promptTarget)
+						end
+					end)
+					if not success then
+						warn("TutorialHandler: Failed to enable ProximityPrompt for target:", promptTarget, err)
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Setup listener for ProximityPrompt
+function TutorialHandler:SetupProximityPromptListener(prompt)
+	if not prompt then
+		warn("TutorialHandler: SetupProximityPromptListener called with nil prompt")
+		return
+	end
+	
+	-- Re-enable this prompt if it was disabled, as it's needed for tutorial step completion
+	-- This allows users to interact with prompts required for prompt_click steps
+	if self.proximityPromptsState[prompt] ~= nil then
+		-- Prompt was disabled, restore it to enabled state
+		local success, err = pcall(function()
+			prompt.Enabled = true
+		end)
+		if not success then
+			warn("TutorialHandler: Failed to re-enable ProximityPrompt:", err)
+		else
+			Logger.debug("[TutorialHandler] SetupProximityPromptListener: Re-enabled ProximityPrompt for tutorial step")
+		end
+	else
+		-- Prompt wasn't disabled, but ensure it's enabled
+		local success, err = pcall(function()
+			if not prompt.Enabled then
+				prompt.Enabled = true
+				Logger.debug("[TutorialHandler] SetupProximityPromptListener: Enabled ProximityPrompt for tutorial step")
+			end
+		end)
+		if not success then
+			warn("TutorialHandler: Failed to enable ProximityPrompt:", err)
+		end
+	end
+	
 	local promptConnection = prompt.Triggered:Connect(function(player)
 		if player == Players.LocalPlayer and self.isTutorialActive then
-			print("📚 TutorialHandler: 🔔 ProximityPrompt triggered, completing step...")
 			self:CompleteCurrentStep()
 		end
 	end)
 	
 	table.insert(self.Connections, promptConnection)
-	print("📚 TutorialHandler: ✅ ProximityPrompt listener connected successfully")
 end
 
 function TutorialHandler:CompleteCurrentStep()
 	if not self.isTutorialActive or not self.showingStepIndex then
-		warn("📚 TutorialHandler: CompleteCurrentStep called but tutorial not active or no step index")
+		warn(string.format("[TutorialHandler] CompleteCurrentStep called but tutorial not active (isTutorialActive: %s, showingStepIndex: %s)", 
+			tostring(self.isTutorialActive), tostring(self.showingStepIndex)))
 		return
 	end
 	
-	-- Send completion to server with current step index
-	-- self.showingStepIndex is the step being shown (1-indexed)
-	-- Server expects stepIndex == currentStep + 1, where currentStep is the last completed step (0-indexed)
-	-- So if we're showing step 1, we send stepIndex=1, and server checks: 1 == 0 + 1 ✓
 	local stepIndexToSend = self.showingStepIndex
-	print("📚 TutorialHandler: Completing step", self.showingStepIndex, "-> sending stepIndex", stepIndexToSend, "to server")
+	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
 	
-	if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
-		self.NetworkClient.requestCompleteTutorialStep(stepIndexToSend)
-	else
-		warn("📚 TutorialHandler: NetworkClient.requestCompleteTutorialStep not available")
+	-- IMPORTANT: Always send the CURRENT showing step to server (e.g., step 13)
+	-- Server will check if this step has altNextStep and handle the rollback
+	-- Do NOT send altNextStep directly - server needs to know which step was completed
+	
+	Logger.debug("[TutorialHandler] CompleteCurrentStep: completing step %d, currentStepIndex = %d", 
+		stepIndexToSend, self.currentStepIndex)
+	
+	-- Optimistic update: update local state immediately for instant visual feedback
+	-- BUT only if we're completing the next sequential step (not skipping steps)
+	-- This prevents server rejection when trying to complete step N+2 while server is on step N
+	local wasOptimisticUpdate = false
+	if self.currentStepIndex == stepIndexToSend - 1 then
+		-- We're completing the next sequential step - safe to optimistically update
+		local oldStepIndex = self.currentStepIndex
+		self.currentStepIndex = stepIndexToSend
+		wasOptimisticUpdate = true
+		Logger.debug("[TutorialHandler] Optimistic update: currentStepIndex %d -> %d", oldStepIndex, stepIndexToSend)
+		
+		-- IMPORTANT: For step 13, check stepOverrides BEFORE determining next step
+		-- This ensures we use the correct next step (14 for victory, 11 for loss)
+		-- Don't show next step optimistically for step 13 - wait for server confirmation
+		-- to avoid showing wrong step (11) briefly before server confirms (14)
+		if stepIndexToSend == 13 then
+			Logger.debug("[TutorialHandler] Step 13 completed, waiting for server confirmation before showing next step")
+			-- Hide current step and wait for server response
+			self:HideTutorialStep()
+			-- Send request to server - it will determine victory/loss and return correct step
+			local useAltNextStep = false
+			if self.stepOverrides[13] and self.stepOverrides[13].nextStep then
+				local overrideNextStep = self.stepOverrides[13].nextStep
+				local stepConfig = TutorialConfig.GetStep(stepIndexToSend)
+				if stepConfig and stepConfig.altNextStep == overrideNextStep then
+					useAltNextStep = true
+					Logger.debug("[TutorialHandler] CompleteCurrentStep: Step 13 has altNextStep override (loss case), will use altNextStep")
+				end
+			end
+			
+			if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+				self.NetworkClient.requestCompleteTutorialStep(stepIndexToSend, useAltNextStep)
+				Logger.debug("[TutorialHandler] Sent requestCompleteTutorialStep(%d, useAltNextStep=%s) to server", stepIndexToSend, tostring(useAltNextStep))
+			end
+			return
+		end
+	elseif self.currentStepIndex < stepIndexToSend - 1 then
+		-- We're trying to skip steps - don't optimistically update, wait for server
+		Logger.debug("[TutorialHandler] Cannot optimistically update: currentStepIndex=%d, stepIndexToSend=%d (would skip steps), waiting for server", 
+			self.currentStepIndex, stepIndexToSend)
+		
+		-- Check if next step's startCondition is already met, show it immediately
+		local nextStepIndex = self:GetNextStepIndex(stepIndexToSend)
+		if nextStepIndex then
+			local nextStep = TutorialConfig.GetStep(nextStepIndex)
+			if nextStep then
+				local nextStartConditionMet = self:CheckStartCondition(nextStep)
+				if nextStartConditionMet then
+					Logger.debug("[TutorialHandler] Next step %d startCondition already met, showing immediately", nextStepIndex)
+					-- Hide current step first
+					self:HideTutorialStep()
+					-- Mark next step as pending to track scheduled show
+					self.pendingNextStepIndex = nextStepIndex
+					-- Use task.spawn with task.wait() for more reliable execution than task.defer
+					task.spawn(function()
+						-- Wait for FadeOut animation to complete (0.3s duration + small buffer)
+						-- This ensures UI is fully hidden and ready before showing next step
+						task.wait(0.35)
+						-- Verify we should still show this step
+						-- Check that pending flag is still set and we haven't progressed past this step
+						if self.pendingNextStepIndex == nextStepIndex then
+							-- Verify currentStepIndex hasn't been rolled back (server might have rejected)
+							local currentStep = self.currentStepIndex
+							if currentStep >= stepIndexToSend then
+								self:ShowTutorialStep(nextStepIndex)
+								self.pendingNextStepIndex = nil  -- Clear flag after showing
+							else
+								-- Step was rolled back by server, clear flag
+								Logger.debug("[TutorialHandler] Step %d was rolled back by server (currentStepIndex=%d < stepIndexToSend=%d), clearing pending flag", 
+									nextStepIndex, currentStep, stepIndexToSend)
+								self.pendingNextStepIndex = nil
+							end
+						else
+							-- Step was cancelled or superseded
+							self.pendingNextStepIndex = nil
+						end
+					end)
+					
+					-- Send request to server asynchronously
+					if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+						self.NetworkClient.requestCompleteTutorialStep(stepIndexToSend)
+						Logger.debug("[TutorialHandler] Sent requestCompleteTutorialStep(%d) to server", stepIndexToSend)
+					end
+					return
+				else
+					-- Next step's startCondition is not met yet
+					-- If it's a conditional step, wait for the condition to be met
+					if nextStep.startCondition and nextStep.startCondition.type == "conditional" then
+						Logger.debug("[TutorialHandler] Next step %d is conditional and condition not met, waiting for condition", nextStepIndex)
+						-- Hide current step first
+						self:HideTutorialStep()
+						-- Send request to server asynchronously
+						if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+							self.NetworkClient.requestCompleteTutorialStep(stepIndexToSend)
+							Logger.debug("[TutorialHandler] Sent requestCompleteTutorialStep(%d) to server", stepIndexToSend)
+						end
+						-- Wait for conditional condition to be met
+						self:WaitForConditionalCondition(nextStep, nextStepIndex)
+						return
+					end
+				end
+			end
+		end
 	end
 	
-	-- Hide tutorial step
+	-- Check if step is already completed (e.g., shown via forceStepOnGameLoad but already done on server)
+	-- This happens when forceStepOnGameLoad shows an earlier step that was already completed
+	-- In this case, we should skip server request and automatically show next step in sequence
+	-- This allows forceStepOnGameLoad to show steps in order for tutorial purposes
+	if stepIndexToSend < self.currentStepIndex then
+		Logger.debug("[TutorialHandler] CompleteCurrentStep: Step %d already completed (currentStepIndex=%d), skipping server request and showing next step in sequence", 
+			stepIndexToSend, self.currentStepIndex)
+		
+		-- Hide current step
+		self:HideTutorialStep()
+		
+		-- Get the next step in sequence (stepIndexToSend + 1, not currentStepIndex + 1)
+		-- This allows showing steps in order: 5 -> 6 -> 7, even if they're already completed
+		local nextStepInSequence = self:GetNextStepIndex(stepIndexToSend)
+		if nextStepInSequence then
+			-- Continue showing steps in sequence until we reach a step that needs server update
+			-- Process the next step immediately (it will handle its own startCondition)
+			task.spawn(function()
+				self:WaitForLoadingScreenToFinish()
+				-- Check if next step is also already completed
+				-- If so, it will also skip server request and continue to next step
+				self:ProcessTutorialStep(nextStepInSequence, false)
+			end)
+		else
+			Logger.debug("[TutorialHandler] No next step after %d, tutorial complete", stepIndexToSend)
+		end
+		return
+	end
+	
+	-- Check if we have override for nextStep (e.g., altNextStep for loss case in step 13, or no lootbox case in step 14)
+	-- This indicates victory/loss: if stepOverrides[13].nextStep = 11, it's a loss
+	-- For step 14: if stepOverrides[14].nextStep = 11, it means no lootbox was available
+	local useAltNextStep = false
+	if stepIndexToSend == 13 then
+		if self.stepOverrides[13] and self.stepOverrides[13].nextStep then
+			local overrideNextStep = self.stepOverrides[13].nextStep
+			local stepConfig = TutorialConfig.GetStep(stepIndexToSend)
+			if stepConfig and stepConfig.altNextStep == overrideNextStep then
+				useAltNextStep = true
+				Logger.debug("[TutorialHandler] CompleteCurrentStep: Step 13 has altNextStep override (loss case), will use altNextStep")
+			end
+		end
+	elseif stepIndexToSend == 14 then
+		-- For step 14, check if stepOverrides[14] exists (set by HandleLootboxAvailable when no lootbox)
+		if self.stepOverrides[14] and self.stepOverrides[14].nextStep then
+			local overrideNextStep = self.stepOverrides[14].nextStep
+			local stepConfig = TutorialConfig.GetStep(stepIndexToSend)
+			if stepConfig and stepConfig.altNextStep == overrideNextStep then
+				useAltNextStep = true
+				Logger.debug("[TutorialHandler] CompleteCurrentStep: Step 14 has altNextStep override (no lootbox case), will use altNextStep")
+			end
+		end
+	end
+	
+	-- Send request to server
+	if self.NetworkClient and self.NetworkClient.requestCompleteTutorialStep then
+		self.NetworkClient.requestCompleteTutorialStep(stepIndexToSend, useAltNextStep)
+		Logger.debug("[TutorialHandler] Sent requestCompleteTutorialStep(%d, useAltNextStep=%s) to server", stepIndexToSend, tostring(useAltNextStep))
+	else
+		warn("[TutorialHandler] NetworkClient.requestCompleteTutorialStep not available")
+	end
+	
+	-- Hide tutorial step (next step will be shown when server confirms)
 	self:HideTutorialStep()
 end
 
-function TutorialHandler:FindUIObject(objectName)
-	-- Search in UI hierarchy
-	if not self.UI or not objectName then
-		if not self.UI then
-			warn("📚 TutorialHandler: FindUIObject - self.UI is nil!")
-		end
+-- Get cached UI object or find and cache it
+function TutorialHandler:GetCachedUIObject(objectName)
+	if not objectName then
 		return nil
 	end
 	
-	-- If searching for the UI root itself, return it directly
-	if objectName == self.UI.Name then
+	-- Check cache first
+	if self._uiObjectCache[objectName] then
+		local cached = self._uiObjectCache[objectName]
+		-- Verify object still exists, has valid parent, and is a GuiObject
+		-- This ensures we don't return stale references to destroyed or recreated objects
+		if cached and cached.Parent and cached:IsA("GuiObject") then
+			return cached
+		else
+			-- Cache invalid, clear it
+			self._uiObjectCache[objectName] = nil
+		end
+	end
+	
+	-- Find object
+	local obj = self:FindUIObject(objectName)
+	if obj then
+		-- Cache it for future use
+		self._uiObjectCache[objectName] = obj
+	end
+	
+	return obj
+end
+
+function TutorialHandler:FindUIObject(objectName)
+	if not self.UI or not objectName then
+		return nil
+	end
+	
+	if objectName == self.UI.Name or (objectName == "GameUI" and self.UI.Name == "GameUI") then
 		return self.UI
 	end
 	
-	-- Debug: log when searching for GameUI
-	if objectName == "GameUI" and self.UI.Name == "GameUI" then
-		-- This should have been caught above, but just in case
-		return self.UI
-	end
-	
-	-- Check if objectName contains a path (e.g., "BottomPanel.Packs.Outline.Content.Pack1")
 	if string.find(objectName, "%.") then
-		-- Split path by dots
 		local pathParts = {}
 		for part in string.gmatch(objectName, "([^%.]+)") do
 			table.insert(pathParts, part)
@@ -3266,56 +3900,35 @@ function TutorialHandler:FindUIObject(objectName)
 			return nil
 		end
 		
-		-- Start from UI root
 		local current = self.UI
 		
-		-- Navigate through path
 		for i, partName in ipairs(pathParts) do
 			if not current then
 				return nil
 			end
 			
-			-- Try to find child with this name
 			local child = current:FindFirstChild(partName)
-			if not child then
-				-- If not found and we're not at the last part, return nil
-				-- If it's the last part, try recursive search as fallback
-				if i < #pathParts then
-					return nil
-				else
-					-- Last part: try recursive search
-					child = current:FindFirstChild(partName, true)
-				end
+			if not child and i == #pathParts then
+				child = current:FindFirstChild(partName, true)
 			end
 			
 			if not child then
 				return nil
 			end
 			
-			-- If this is the last part, check if it's a GuiObject
 			if i == #pathParts then
-				if child:IsA("GuiObject") then
-					return child
-				else
-					return nil
-				end
+				return child:IsA("GuiObject") and child or nil
 			end
 			
-			-- Move to next level
 			current = child
 		end
 		
-		-- Should not reach here, but return nil if we do
 		return nil
 	else
-		-- Simple name search (no path)
-		-- Try FindFirstChild with recursive search first (most efficient)
 		local obj = self.UI:FindFirstChild(objectName, true)
 		if obj and obj:IsA("GuiObject") then
 			return obj
 		end
-		
-		-- Also check in PlayerGui directly (for top-level objects)
 		local Players = game:GetService("Players")
 		local player = Players.LocalPlayer
 		if player then
@@ -3362,48 +3975,51 @@ function TutorialHandler:Cleanup()
 	-- Disconnect all connections (both temporary and persistent)
 	for _, connection in ipairs(self.Connections) do
 		if connection then
-			connection:Disconnect()
+			if type(connection) == "function" then
+				connection()
+			elseif connection.Disconnect then
+				connection:Disconnect()
+			end
 		end
 	end
 	self.Connections = {}
 	
 	for _, connection in ipairs(self.PersistentConnections) do
 		if connection then
-			connection:Disconnect()
+			if type(connection) == "function" then
+				connection()
+			elseif connection.Disconnect then
+				connection:Disconnect()
+			end
 		end
 	end
 	self.PersistentConnections = {}
 	
+	-- Clear caches
+	self._uiObjectCache = {}
+	
 	self._initialized = false
-	print("✅ TutorialHandler cleaned up")
+	Logger.debug("✅ TutorialHandler cleaned up")
 end
 
 -- Setup window visibility tracking for prompt_click with conditional target
-function TutorialHandler:SetupWindowVisibilityTracking(step, stepIndex)
-	print("📚 TutorialHandler: SetupWindowVisibilityTracking called")
+function TutorialHandler:SetupWindowVisibilityTracking(step)
 	
-	-- Список основных окон в UI, которые нужно отслеживать
 	local windowNames = {
 		"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
 		"StartBattle", "Battle", "LootboxOpening"
 	}
 	
-	-- Очистить предыдущие соединения
 	for _, conn in ipairs(self.windowVisibilityConnections) do
-		if conn then
+		if conn and typeof(conn) == "RBXScriptConnection" then
 			conn:Disconnect()
 		end
 	end
 	self.windowVisibilityConnections = {}
 	
-	print("📚 TutorialHandler: Tracking", #windowNames, "windows for visibility changes")
-	
-	-- Отслеживать каждое окно
 	for _, windowName in ipairs(windowNames) do
 		local window = self:FindUIObject(windowName)
 		if window then
-			print("📚 TutorialHandler: Found window:", windowName, "setting up listener")
-			-- Подписаться на изменение видимости
 			local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
 			local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
 				local isOpen = false
@@ -3413,25 +4029,18 @@ function TutorialHandler:SetupWindowVisibilityTracking(step, stepIndex)
 					isOpen = window.Visible == true
 				end
 				
-				print("📚 TutorialHandler: Window", windowName, "visibility changed, isOpen:", isOpen, "isTutorialActive:", self.isTutorialActive, "isTemporarilyHidden:", self.isTutorialTemporarilyHidden)
-				
 				if isOpen then
-					-- Окно открылось - временно скрыть туториал
 					if self.isTutorialActive and not self.isTutorialTemporarilyHidden then
-						print("📚 TutorialHandler: Window opened, temporarily hiding tutorial:", windowName)
 						self:TemporarilyHideTutorial()
 					end
 				else
-					-- Окно закрылось - восстановить туториал
 					if self.isTutorialActive and self.isTutorialTemporarilyHidden then
-						print("📚 TutorialHandler: Window closed, restoring tutorial:", windowName)
 						self:RestoreTutorial()
 					end
 				end
 			end)
 			table.insert(self.windowVisibilityConnections, connection)
 		else
-			-- Окно еще не существует, подождать его появления
 			task.spawn(function()
 				local foundWindow = self:WaitForUIObject(windowName, 10)
 				if foundWindow then
@@ -3446,12 +4055,10 @@ function TutorialHandler:SetupWindowVisibilityTracking(step, stepIndex)
 						
 						if isOpen then
 							if self.isTutorialActive and not self.isTutorialTemporarilyHidden then
-								print("📚 TutorialHandler: Window opened, temporarily hiding tutorial:", windowName)
 								self:TemporarilyHideTutorial()
 							end
 						else
 							if self.isTutorialActive and self.isTutorialTemporarilyHidden then
-								print("📚 TutorialHandler: Window closed, restoring tutorial:", windowName)
 								self:RestoreTutorial()
 							end
 						end
@@ -3463,59 +4070,38 @@ function TutorialHandler:SetupWindowVisibilityTracking(step, stepIndex)
 	end
 end
 
--- Метод для временного скрытия туториала (без очистки состояния)
 function TutorialHandler:TemporarilyHideTutorial()
-	print("📚 TutorialHandler: TemporarilyHideTutorial called, isTutorialActive:", self.isTutorialActive, "isTemporarilyHidden:", self.isTutorialTemporarilyHidden)
-	
 	if not self.isTutorialActive or self.isTutorialTemporarilyHidden then
-		print("📚 TutorialHandler: Skipping hide - tutorial not active or already hidden")
 		return
 	end
 	
 	self.isTutorialTemporarilyHidden = true
 	
-	-- Скрыть GUI
 	if self.tutorialGui then
-		print("📚 TutorialHandler: Disabling tutorial GUI")
 		self.tutorialGui.Enabled = false
-	else
-		warn("📚 TutorialHandler: tutorialGui is nil!")
 	end
 	
-	-- Скрыть контейнер с анимацией
 	if self.tutorialContainer then
 		local TweenUI = self.Utilities and self.Utilities.TweenUI
 		if TweenUI and TweenUI.FadeOut then
-			print("📚 TutorialHandler: Fading out tutorial container")
 			TweenUI.FadeOut(self.tutorialContainer, 0.2)
 		else
-			print("📚 TutorialHandler: Hiding tutorial container directly")
 			self.tutorialContainer.Visible = false
 		end
-	else
-		warn("📚 TutorialHandler: tutorialContainer is nil!")
 	end
-	
-	print("📚 TutorialHandler: Tutorial temporarily hidden")
 end
 
--- Метод для восстановления туториала
 function TutorialHandler:RestoreTutorial()
-	print("📚 TutorialHandler: RestoreTutorial called, isTutorialActive:", self.isTutorialActive, "isTemporarilyHidden:", self.isTutorialTemporarilyHidden)
-	
 	if not self.isTutorialActive or not self.isTutorialTemporarilyHidden then
-		print("📚 TutorialHandler: Skipping restore - tutorial not active or not temporarily hidden")
 		return
 	end
 	
-	-- Проверить, что все окна закрыты (использовать тот же список, что и в SetupWindowVisibilityTracking)
 	local windowNames = {
 		"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
 		"StartBattle", "Battle", "LootboxOpening"
 	}
 	
 	local anyWindowOpen = false
-	local openWindows = {}
 	for _, windowName in ipairs(windowNames) do
 		local window = self:FindUIObject(windowName)
 		if window then
@@ -3528,45 +4114,99 @@ function TutorialHandler:RestoreTutorial()
 			
 			if isOpen then
 				anyWindowOpen = true
-				table.insert(openWindows, windowName)
+				break
 			end
-		else
-			print("📚 TutorialHandler: Window", windowName, "not found")
 		end
 	end
 	
-	-- Если какое-то окно все еще открыто, не восстанавливать туториал
 	if anyWindowOpen then
-		print("📚 TutorialHandler: Cannot restore tutorial - some windows are still open:", table.concat(openWindows, ", "))
 		return
 	end
 	
-	print("📚 TutorialHandler: All windows closed, restoring tutorial")
 	self.isTutorialTemporarilyHidden = false
 	
-	-- Показать GUI
 	if self.tutorialGui then
-		print("📚 TutorialHandler: Enabling tutorial GUI")
 		self.tutorialGui.Enabled = true
-	else
-		warn("📚 TutorialHandler: tutorialGui is nil!")
 	end
 	
-	-- Показать контейнер с анимацией
 	if self.tutorialContainer then
 		local TweenUI = self.Utilities and self.Utilities.TweenUI
 		if TweenUI and TweenUI.FadeIn then
-			print("📚 TutorialHandler: Fading in tutorial container")
 			TweenUI.FadeIn(self.tutorialContainer, 0.2)
 		else
-			print("📚 TutorialHandler: Showing tutorial container directly")
 			self.tutorialContainer.Visible = true
 		end
-	else
-		warn("📚 TutorialHandler: tutorialContainer is nil!")
+	end
+end
+
+-- Disable all ProximityPrompts in workspace when tutorial overlay is shown
+function TutorialHandler:DisableAllProximityPrompts()
+	local workspace = game:GetService("Workspace")
+	
+	-- Find all ProximityPrompts in workspace
+	local allPrompts = {}
+	for _, descendant in ipairs(workspace:GetDescendants()) do
+		if descendant:IsA("ProximityPrompt") then
+			table.insert(allPrompts, descendant)
+		end
 	end
 	
-	print("📚 TutorialHandler: Tutorial restored")
+	-- Store original state and disable prompts
+	for _, prompt in ipairs(allPrompts) do
+		-- Store original state if not already stored
+		if not self.proximityPromptsState[prompt] then
+			self.proximityPromptsState[prompt] = prompt.Enabled
+		end
+		-- Disable the prompt safely
+		local success, err = pcall(function()
+			prompt.Enabled = false
+		end)
+		if not success then
+			warn("TutorialHandler: Failed to disable ProximityPrompt:", err)
+		end
+	end
+	
+	-- Listen for new prompts being added while tutorial is active
+	if not self.proximityPromptListener then
+		self.proximityPromptListener = workspace.DescendantAdded:Connect(function(descendant)
+			if descendant:IsA("ProximityPrompt") then
+				-- Store original state and disable new prompt
+				if not self.proximityPromptsState[descendant] then
+					self.proximityPromptsState[descendant] = descendant.Enabled
+				end
+				local success, err = pcall(function()
+					descendant.Enabled = false
+				end)
+				if not success then
+					warn("TutorialHandler: Failed to disable new ProximityPrompt:", err)
+				end
+			end
+		end)
+	end
+end
+
+-- Restore all ProximityPrompts to their original state when tutorial overlay is hidden
+function TutorialHandler:RestoreAllProximityPrompts()
+	-- Restore all stored prompts
+	for prompt, originalState in pairs(self.proximityPromptsState) do
+		if prompt and prompt.Parent then
+			local success, err = pcall(function()
+				prompt.Enabled = originalState
+			end)
+			if not success then
+				warn("TutorialHandler: Failed to restore ProximityPrompt:", err)
+			end
+		end
+	end
+	
+	-- Clear stored state
+	self.proximityPromptsState = {}
+	
+	-- Disconnect listener
+	if self.proximityPromptListener then
+		self.proximityPromptListener:Disconnect()
+		self.proximityPromptListener = nil
+	end
 end
 
 return TutorialHandler

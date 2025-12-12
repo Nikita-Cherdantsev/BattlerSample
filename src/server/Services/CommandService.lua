@@ -20,6 +20,9 @@ local DEVELOPER_IDS = {
 	[8768307230] = true,
 }
 
+-- Track executing commands to prevent duplicates
+local executingCommands = {}
+
 local function IsDeveloper(player)
 	if not player then
 		return false
@@ -47,70 +50,92 @@ local function ResetProfileCommand(player)
 	end
 	
 	local userId = player.UserId
-	print(string.format("[CommandService] Resetting profile for player %s (UserId: %d)", player.Name, userId))
 	
-	local newProfile = ProfileSchema.CreateProfile(userId)
-	local BoxTypes = require(ReplicatedStorage.Modules.Loot.BoxTypes)
-	local BoxRoller = require(ReplicatedStorage.Modules.Loot.BoxRoller)
-	
-	if not newProfile.lootboxes then
-		newProfile.lootboxes = {}
+	-- Prevent duplicate execution
+	if executingCommands[userId] then
+		warn(string.format("[CommandService] ⚠️ Reset profile already in progress for player %s", player.Name))
+		return false, "Reset already in progress"
 	end
 	
-	local now = os.time()
-	newProfile.lootboxes[1] = {
-		id = BoxRoller.GenerateBoxId(),
-		rarity = BoxTypes.BoxRarity.BEGINNER,
-		state = BoxTypes.BoxState.READY,
-		seed = BoxRoller.GenerateSeed(),
-		source = "starter",
-		startedAt = now,
-		unlocksAt = now
-	}
+	executingCommands[userId] = true
 	
-	newProfile.squadPower = ComputeSquadPower(newProfile)
-	ProfileManager.ClearCache(userId)
-	
-	if not ProfileManager.SaveProfile(userId, newProfile) then
-		warn(string.format("[CommandService] ❌ Failed to save reset profile for player %s", player.Name))
-		return false, "Error saving profile"
-	end
-	
-	if not ProfileManager.LoadProfile(userId) then
-		warn(string.format("[CommandService] ❌ Failed to reload profile for player %s", player.Name))
-		return false, "Error reloading profile"
-	end
-	
-	if PlayerDataService.ClearCache then
-		PlayerDataService.ClearCache(userId)
-	end
-	if PlayerDataService.EnsureProfileLoaded then
-		PlayerDataService.EnsureProfileLoaded(player)
-	end
-	
-	local snapshot = ProfileSnapshotService.GetSnapshot(player, {
-		includeCollection = true,
-		includeLoginInfo = true,
-		includeDaily = true,
-		includePlaytime = true
-	})
-	
-	if snapshot then
-		snapshot.forceReload = true
-		snapshot.serverNow = os.time()
+	local success, result = pcall(function()
+		print(string.format("[CommandService] Resetting profile for player %s (UserId: %d)", player.Name, userId))
 		
-		local networkFolder = ReplicatedStorage:FindFirstChild("Network")
-		local ProfileUpdated = networkFolder and networkFolder:FindFirstChild("ProfileUpdated")
+		local newProfile = ProfileSchema.CreateProfile(userId)
+		local BoxTypes = require(ReplicatedStorage.Modules.Loot.BoxTypes)
+		local BoxRoller = require(ReplicatedStorage.Modules.Loot.BoxRoller)
 		
-		if ProfileUpdated then
-			ProfileUpdated:FireClient(player, snapshot)
-			print(string.format("[CommandService] ✅ Profile reset and sent to client for player %s", player.Name))
-		else
-			warn("[CommandService] ⚠️ ProfileUpdated not found, client will not receive update")
+		if not newProfile.lootboxes then
+			newProfile.lootboxes = {}
 		end
-	end
+		
+		local now = os.time()
+		newProfile.lootboxes[1] = {
+			id = BoxRoller.GenerateBoxId(),
+			rarity = BoxTypes.BoxRarity.BEGINNER,
+			state = BoxTypes.BoxState.READY,
+			seed = BoxRoller.GenerateSeed(),
+			source = "starter",
+			startedAt = now,
+			unlocksAt = now
+		}
+		
+		newProfile.squadPower = ComputeSquadPower(newProfile)
+		ProfileManager.ClearCache(userId)
+		
+		if not ProfileManager.SaveProfile(userId, newProfile) then
+			warn(string.format("[CommandService] ❌ Failed to save reset profile for player %s", player.Name))
+			return false, "Error saving profile"
+		end
+		
+		-- Profile is now in cache after SaveProfile, no need to reload
+		-- Clear PlayerDataService cache to ensure fresh data (GetSnapshot uses ProfileManager cache)
+		if PlayerDataService.ClearCache then
+			PlayerDataService.ClearCache(userId)
+		end
+		
+		-- Respawn player to reset position (server-side)
+		player:LoadCharacter()
+		
+		-- GetSnapshot will use GetCachedProfile which has the freshly saved profile
+		local snapshot = ProfileSnapshotService.GetSnapshot(player, {
+			includeCollection = true,
+			includeLoginInfo = true,
+			includeDaily = true,
+			includePlaytime = true
+		})
+		
+		if snapshot then
+			snapshot.forceReload = true
+			snapshot.serverNow = os.time()
+			
+			local networkFolder = ReplicatedStorage:FindFirstChild("Network")
+			local ProfileUpdated = networkFolder and networkFolder:FindFirstChild("ProfileUpdated")
+			
+			if ProfileUpdated then
+				ProfileUpdated:FireClient(player, snapshot)
+				print(string.format("[CommandService] ✅ Profile reset and sent to client for player %s", player.Name))
+			else
+				warn("[CommandService] ⚠️ ProfileUpdated not found, client will not receive update")
+			end
+		else
+			warn(string.format("[CommandService] ❌ Failed to get snapshot for player %s", player.Name))
+			return false, "Error getting profile snapshot"
+		end
+		
+		return true, "Profile successfully reset to initial state"
+	end)
 	
-	return true, "Profile successfully reset to initial state"
+	-- Always clear executing flag, even on error
+	executingCommands[userId] = nil
+	
+	if success then
+		return result
+	else
+		warn(string.format("[CommandService] ❌ Error resetting profile for player %s: %s", player.Name, tostring(result)))
+		return false, "Internal error: " .. tostring(result)
+	end
 end
 
 local function OnPlayerChatted(player, message)
@@ -124,10 +149,11 @@ local function OnPlayerChatted(player, message)
 	end)
 	
 	if pcallSuccess and wrappedResult then
+		local message = wrappedResult.message or "Command executed"
 		if wrappedResult.success then
-			print(string.format("[CommandService] ✅ %s: %s", player.Name, wrappedResult.message))
+			print(string.format("[CommandService] ✅ %s: %s", player.Name, message))
 		else
-			warn(string.format("[CommandService] ❌ %s: %s", player.Name, wrappedResult.message))
+			warn(string.format("[CommandService] ❌ %s: %s", player.Name, message))
 		end
 	else
 		warn(string.format("[CommandService] Error executing command for %s: %s", player.Name, tostring(wrappedResult)))

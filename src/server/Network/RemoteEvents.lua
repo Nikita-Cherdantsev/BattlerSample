@@ -47,6 +47,7 @@ local RequestClaimFollowReward = nil
 local RequestRedeemPromoCode = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
 local RequestClaimBattleReward = nil
+local RequestSaveBattleRewardToPending = nil
 local RequestTutorialProgress = nil
 local RequestCompleteTutorialStep = nil
 
@@ -880,6 +881,9 @@ local function HandleRequestClaimBattleReward(player, requestData)
 	end
 	
 	local rewardType = requestData.rewardType
+	local rewardGranted = false
+	local rewardToRemove = nil
+	
 	if rewardType == "soft" then
 		local amount = requestData.amount or 0
 		if amount <= 0 then
@@ -893,6 +897,8 @@ local function HandleRequestClaimBattleReward(player, requestData)
 			return
 		end
 		
+		rewardGranted = true
+		rewardToRemove = { type = "soft", amount = amount }
 		LogInfo(player, "Soft currency reward granted: %d", amount)
 	elseif rewardType == "lootbox" then
 		local rarity = requestData.rarity
@@ -907,14 +913,104 @@ local function HandleRequestClaimBattleReward(player, requestData)
 			return
 		end
 		
+		rewardGranted = true
+		rewardToRemove = { type = "lootbox", rarity = rarity }
 		LogInfo(player, "Lootbox reward granted: %s", rarity)
 	else
 		SendErrorUpdate(player, "RequestClaimBattleReward.invalidType", "INVALID_REQUEST", "Invalid reward type: " .. tostring(rewardType))
 		return
 	end
 	
+	-- Remove reward from pendingBattleRewards after successful grant
+	if rewardGranted and rewardToRemove then
+		ProfileManager.UpdateProfile(player.UserId, function(profile)
+			if profile.pendingBattleRewards then
+				for i, pendingReward in ipairs(profile.pendingBattleRewards) do
+					local matches = false
+					if rewardToRemove.type == "soft" and pendingReward.type == "soft" then
+						matches = pendingReward.amount == rewardToRemove.amount
+					elseif rewardToRemove.type == "lootbox" and pendingReward.type == "lootbox" then
+						matches = pendingReward.rarity == rewardToRemove.rarity
+					end
+					
+					if matches then
+						table.remove(profile.pendingBattleRewards, i)
+						break
+					end
+				end
+			end
+			return profile
+		end)
+	end
+	
 	SendSnapshot(player, "RequestClaimBattleReward.success")
 	LogInfo(player, "Battle reward claimed successfully")
+end
+
+local function HandleRequestSaveBattleRewardToPending(player, requestData)
+	-- Validate payload
+	if not requestData or not requestData.rewardType then
+		LogWarning(player, "Invalid save battle reward to pending request: missing rewardType")
+		return
+	end
+	
+	local rewardType = requestData.rewardType
+	local reward = nil
+	
+	if rewardType == "soft" then
+		local amount = requestData.amount or 0
+		if amount <= 0 then
+			LogWarning(player, "Invalid soft currency amount for pending save")
+			return
+		end
+		reward = { type = "soft", amount = amount }
+	elseif rewardType == "lootbox" then
+		local rarity = requestData.rarity
+		if not rarity then
+			LogWarning(player, "Missing rarity for lootbox reward pending save")
+			return
+		end
+		reward = { type = "lootbox", rarity = rarity }
+	else
+		LogWarning(player, "Invalid reward type for pending save: %s", tostring(rewardType))
+		return
+	end
+	
+	-- Check if player has free slots for lootbox
+	if rewardType == "lootbox" then
+		local profile = ProfileManager.GetCachedProfile(player.UserId)
+		if not profile then
+			profile = PlayerDataService.EnsureProfileLoaded(player)
+		end
+		
+		if profile then
+			local lootboxCount = profile.lootboxes and #profile.lootboxes or 0
+			if lootboxCount >= 4 then
+				return
+			end
+		end
+	end
+	
+	-- Save reward to pending
+	local success = ProfileManager.UpdateProfile(player.UserId, function(profile)
+		if not profile.pendingBattleRewards then
+			profile.pendingBattleRewards = {}
+		end
+		
+		-- Limit to prevent excessive accumulation
+		if #profile.pendingBattleRewards < 50 then
+			table.insert(profile.pendingBattleRewards, reward)
+		else
+			LogWarning(player, "Pending rewards limit reached (%d), not saving reward", #profile.pendingBattleRewards)
+		end
+		return profile
+	end)
+	
+	if success then
+		SendSnapshot(player, "RequestSaveBattleRewardToPending.success")
+	else
+		LogWarning(player, "Failed to save battle reward to pending")
+	end
 end
 
 local function HandleRequestTutorialProgress(player, requestData)
@@ -945,7 +1041,8 @@ local function HandleRequestCompleteTutorialStep(player, requestData)
 		return
 	end
 	
-	local result = TutorialService.CompleteStep(player.UserId, requestData.stepIndex)
+	local useAltNextStep = requestData.useAltNextStep == true
+	local result = TutorialService.CompleteStep(player.UserId, requestData.stepIndex, useAltNextStep)
 	
 	if result.ok then
 		SendSnapshot(player, "RequestCompleteTutorialStep.success", {
@@ -986,8 +1083,12 @@ RemoteEvents.RequestClaimDailyReward = RequestClaimDailyReward
 RemoteEvents.RequestClaimFollowReward = RequestClaimFollowReward
 RemoteEvents.RequestNPCDeck = RequestNPCDeck
 RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
+RemoteEvents.RequestSaveBattleRewardToPending = RequestSaveBattleRewardToPending
 RemoteEvents.RequestTutorialProgress = RequestTutorialProgress
 RemoteEvents.RequestCompleteTutorialStep = RequestCompleteTutorialStep
+
+-- Export SendSnapshot for use in other services
+RemoteEvents.SendSnapshot = SendSnapshot
 
 -- Init function for bootstrap
 function RemoteEvents.Init()
@@ -1105,6 +1206,11 @@ function RemoteEvents.Init()
 	RequestClaimBattleReward.Name = "RequestClaimBattleReward"
 	RequestClaimBattleReward.Parent = NetworkFolder
 	
+	-- Save Battle Reward to Pending RemoteEvent
+	RequestSaveBattleRewardToPending = Instance.new("RemoteEvent")
+	RequestSaveBattleRewardToPending.Name = "RequestSaveBattleRewardToPending"
+	RequestSaveBattleRewardToPending.Parent = NetworkFolder
+	
 	-- Tutorial RemoteEvents
 	RequestTutorialProgress = Instance.new("RemoteEvent")
 	RequestTutorialProgress.Name = "RequestTutorialProgress"
@@ -1138,6 +1244,7 @@ function RemoteEvents.Init()
 	RequestClaimFollowReward.OnServerEvent:Connect(HandleRequestClaimFollowReward)
 	RequestRedeemPromoCode.OnServerEvent:Connect(HandleRequestRedeemPromoCode)
 	RequestClaimBattleReward.OnServerEvent:Connect(HandleRequestClaimBattleReward)
+	RequestSaveBattleRewardToPending.OnServerEvent:Connect(HandleRequestSaveBattleRewardToPending)
 	RequestTutorialProgress.OnServerEvent:Connect(HandleRequestTutorialProgress)
 	RequestCompleteTutorialStep.OnServerEvent:Connect(HandleRequestCompleteTutorialStep)
 	

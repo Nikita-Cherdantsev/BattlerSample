@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
 
 local LoadingScreenHandler = {}
 LoadingScreenHandler._initialized = false
@@ -262,6 +263,9 @@ function LoadingScreenHandler:_fadeOutAndDisable()
 	if elements.screenGui then
 		elements.screenGui.Enabled = false
 	end
+	
+	-- Emit event when loading screen is hidden
+	EventBus:Emit("LoadingScreenHidden")
 end
 
 function LoadingScreenHandler:_tryComplete()

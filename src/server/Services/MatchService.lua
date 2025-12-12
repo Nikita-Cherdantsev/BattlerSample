@@ -1156,6 +1156,53 @@ function MatchService.ExecuteMatch(player, requestData)
 		LogInfo(player, "Loss reward generated: %d soft currency", LOSS_SOFT_AMOUNT)
 	end
 	
+	-- Save reward to pendingBattleRewards if applicable
+	-- For soft currency: always save
+	-- For lootbox: only save if player has free slots (< 4)
+	if rewards then
+		local shouldSaveToPending = false
+		
+		if rewards.type == "soft" then
+			-- Always save soft currency rewards
+			shouldSaveToPending = true
+		elseif rewards.type == "lootbox" then
+			-- Only save lootbox if player has free slots
+			local profile = ProfileManager.GetCachedProfile(player.UserId)
+			if not profile then
+				profile = PlayerDataService.EnsureProfileLoaded(player)
+			end
+			
+			if profile then
+				local lootboxCount = profile.lootboxes and #profile.lootboxes or 0
+				if lootboxCount < 4 then
+					shouldSaveToPending = true
+				else
+					LogInfo(player, "Skipping pending save for lootbox reward: no free slots (%d/4)", lootboxCount)
+				end
+			end
+		end
+		
+		if shouldSaveToPending then
+			local success = ProfileManager.UpdateProfile(player.UserId, function(profile)
+				if not profile.pendingBattleRewards then
+					profile.pendingBattleRewards = {}
+				end
+				
+				-- Limit to prevent excessive accumulation
+				if #profile.pendingBattleRewards < 50 then
+					table.insert(profile.pendingBattleRewards, rewards)
+				else
+					LogWarning(player, "Pending rewards limit reached (%d), not saving reward", #profile.pendingBattleRewards)
+				end
+				return profile
+			end)
+			
+			if not success then
+				LogWarning(player, "Failed to save battle reward to pending")
+			end
+		end
+	end
+	
 	-- Return success response
 	return {
 		ok = true,

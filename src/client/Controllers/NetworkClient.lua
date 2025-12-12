@@ -42,6 +42,7 @@ local RequestRedeemPromoCode = Network:WaitForChild("RequestRedeemPromoCode")
 local RequestDailyData = Network:WaitForChild("RequestDailyData")
 local RequestClaimDailyReward = Network:WaitForChild("RequestClaimDailyReward")
 local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward")
+local RequestSaveBattleRewardToPending = Network:WaitForChild("RequestSaveBattleRewardToPending")
 local RequestTutorialProgress = Network:WaitForChild("RequestTutorialProgress")
 local RequestCompleteTutorialStep = Network:WaitForChild("RequestCompleteTutorialStep")
 
@@ -267,6 +268,18 @@ function NetworkClient.requestClaimBattleReward(requestData)
 	return true
 end
 
+-- Request save battle reward to pending
+function NetworkClient.requestSaveBattleRewardToPending(requestData)
+	if not requestData or not requestData.rewardType then
+		return false, "Invalid request data"
+	end
+	
+	log("Requesting save battle reward to pending: type=%s", requestData.rewardType)
+	RequestSaveBattleRewardToPending:FireServer(requestData)
+	
+	return true
+end
+
 -- Request complete unlock
 function NetworkClient.requestCompleteUnlock(slotIndex)
 	if not slotIndex or type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
@@ -370,13 +383,16 @@ function NetworkClient.requestTutorialProgress()
 	return true
 end
 
-function NetworkClient.requestCompleteTutorialStep(stepIndex)
+function NetworkClient.requestCompleteTutorialStep(stepIndex, useAltNextStep)
 	if not stepIndex or type(stepIndex) ~= "number" or stepIndex < 1 then
 		return false, "Invalid step index"
 	end
 	
-	log("Requesting complete tutorial step: %d", stepIndex)
-	RequestCompleteTutorialStep:FireServer({stepIndex = stepIndex})
+	log("Requesting complete tutorial step: %d, useAltNextStep: %s", stepIndex, tostring(useAltNextStep))
+	RequestCompleteTutorialStep:FireServer({
+		stepIndex = stepIndex,
+		useAltNextStep = useAltNextStep or false
+	})
 	
 	return true
 end

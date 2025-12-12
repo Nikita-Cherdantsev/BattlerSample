@@ -11,6 +11,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+-- Modules
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
+
 local localPlayer = Players.LocalPlayer
 
 -- State
@@ -267,6 +270,8 @@ function PromoCodeHandler:Init(controller)
 	
 	-- Setup button to open window
 	local btnCodesConnection = btnCodes.MouseButton1Click:Connect(function()
+		-- Emit button click event
+		EventBus:Emit("ButtonClicked", "TopPanel.BtnCodes")
 		self:OpenWindow()
 	end)
 	table.insert(self.Connections, btnCodesConnection)
@@ -341,6 +346,8 @@ function PromoCodeHandler:OpenWindow()
 			if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 				self.Utilities.TweenUI.FadeIn(self.RedeemCodeFrame, .3, function()
 					self.isAnimating = false
+					-- Emit window opened event after animation completes
+					EventBus:Emit("WindowOpened", "RedeemCode")
 				end)
 			end
 			if self.Utilities.Blur then
@@ -348,6 +355,8 @@ function PromoCodeHandler:OpenWindow()
 			end
 		else
 			self.isAnimating = false
+			-- Emit window opened event immediately if no animation
+			EventBus:Emit("WindowOpened", "RedeemCode")
 		end
 	end
 end
@@ -389,9 +398,11 @@ function PromoCodeHandler:CloseWindow()
 	-- Show HUD panels
 	if self.UI and self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = true
+		EventBus:Emit("HudShown", "LeftPanel")
 	end
 	if self.UI and self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
+		EventBus:Emit("HudShown", "BottomPanel")
 	end
 end
 

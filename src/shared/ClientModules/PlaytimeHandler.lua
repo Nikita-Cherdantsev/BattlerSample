@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 
 --// Modules
 local Resolver = require(ReplicatedStorage.Modules.Assets.Resolver)
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local PlaytimeHandler = {}
@@ -151,6 +152,8 @@ function PlaytimeHandler:SetupOpenButton()
 	-- Test if the button has the right events
 	if playtimeButton:IsA("TextButton") then
 		local connection = playtimeButton.MouseButton1Click:Connect(function()
+			-- Emit button click event
+			EventBus:Emit("ButtonClicked", "LeftPanel.BtnPlaytime")
 			self:OpenWindow()
 		end)
 		table.insert(self.Connections, connection)
@@ -183,6 +186,8 @@ function PlaytimeHandler:SetupClaimButtons()
 			
 			if claimButton then
 				local connection = claimButton.MouseButton1Click:Connect(function()
+					-- Emit button click event
+					EventBus:Emit("ButtonClicked", "Playtime.List.Reward" .. i .. ".Content.BtnClaim")
 					self:ClaimReward(i)
 				end)
 				table.insert(self.Connections, connection)
@@ -384,6 +389,8 @@ function PlaytimeHandler:OpenWindow()
 		if self.Utilities.TweenUI and self.Utilities.TweenUI.FadeIn then
 			self.Utilities.TweenUI.FadeIn(self.PlaytimeFrame, .3, function ()
 				self.isAnimating = false
+				-- Emit window opened event after animation completes
+				EventBus:Emit("WindowOpened", "Playtime")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -392,6 +399,8 @@ function PlaytimeHandler:OpenWindow()
 	else
 		-- Fallback: no animation
 		self.isAnimating = false
+		-- Emit window opened event immediately if no animation
+		EventBus:Emit("WindowOpened", "Playtime")
 	end
 	
 	-- Start automatic updates
@@ -411,6 +420,8 @@ function PlaytimeHandler:CloseWindow()
 			self.Utilities.TweenUI.FadeOut(self.PlaytimeFrame, .3, function () 
 				self.PlaytimeFrame.Visible = false
 				self.isAnimating = false
+				-- Emit window closed event after animation completes
+				EventBus:Emit("WindowClosed", "Playtime")
 			end)
 		end
 		if self.Utilities.Blur then
@@ -420,6 +431,8 @@ function PlaytimeHandler:CloseWindow()
 		-- Fallback: no animation
 		self.PlaytimeFrame.Visible = false
 		self.isAnimating = false
+		-- Emit window closed event immediately if no animation
+		EventBus:Emit("WindowClosed", "Playtime")
 	end
 
 	self.isWindowOpen = false
@@ -427,9 +440,11 @@ function PlaytimeHandler:CloseWindow()
 	-- Show HUD panels
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = true
+		EventBus:Emit("HudShown", "LeftPanel")
 	end
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
+		EventBus:Emit("HudShown", "BottomPanel")
 	end
 	
 	-- Register with close button handler

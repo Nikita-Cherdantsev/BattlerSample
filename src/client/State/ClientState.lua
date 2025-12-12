@@ -19,6 +19,8 @@ local state = {
 
 local profileReady = false
 local profileReadyEvent = Instance.new("BindableEvent")
+local profileUpdateConnection = nil  -- Track the ProfileUpdated connection
+local isReloading = false  -- Flag to prevent processing updates during reload
 
 -- Subscribers
 local subscribers = {}
@@ -80,8 +82,17 @@ end
 function ClientState.init(networkClient)
 	log("Initializing ClientState")
 	
+	-- Disconnect old connection if exists
+	if profileUpdateConnection then
+		profileUpdateConnection:Disconnect()
+		profileUpdateConnection = nil
+	end
+	
+	-- Reset reloading flag
+	isReloading = false
+	
 	-- Subscribe to profile updates
-	networkClient.onProfileUpdated(function(payload)
+	profileUpdateConnection = networkClient.onProfileUpdated(function(payload)
 		ClientState.applyProfileUpdate(payload)
 	end)
 	
@@ -90,6 +101,11 @@ end
 
 -- Apply profile update from server
 function ClientState.applyProfileUpdate(payload)
+	-- Ignore updates during reload
+	if isReloading then
+		return
+	end
+	
 	if payload.error then
 		-- Handle error
 		ClientState.setLastError({
@@ -118,6 +134,9 @@ function ClientState.applyProfileUpdate(payload)
 	if payload.forceReload then
 		log("Full profile reload requested by server")
 		
+		-- Set reloading flag to ignore subsequent updates
+		isReloading = true
+		
 		local success, MainController = pcall(function()
 			local StarterPlayer = game:GetService("StarterPlayer")
 			local StarterPlayerScripts = StarterPlayer:FindFirstChild("StarterPlayerScripts")
@@ -130,10 +149,10 @@ function ClientState.applyProfileUpdate(payload)
 			return nil
 		end)
 		
-		if success and MainController and MainController.IsInitialized and MainController:IsInitialized() and MainController.Reload then
+		if success and MainController and MainController.IsInitialized and MainController:IsInitialized() and MainController.FullReload then
 			task.spawn(function()
 				task.wait(0.1)
-				MainController:Reload()
+				MainController:FullReload()
 			end)
 		end
 		

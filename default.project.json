@@ -208,6 +208,9 @@
         "ErrorMap": {
           "$path": "src/shared/Modules/ErrorMap.lua"
         },
+        "EventBus": {
+          "$path": "src/shared/Modules/EventBus.lua"
+        },
         "SelfCheck" : {
           "$path": "src/shared/Modules/SelfCheck.lua"
         },
