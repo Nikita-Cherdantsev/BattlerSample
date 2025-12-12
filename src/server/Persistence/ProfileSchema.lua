@@ -1,7 +1,7 @@
 local ProfileSchema = {}
 
 -- Profile version
-ProfileSchema.VERSION = "v2"
+ProfileSchema.VERSION = "v3"
 
 -- Lootbox duration constants (in seconds)
 ProfileSchema.LootboxDurations = {
@@ -433,6 +433,7 @@ function ProfileSchema.CreateProfile(playerId)
 	
 	local profile = {
 		playerId = tostring(playerId),
+		version = "v3",  -- New profiles are created with v3
 		createdAt = now,
 		lastLoginAt = now,
 		loginStreak = 0,
@@ -443,7 +444,7 @@ function ProfileSchema.CreateProfile(playerId)
 			hard = 150   -- Starting hard currency
 		},
 		favoriteLastSeen = nil,
-		tutorialStep = 0,
+		tutorialStep = 0,  -- New players start tutorial from the beginning
 		squadPower = 0,  -- Will be computed when deck is set
 		lootboxes = {},
 		playtime = {
@@ -509,6 +510,44 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 	end
 	
 	return v2Profile
+end
+
+-- Migrate v2 profile to v3
+-- Sets tutorialStep to last step for existing players (marks tutorial as complete)
+function ProfileSchema.MigrateV2ToV3(v2Profile)
+	if not v2Profile then
+		return nil, "No profile to migrate"
+	end
+	
+	-- Get last tutorial step to mark tutorial as complete for existing players
+	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	local lastStep = TutorialConfig.GetStepCount()
+	
+	-- Create v3 profile (same structure as v2, but with tutorialStep set to last step)
+	local v3Profile = {
+		playerId = v2Profile.playerId,
+		createdAt = v2Profile.createdAt,
+		lastLoginAt = v2Profile.lastLoginAt,
+		loginStreak = v2Profile.loginStreak,
+		collection = v2Profile.collection,
+		deck = v2Profile.deck,
+		currencies = v2Profile.currencies,
+		favoriteLastSeen = v2Profile.favoriteLastSeen,
+		tutorialStep = lastStep,  -- Mark tutorial as complete for existing players
+		squadPower = v2Profile.squadPower,
+		lootboxes = v2Profile.lootboxes,
+		playtime = v2Profile.playtime,
+		daily = v2Profile.daily,
+		redeemedCodes = v2Profile.redeemedCodes,
+		followRewardClaimed = v2Profile.followRewardClaimed,
+		bossWins = v2Profile.bossWins,
+		npcWins = v2Profile.npcWins,
+		totalRobuxSpent = v2Profile.totalRobuxSpent,
+		pendingBattleRewards = v2Profile.pendingBattleRewards,
+		bossDifficulties = v2Profile.bossDifficulties
+	}
+	
+	return v3Profile
 end
 
 -- Update profile timestamps

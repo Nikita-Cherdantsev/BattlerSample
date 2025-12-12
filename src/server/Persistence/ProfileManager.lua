@@ -313,8 +313,14 @@ local function ComputeSquadPower(profile)
 end
 
 -- Migrate tutorial step for old users (set to last step if missing)
+-- Note: This is a fallback for edge cases. Main migration happens in MigrateV2ToV3
 local function MigrateTutorialStep(profile)
 	if not profile then
+		return
+	end
+	
+	-- Don't migrate v3 profiles - they should already have correct tutorialStep
+	if profile.version == "v3" then
 		return
 	end
 	
@@ -330,10 +336,13 @@ local function MigrateTutorialStep(profile)
 end
 
 -- Migrate profile if needed
+-- Returns: profile, wasMigrated (boolean)
 local function MigrateProfileIfNeeded(profile)
-	-- Check if profile needs migration
-	-- Also check if it's already v2 format but missing version field
-	local needsMigration = not profile.version or profile.version == "v1"
+	local wasMigrated = false
+	local originalVersion = profile and profile.version
+	
+	-- Check if profile needs migration from v1 to v2
+	local needsV1ToV2Migration = not profile.version or profile.version == "v1"
 	
 	-- If no version but has v2 fields, it's already v2
 	if not profile.version and profile.collection then
@@ -368,11 +377,12 @@ local function MigrateProfileIfNeeded(profile)
 			if not profile.pendingBattleRewards then
 				profile.pendingBattleRewards = {}
 			end
-			return profile
+			-- Continue to v2 → v3 migration below
 		end
 	end
 	
-	if needsMigration then
+	-- Migrate v1 → v2 if needed
+	if needsV1ToV2Migration then
 		print("🔄 Migrating profile from v1 to v2")
 		
 		-- Debug: Log the original profile collection
@@ -411,15 +421,34 @@ local function MigrateProfileIfNeeded(profile)
 				migratedProfile.pendingBattleRewards = {}
 			end
 			
-			return migratedProfile
+			profile = migratedProfile
 		else
 			warn("❌ Failed to migrate profile from v1 to v2")
-			return nil
+			return nil, false
 		end
 	end
 	
-	-- For existing v2 profiles (with version = "v2"), ensure all new fields are initialized
-	if profile.version == "v2" then
+	-- Migrate v2 → v3 if needed (for all existing players - no version, v1, or v2)
+	-- New players (created fresh) will have v3 from the start
+	local needsV2ToV3Migration = not profile.version or profile.version == "v1" or profile.version == "v2"
+	
+	if needsV2ToV3Migration then
+		print("🔄 Migrating profile from v2 to v3 (marking tutorial as complete for existing player)")
+		
+		local migratedProfile = ProfileSchema.MigrateV2ToV3(profile)
+		if migratedProfile then
+			migratedProfile.version = "v3"
+			wasMigrated = true
+			print("🔄 Profile migrated to v3, tutorialStep set to last step:", migratedProfile.tutorialStep)
+			profile = migratedProfile
+		else
+			warn("❌ Failed to migrate profile from v2 to v3")
+			return nil, false
+		end
+	end
+	
+	-- For existing v3 profiles, ensure all new fields are initialized
+	if profile.version == "v3" then
 		-- Initialize playtime if missing
 		if not profile.playtime then
 			profile.playtime = {
@@ -432,13 +461,18 @@ local function MigrateProfileIfNeeded(profile)
 		if not profile.redeemedCodes then
 			profile.redeemedCodes = {}
 		end
-		-- Initialize pendingBattleRewards if missing (CRITICAL: for existing v2 profiles)
+		-- Initialize pendingBattleRewards if missing
 		if not profile.pendingBattleRewards then
 			profile.pendingBattleRewards = {}
 		end
 	end
 	
-	return profile
+	-- Check if version changed
+	if originalVersion ~= profile.version then
+		wasMigrated = true
+	end
+	
+	return profile, wasMigrated
 end
 
 -- Public API
@@ -463,7 +497,8 @@ function ProfileManager.LoadProfile(userId)
 				-- Cache is still valid - BUT we still need to ensure migration is applied
 				-- because new fields might have been added since profile was cached
 				local profile = cached.profile
-				profile = MigrateProfileIfNeeded(profile)
+				local wasMigrated
+				profile, wasMigrated = MigrateProfileIfNeeded(profile)
 				-- Migrate tutorial step for old users
 				if profile then
 					MigrateTutorialStep(profile)
@@ -497,10 +532,61 @@ function ProfileManager.LoadProfile(userId)
 	end)
 	
 	if success and profile then
-		-- Migrate if needed
-		profile = MigrateProfileIfNeeded(profile)
-
-		if profile then
+		-- Check if migration is needed BEFORE migrating
+		local needsMigration = not profile.version or profile.version == "v1" or profile.version == "v2"
+		
+		-- If migration is needed, use atomic UpdateAsync to migrate
+		if needsMigration then
+			print("🔄 Profile needs migration, performing atomic migration via UpdateAsync...")
+			local migrationSuccess, migratedProfile = pcall(function()
+				return DataStoreWrapper.UpdateAsync(ProfileManager.DATASTORE_NAME, profileKey, function(currentData)
+					-- Check if still needs migration (another request might have already migrated)
+					if currentData and currentData.version == "v3" then
+						-- Already migrated by another request, return as-is
+						return currentData
+					end
+					
+					-- Perform migration
+					local profileToMigrate = currentData or profile
+					local wasMigrated
+					local migrated, wasMigrated = MigrateProfileIfNeeded(profileToMigrate)
+					
+					if migrated then
+						-- Apply other initializations
+						if type(migrated.totalRobuxSpent) ~= "number" then
+							migrated.totalRobuxSpent = 0
+						end
+						if type(migrated.npcWins) ~= "number" then
+							migrated.npcWins = 0
+						end
+						if type(migrated.followRewardClaimed) ~= "boolean" then
+							migrated.followRewardClaimed = false
+						end
+						if type(migrated.bossWins) ~= "table" then
+							migrated.bossWins = {}
+						end
+						MigrateTutorialStep(migrated)
+						
+						-- Update timestamp
+						migrated.updatedAt = os.time()
+						return migrated
+					end
+					
+					return currentData or profileToMigrate
+				end)
+			end)
+			
+			if migrationSuccess and migratedProfile then
+				profile = migratedProfile
+				print("✅ Atomic migration completed")
+			else
+				warn("⚠️ Atomic migration failed, falling back to regular migration")
+				-- Fallback to regular migration
+				local wasMigrated
+				profile, wasMigrated = MigrateProfileIfNeeded(profile)
+			end
+		else
+			-- No migration needed, just apply normal initializations
 			if type(profile.totalRobuxSpent) ~= "number" then
 				profile.totalRobuxSpent = 0
 			end
@@ -513,8 +599,6 @@ function ProfileManager.LoadProfile(userId)
 			if type(profile.bossWins) ~= "table" then
 				profile.bossWins = {}
 			end
-			
-			-- Migrate tutorial step for old users (set to last step if missing)
 			MigrateTutorialStep(profile)
 		end
 		
