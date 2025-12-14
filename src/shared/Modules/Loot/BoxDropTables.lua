@@ -11,7 +11,7 @@ local BoxTypes = require(script.Parent.BoxTypes)
 
 -- Drop table for Uncommon boxes
 BoxDropTables.UNCOMMON = {
-	softRange = { min = 80, max = 120 },
+	softRange = { min = 30, max = 50 },
 	hardChance = 0, -- 0% chance
 	hardAmount = 0,
 	characterRewards = {
@@ -40,7 +40,7 @@ BoxDropTables.UNCOMMON = {
 
 -- Drop table for Rare boxes
 BoxDropTables.RARE = {
-	softRange = { min = 140, max = 200 },
+	softRange = { min = 50, max = 80 },
 	hardChance = 0, -- 0% chance
 	hardAmount = 0,
 	characterRewards = {
@@ -64,9 +64,9 @@ BoxDropTables.RARE = {
 
 -- Drop table for Epic boxes
 BoxDropTables.EPIC = {
-	softRange = { min = 220, max = 320 },
-	hardChance = 0.09, -- 9% chance
-	hardRange = { min = 1, max = 29 }, -- Random int 1..29
+	softRange = { min = 80, max = 120 },
+	hardChance = 0.33, -- 33% chance
+	hardRange = { min = 1, max = 10 }, -- Random int 1..10
 	characterRewards = {
 		{
 			rarity = BoxTypes.BoxRarity.EPIC,
@@ -83,9 +83,9 @@ BoxDropTables.EPIC = {
 
 -- Drop table for Legendary boxes
 BoxDropTables.LEGENDARY = {
-	softRange = { min = 350, max = 450 },
-	hardChance = 0.12, -- 12% chance
-	hardRange = { min = 1, max = 77 }, -- Random int 1..77
+	softRange = { min = 120, max = 170 },
+	hardChance = 0.33, -- 33% chance
+	hardRange = { min = 1, max = 100 }, -- Random int 1..100
 	characterRewards = {
 		{
 			rarity = BoxTypes.BoxRarity.LEGENDARY,
@@ -97,9 +97,9 @@ BoxDropTables.LEGENDARY = {
 
 -- Drop table for One Piece boxes
 BoxDropTables.ONEPIECE = {
-	softRange = { min = 80, max = 450 },
-	hardChance = 0.21, -- 21% chance
-	hardRange = { min = 1, max = 53 }, -- Random int 1..53
+	softRange = { min = 50, max = 120 },
+	hardChance = 0.33, -- 33% chance
+	hardRange = { min = 1, max = 20 }, -- Random int 1..20
 	characterRewards = {
 		{
 			rarity = BoxTypes.BoxRarity.UNCOMMON,

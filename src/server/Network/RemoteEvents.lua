@@ -900,6 +900,20 @@ local function HandleRequestClaimBattleReward(player, requestData)
 		rewardGranted = true
 		rewardToRemove = { type = "soft", amount = amount }
 		LogInfo(player, "Soft currency reward granted: %d", amount)
+		
+		-- Economy analytics: loss reward (Energy Source)
+		local profileAfter = ProfileManager.GetCachedProfile(player.UserId)
+		if profileAfter then
+			local customFields = AnalyticsService.BuildEconomyCustomFields(player.UserId, profileAfter)
+			AnalyticsService.LogEconomyEvent({
+				userId = player.UserId,
+				flowType = Enum.AnalyticsEconomyFlowType.Source,
+				currencyType = "soft",
+				amount = amount,
+				transactionType = "LossReward",
+				customFields = customFields
+			})
+		end
 	elseif rewardType == "lootbox" then
 		local rarity = requestData.rarity
 		if not rarity then

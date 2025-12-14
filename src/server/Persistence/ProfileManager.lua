@@ -952,6 +952,7 @@ function ProfileManager.LevelUpCard(userId, cardId, requiredCount, softAmount)
 			currencyType = "soft",
 			amount = softAmount,
 			itemSku = cardId,
+			transactionType = "CardUpgrade",
 			customFields = customFields
 		})
 	end

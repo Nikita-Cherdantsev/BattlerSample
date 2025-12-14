@@ -55,6 +55,20 @@ local ANALYTICS_CONFIG = {
 	}
 }
 
+-- Custom transactionType mapping for economy events
+-- These are custom numeric values (1-9) to differentiate event types in analytics
+local TRANSACTION_TYPE_MAP = {
+	DailyReward = 1,           -- a) Дейли логин награды
+	PlaytimeReward = 2,        -- b) Плейтайм награды
+	PromoCode = 3,             -- c) Промокоды
+	LootboxReward = 4,         -- d) Лутбокс открытие (награда за открытие)
+	LossReward = 5,            -- e) Награды за поражение в матчах
+	LootboxPurchase = 6,        -- f) Покупка лутбоксов за Gold
+	LootboxSpeedUp = 7,        -- g) Ускорение открытия лутбоксов за Gold
+	CardUpgrade = 8,           -- h) Прокачка героев
+	IAPGold = 9                -- i) IAP – покупка Gold бандлов за Robux
+}
+
 -- Debounce tracking: eventName -> userId -> lastSentTimestamp
 local debounceCache = {}
 
@@ -234,7 +248,10 @@ end
 -- currencyType: "Gold" or "Energy" (accepts hard/soft aliases)
 -- amount: number (positive)
 -- balanceAfterTransaction: automatically calculated from profile (balance after the transaction)
--- transactionType: always "Gameplay" for now (Enum.AnalyticsEconomyTransactionType.Gameplay.Name)
+-- transactionType: string key from TRANSACTION_TYPE_MAP (e.g., "DailyReward", "LootboxReward") or number (1-9)
+--   If not provided, defaults to Gameplay
+--   Valid keys: DailyReward(1), PlaytimeReward(2), PromoCode(3), LootboxReward(4), LossReward(5),
+--               LootboxPurchase(6), LootboxSpeedUp(7), CardUpgrade(8), IAPGold(9)
 -- itemSku: optional string identifier (e.g., Lootbox_rare, Gold_S)
 -- customFields: optional map with CustomField01/02/03 keys (string values) using Enum.AnalyticsCustomFieldKeys
 function AnalyticsService.LogEconomyEvent(params)
@@ -297,8 +314,29 @@ function AnalyticsService.LogEconomyEvent(params)
 		balanceAfterTransaction = profile.currencies and profile.currencies.soft or 0
 	end
 
-	-- Всегда используем Gameplay для всех событий (пока один тип для всех)
-	local transactionType = Enum.AnalyticsEconomyTransactionType.Gameplay.Value
+	-- Используем кастомный transactionType из params, если передан
+	-- Если не передан, используем Gameplay по умолчанию
+	local transactionType = params.transactionType
+	if transactionType == nil then
+		-- Fallback: используем Gameplay, если не указан
+		transactionType = Enum.AnalyticsEconomyTransactionType.Gameplay.Value
+	elseif type(transactionType) == "string" then
+		-- Если передан строковый ключ из маппинга, конвертируем в число
+		local mappedValue = TRANSACTION_TYPE_MAP[transactionType]
+		if mappedValue then
+			transactionType = mappedValue
+		else
+			warn(string.format("[AnalyticsService] Unknown transactionType key: %s, using Gameplay", transactionType))
+			transactionType = Enum.AnalyticsEconomyTransactionType.Gameplay.Value
+		end
+	elseif type(transactionType) == "number" then
+		-- Если передан напрямую как число, используем как есть
+		transactionType = transactionType
+	else
+		-- Неизвестный тип, используем Gameplay
+		warn(string.format("[AnalyticsService] Invalid transactionType type: %s, using Gameplay", type(transactionType)))
+		transactionType = Enum.AnalyticsEconomyTransactionType.Gameplay.Value
+	end
 
 	local itemSku = params.itemSku
 	if itemSku ~= nil and type(itemSku) ~= "string" then

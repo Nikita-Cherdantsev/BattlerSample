@@ -11,46 +11,46 @@ local ShopPacksCatalog = {}
 ShopPacksCatalog.Packs = {
 	["S"] = {
 		id = "S",
-		hardAmount = 100,
-		robuxPrice = 40,
+		hardAmount = 20,
+		robuxPrice = 9,
 		devProductId = 3455684189,
 		additionalHard = 0 -- UI bonus display only
 	},
 	["M"] = {
 		id = "M", 
-		hardAmount = 300,
-		robuxPrice = 100,
+		hardAmount = 91,
+		robuxPrice = 35,
 		devProductId = 3455684392,
-		additionalHard = 30 -- UI bonus display only
+		additionalHard = 9 -- UI bonus display only
 	},
 	["L"] = {
 		id = "L",
-		hardAmount = 700,
-		robuxPrice = 200,
+		hardAmount = 300,
+		robuxPrice = 99,
 		--devProductId = 3400864901, -- DEV productId for testing
 		devProductId = 3455685050, -- PROD productId
-		additionalHard = 140 -- UI bonus display only
+		additionalHard = 30 -- UI bonus display only
 	},
 	["XL"] = {
 		id = "XL",
-		hardAmount = 1500,
-		robuxPrice = 400,
+		hardAmount = 700,
+		robuxPrice = 200,
 		devProductId = 3455685309,
-		additionalHard = 450 -- UI bonus display only
+		additionalHard = 140 -- UI bonus display only
 	},
 	["XXL"] = {
 		id = "XXL",
-		hardAmount = 3500,
-		robuxPrice = 800,
+		hardAmount = 1500,
+		robuxPrice = 400,
 		devProductId = 3455685485,
-		additionalHard = 1400 -- UI bonus display only
+		additionalHard = 450 -- UI bonus display only
 	},
 	["XXXL"] = {
 		id = "XXXL",
-		hardAmount = 8000,
-		robuxPrice = 1500,
+		hardAmount = 3500,
+		robuxPrice = 800,
 		devProductId = 3455686076,
-		additionalHard = 4000 -- UI bonus display only
+		additionalHard = 1400 -- UI bonus display only
 	}
 }
 

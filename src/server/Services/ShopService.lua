@@ -146,6 +146,7 @@ function ShopService.ProcessReceipt(receiptInfo)
 		currencyType = "hard",
 		amount = totalHard,
 		itemSku = tostring(pack.id),
+		transactionType = "IAPGold",
 		customFields = economyFields
 	})
 	
@@ -348,6 +349,7 @@ function ShopService.BuyLootbox(playerId, rarity)
 		currencyType = "hard",
 		amount = cost,
 		itemSku = "Lootbox_" .. tostring(rarity),
+		transactionType = "LootboxPurchase",
 		customFields = economyFields
 	})
 	

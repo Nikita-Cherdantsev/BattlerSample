@@ -264,6 +264,7 @@ function PromoCodeService.RedeemCode(userId, code)
 					flowType = Enum.AnalyticsEconomyFlowType.Source,
 					currencyType = grant.currencyType,
 					amount = grant.amount,
+					transactionType = "PromoCode",
 					customFields = customFields
 				})
 			end

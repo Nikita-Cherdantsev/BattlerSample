@@ -17,7 +17,7 @@ local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistenc
 
 -- Configuration
 
-local LOSS_SOFT_AMOUNT = 52
+local LOSS_SOFT_AMOUNT = 10
 
 -- Studio-only: keep the BUSY window long enough for the concurrency test
 local TEST_BUSY_DELAY_SEC = 0.75 -- was ~0.2; use 0.75s

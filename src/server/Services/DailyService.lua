@@ -380,6 +380,7 @@ function DailyService.ClaimDailyReward(userId, rewardIndex)
 					flowType = Enum.AnalyticsEconomyFlowType.Source,
 					currencyType = grant.currencyType,
 					amount = grant.amount,
+					transactionType = "DailyReward",
 					customFields = customFields
 				})
 			end

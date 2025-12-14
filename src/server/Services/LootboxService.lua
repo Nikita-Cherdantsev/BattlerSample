@@ -82,6 +82,7 @@ local function logLootboxRewardEconomy(userId, rarity, rewards, profile)
 				currencyType = currencyType,
 				amount = delta,
 				itemSku = itemSku,
+				transactionType = "LootboxReward",
 				customFields = customFields
 			})
 		end
@@ -577,6 +578,7 @@ function LootboxService.OpenNow(userId, slotIndex, serverNow)
 				currencyType = "hard",
 				amount = lootboxResult.instantCost,
 				itemSku = "Lootbox_" .. tostring(lootboxResult.rarity or "unknown"),
+				transactionType = "LootboxSpeedUp",
 				customFields = customFields
 			})
 		end
@@ -807,6 +809,7 @@ function LootboxService.SpeedUp(userId, slotIndex, serverNow)
 				currencyType = "hard",
 				amount = speedUpResult.instantCost,
 				itemSku = "Lootbox_" .. tostring(speedUpResult.rewards and speedUpResult.rewards.rarity or "unknown"),
+				transactionType = "LootboxSpeedUp",
 				customFields = customFields
 			})
 		end

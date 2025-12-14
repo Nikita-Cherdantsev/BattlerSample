@@ -18,29 +18,29 @@ local Logger = require(game.ReplicatedStorage.Modules.Logger)
 
 -- Rewards configuration
 local REWARDS_CONFIG = {
-	thresholds = {3, 6, 9, 12, 15, 18, 22}, -- minutes
+	thresholds = {1, 3, 6, 9, 12, 15, 19}, -- minutes
 	rewards = {
 		[1] = { 
-			{type = "Currency", name = "Soft", amount = 50}
+			{type = "Currency", name = "Soft", amount = 10}
 		},
 		[2] = {
-			{type = "Currency", name = "Hard", amount = 7}
+			{type = "Currency", name = "Hard", amount = 5}
 		},
 		[3] = {
-			{type = "Currency", name = "Soft", amount = 150},
-			{type = "Currency", name = "Hard", amount = 20}
+			{type = "Currency", name = "Soft", amount = 40},
+			{type = "Currency", name = "Hard", amount = 10}
 		},
 		[4] = {
-			{type = "Currency", name = "Hard", amount = 35},
+			{type = "Currency", name = "Hard", amount = 20},
 			{type = "Lootbox", name = "uncommon", amount = 1}
 		},
 		[5] = {
-			{type = "Currency", name = "Soft", amount = 200}
+			{type = "Currency", name = "Soft", amount = 50}
 		},
 		[6] = {
-			{type = "Currency", name = "Soft", amount = 250},
-			{type = "Currency", name = "Hard", amount = 67},
-			{type = "Lootbox", name = "rare", amount = 1}
+			{type = "Currency", name = "Soft", amount = 100},
+			{type = "Currency", name = "Hard", amount = 20},
+			{type = "Lootbox", name = "uncommon", amount = 1}
 		},
 		[7] = {
 			{type = "Lootbox", name = "rare", amount = 1}
@@ -400,6 +400,7 @@ function PlaytimeService.ClaimPlaytimeReward(userId, rewardIndex)
 					flowType = Enum.AnalyticsEconomyFlowType.Source,
 					currencyType = grant.currencyType,
 					amount = grant.amount,
+					transactionType = "PlaytimeReward",
 					customFields = customFields
 				})
 			end
