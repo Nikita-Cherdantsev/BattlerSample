@@ -513,7 +513,30 @@ function TutorialHandler:OnWindowOpened(windowName)
 end
 
 function TutorialHandler:OnWindowClosed(windowName)
-	if not self._initialized or not self.isTutorialActive then
+	if not self._initialized then
+		return
+	end
+
+	-- If there is a pending hud_show step, window close might have unblocked it
+	if self.pendingStepIndex then
+		local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+		local pendingIndex = self.pendingStepIndex
+		local pendingStep = TutorialConfig.GetStep(pendingIndex)
+
+		if pendingStep and pendingStep.startCondition and pendingStep.startCondition.type == "hud_show" then
+			if self:CheckStartCondition(pendingStep) then
+				Logger.debug("[TutorialHandler] Window %s closed, pending hud_show step %d condition met, processing",
+					tostring(windowName), pendingIndex)
+				self.pendingStepIndex = nil
+				self:ProcessTutorialStep(pendingIndex, false)
+			else
+				Logger.debug("[TutorialHandler] Window %s closed, pending hud_show step %d still blocked",
+					tostring(windowName), pendingIndex)
+			end
+		end
+	end
+
+	if not self.isTutorialActive then
 		return
 	end
 	
@@ -1021,23 +1044,35 @@ function TutorialHandler:ProcessTutorialStep(nextStepIndex, isInitialLoad, isRol
 				if panel then
 					-- Check immediately if already visible
 					if panel.Visible then
-						Logger.debug("[TutorialHandler] Step %d: panel %s is already visible, processing immediately", 
-							nextStepIndex, step.startCondition.target)
-						self.pendingStepIndex = nil
-						self:ProcessTutorialStep(nextStepIndex, false)
+						-- Before processing, re-check startCondition (may still be blocked by an open window)
+						if self:CheckStartCondition(step) then
+							Logger.debug("[TutorialHandler] Step %d: panel %s is already visible and condition met, processing immediately", 
+								nextStepIndex, step.startCondition.target)
+							self.pendingStepIndex = nil
+							self:ProcessTutorialStep(nextStepIndex, false)
+						else
+							Logger.debug("[TutorialHandler] Step %d: panel %s visible, but startCondition still not met (blocking window?)", 
+								nextStepIndex, step.startCondition.target)
+						end
 						return
 					end
 					
 					-- Listen for visibility changes
 					local connection = panel:GetPropertyChangedSignal("Visible"):Connect(function()
 						if panel.Visible and self.pendingStepIndex == nextStepIndex then
-							Logger.debug("[TutorialHandler] Step %d: panel %s became visible, processing", 
-								nextStepIndex, step.startCondition.target)
-							self.pendingStepIndex = nil
-							if connection then
-								connection:Disconnect()
+							-- Re-check start condition to avoid recursive processing while blocking windows are open
+							if self:CheckStartCondition(step) then
+								Logger.debug("[TutorialHandler] Step %d: panel %s became visible and condition met, processing", 
+									nextStepIndex, step.startCondition.target)
+								self.pendingStepIndex = nil
+								if connection then
+									connection:Disconnect()
+								end
+								self:ProcessTutorialStep(nextStepIndex, false)
+							else
+								Logger.debug("[TutorialHandler] Step %d: panel %s became visible, but startCondition still not met", 
+									nextStepIndex, step.startCondition.target)
 							end
-							self:ProcessTutorialStep(nextStepIndex, false)
 						end
 					end)
 					if connection then
@@ -1124,6 +1159,33 @@ function TutorialHandler:CheckStartCondition(step)
 	local condition = step.startCondition
 	local result = false
 	
+	-- Helper: check if any blocking window is currently open
+	local function isAnyBlockingWindowOpen()
+		-- Reuse the same window list that is used for temporarily hiding the tutorial
+		local windowNames = {
+			"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
+			"StartBattle", "Battle", "LootboxOpening"
+		}
+		
+		for _, windowName in ipairs(windowNames) do
+			local window = self:FindUIObject(windowName)
+			if window then
+				local isOpen = false
+				if window:IsA("ScreenGui") then
+					isOpen = window.Enabled == true
+				else
+					isOpen = window.Visible == true
+				end
+				
+				if isOpen then
+					return true
+				end
+			end
+		end
+		
+		return false
+	end
+	
 	if condition.type == "window_open" then
 		-- Check if window is open (use cached lookup for performance)
 		local window = self:GetCachedUIObject(condition.target)
@@ -1145,6 +1207,13 @@ function TutorialHandler:CheckStartCondition(step)
 		else
 			-- HUD panels are GuiObjects, check Visible property
 			result = panel.Visible == true
+		end
+		
+		-- Additionally, for hud_show we must ensure that no blocking windows are open.
+		-- This prevents situations where a HUD panel is visible under an active modal window
+		-- (e.g., LootboxOpening), which would cause the tutorial hint to overlap and block input.
+		if result and isAnyBlockingWindowOpen() then
+			result = false
 		end
 	elseif condition.type == "button_click" then
 		-- Button clicks are handled via event listeners

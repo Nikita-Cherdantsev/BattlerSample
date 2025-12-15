@@ -6,6 +6,7 @@ local TweenService = game:GetService("TweenService")
 --// Modules
 local NetworkClient = require(game.StarterPlayer.StarterPlayerScripts.Controllers.NetworkClient)
 local Manifest = require(ReplicatedStorage.Modules.Assets.Manifest)
+local EventBus = require(ReplicatedStorage.Modules.EventBus)
 
 --// Module
 local LootboxUIHandler = {}
@@ -985,10 +986,13 @@ function LootboxUIHandler:OnClaimButtonClicked()
 		if self.Utilities and self.Utilities.TweenUI then
 			self.Utilities.TweenUI.FadeOut(self.LootboxOpening.Main, 0.3, function()
 				self.LootboxOpening.Main.Visible = false
+				-- Notify listeners (e.g., TutorialHandler) that LootboxOpening window has closed
+				EventBus:Emit("WindowClosed", "LootboxOpening")
 			end)
 		else
 			-- Fallback: no animation
 			self.LootboxOpening.Main.Visible = false
+			EventBus:Emit("WindowClosed", "LootboxOpening")
 		end
 	end
 end
