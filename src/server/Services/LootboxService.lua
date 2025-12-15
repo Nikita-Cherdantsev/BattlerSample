@@ -107,7 +107,10 @@ LootboxService.ErrorCodes = {
 }
 
 -- Try to add a lootbox to the player's profile
-function LootboxService.TryAddBox(userId, rarity, source)
+function LootboxService.TryAddBox(userId, rarity, source, options)
+	options = options or {}
+	local removeFromPendingBattleRewards = options.removeFromPendingBattleRewards
+	
 	if not BoxTypes.IsValidRarity(rarity) then
 		return { ok = false, error = LootboxService.ErrorCodes.INVALID_RARITY }
 	end
@@ -117,6 +120,15 @@ function LootboxService.TryAddBox(userId, rarity, source)
 		local isValid, errorMsg = BoxValidator.ValidateProfile(profile.lootboxes, profile.pendingLootbox)
 		if not isValid then
 			error("Profile validation failed: " .. errorMsg)
+		end
+		
+		if removeFromPendingBattleRewards and profile.pendingBattleRewards then
+			for i, pendingReward in ipairs(profile.pendingBattleRewards) do
+				if pendingReward.type == "lootbox" and pendingReward.rarity == rarity then
+					table.remove(profile.pendingBattleRewards, i)
+					break
+				end
+			end
 		end
 		
 		-- Count current lootboxes

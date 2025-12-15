@@ -232,32 +232,77 @@ function RewardsHandler:SetupProfileUpdatedHandler()
 		if not payload.error then
 			-- Handle pending claim update - wait for panel update, then close
 			if self.pendingClaimUpdate then
-				self.pendingClaimUpdate = false
-				
 				-- Check if this is a victory (lootbox reward) or loss (soft reward)
 				local isVictory = self.currentReward and self.currentReward.type == "lootbox"
 				
-				-- Update PackSelectorFrame to show the new lootbox (only for victory)
-				if isVictory and self.PackSelectorFrame and self.PackSelectorFrame.Visible and self.LootboxHandler then
-					-- Victory case: update panel and wait before closing
-					task.spawn(function()
-						-- Wait a bit for the update to complete
-						task.wait(0.1)
-						if self.LootboxHandler.UpdateLootboxStates then
-							self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
+				if isVictory then
+					-- For victory: wait for lootbox to be added to profile
+					local previousLootboxCount = 0
+					if self.LootboxHandler and self.LootboxHandler.currentProfile and self.LootboxHandler.currentProfile.lootboxes then
+						previousLootboxCount = #self.LootboxHandler.currentProfile.lootboxes
+					end
+					
+					local currentLootboxCount = payload.lootboxes and #payload.lootboxes or 0
+					
+					-- Only proceed if lootbox count increased (lootbox was added)
+					if currentLootboxCount > previousLootboxCount then
+						self.pendingClaimUpdate = false
+						
+						-- Update PackSelectorFrame to show the new lootbox
+						if self.PackSelectorFrame and self.PackSelectorFrame.Visible and self.LootboxHandler then
+							-- Victory case: update panel and wait before closing
+							task.spawn(function()
+								-- CRITICAL: Update LootboxHandler's currentProfile BEFORE calling UpdateLootboxStates
+								if self.LootboxHandler.currentProfile then
+									if payload.lootboxes then
+										self.LootboxHandler.currentProfile.lootboxes = payload.lootboxes
+									end
+									if payload.pendingLootbox then
+										self.LootboxHandler.currentProfile.pendingLootbox = payload.pendingLootbox
+									else
+										self.LootboxHandler.currentProfile.pendingLootbox = nil
+									end
+									if payload.currencies then
+										self.LootboxHandler.currentProfile.currencies = payload.currencies
+									end
+								end
+
+								if self.LootboxHandler.UpdateLootboxStates then
+									self.LootboxHandler:UpdateLootboxStates(nil, "PackSelector")
+								end
+								
+								-- Update text visibility after state update
+								self:UpdatePackSelectorTextVisibility()
+								
+								-- Wait a bit more so user can see the update
+								task.wait(0.5)
+								
+								-- Close rewards window
+								self:CloseRewards()
+							end)
+						else
+							-- PackSelector not visible, close immediately
+							self:CloseRewards()
 						end
-						
-						-- Update text visibility after state update
-						self:UpdatePackSelectorTextVisibility()
-						
-						-- Wait a bit more so user can see the update
-						task.wait(0.8)
-						
-						-- Close rewards window
-						self:CloseRewards()
-					end)
+					else
+						-- Update profile but don't close yet
+						if self.LootboxHandler and self.LootboxHandler.currentProfile then
+							if payload.lootboxes then
+								self.LootboxHandler.currentProfile.lootboxes = payload.lootboxes
+							end
+							if payload.pendingLootbox then
+								self.LootboxHandler.currentProfile.pendingLootbox = payload.pendingLootbox
+							else
+								self.LootboxHandler.currentProfile.pendingLootbox = nil
+							end
+							if payload.currencies then
+								self.LootboxHandler.currentProfile.currencies = payload.currencies
+							end
+						end
+					end
 				else
 					-- Loss case: close immediately without delay
+					self.pendingClaimUpdate = false
 					self:CloseRewards()
 				end
 				return

@@ -144,7 +144,6 @@ TutorialConfig.Steps = {
 		highlightObjects = { "BottomPanel.Packs.Outline.Content.Pack1" },
 		arrow = { objectName = "BottomPanel.Packs.Outline.Content.Pack1.BtnUnlock", side = "left" },
 		text = "<b>The better</b> the capsule, <b>the rarer</b> the cards inside. But first, you need to <b>unlock it</b>.",
-		altNextStep = 11,  -- If no lootbox available, go to step 11
 		completeCondition = { type = "button_click", target = "BottomPanel.Packs.Outline.Content.Pack1.BtnUnlock" }
 	},
 	-- 15 Second battle

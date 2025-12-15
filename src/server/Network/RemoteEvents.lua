@@ -921,7 +921,9 @@ local function HandleRequestClaimBattleReward(player, requestData)
 			return
 		end
 		
-		local result = LootboxService.TryAddBox(player.UserId, rarity, "battle_reward")
+		local result = LootboxService.TryAddBox(player.UserId, rarity, "battle_reward", {
+			removeFromPendingBattleRewards = true
+		})
 		if not result.ok then
 			SendErrorUpdate(player, "RequestClaimBattleReward.lootboxFailure", result.error or "INTERNAL", "Failed to grant lootbox reward")
 			return
@@ -936,18 +938,11 @@ local function HandleRequestClaimBattleReward(player, requestData)
 	end
 	
 	-- Remove reward from pendingBattleRewards after successful grant
-	if rewardGranted and rewardToRemove then
+	if rewardGranted and rewardToRemove and rewardToRemove.type == "soft" then
 		ProfileManager.UpdateProfile(player.UserId, function(profile)
 			if profile.pendingBattleRewards then
 				for i, pendingReward in ipairs(profile.pendingBattleRewards) do
-					local matches = false
-					if rewardToRemove.type == "soft" and pendingReward.type == "soft" then
-						matches = pendingReward.amount == rewardToRemove.amount
-					elseif rewardToRemove.type == "lootbox" and pendingReward.type == "lootbox" then
-						matches = pendingReward.rarity == rewardToRemove.rarity
-					end
-					
-					if matches then
+					if pendingReward.type == "soft" and pendingReward.amount == rewardToRemove.amount then
 						table.remove(profile.pendingBattleRewards, i)
 						break
 					end
