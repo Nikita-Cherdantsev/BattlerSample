@@ -22,7 +22,7 @@ local function GetRemoteEvents()
 end
 
 -- Configuration
-local AUTOSAVE_INTERVAL = 300 -- 5 minutes in seconds
+local AUTOSAVE_INTERVAL = 60 -- Autosave interval in seconds (reduced from 300 to 60)
 local MAX_AUTOSAVE_RETRIES = 3
 local AUTOSAVE_BACKOFF_BASE = 2 -- seconds
 
@@ -119,6 +119,11 @@ StartAutosave = function(player)
 			if not profile then
 				-- Profile not loaded, stop autosave
 				break
+			end
+			
+			-- Only autosave if profile has unsaved in-memory changes
+			if not ProfileManager.IsProfileDirty(player.UserId) then
+				continue
 			end
 			
 			-- Attempt autosave with exponential backoff

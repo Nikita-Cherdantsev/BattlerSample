@@ -61,6 +61,7 @@ function TutorialService.CompleteStep(playerId, stepIndex, useAltNextStep)
 	end
 	
 	-- Update tutorial step atomically
+	-- NOTE: For tutorial we defer persistence (immediate = false) to reduce DataStore load.
 	local success, result = ProfileManager.UpdateProfile(playerId, function(profile)
 		local currentStep = profile.tutorialStep or 0
 		Logger.debug("TutorialService.CompleteStep (inside UpdateProfile): currentStep=%d, stepIndex=%d", currentStep, stepIndex)
@@ -123,7 +124,7 @@ function TutorialService.CompleteStep(playerId, stepIndex, useAltNextStep)
 			return profile
 		end
 		return profile
-	end)
+	end, { immediate = false })
 	
 	if not success then
 		Logger.error("TutorialService.CompleteStep: UpdateProfile failed for player %d, stepIndex %d: %s", playerId, stepIndex, tostring(result))
@@ -174,11 +175,11 @@ function TutorialService.GetProgress(playerId)
 				Logger.debug("TutorialService.GetProgress: Next step %d has forceStepOnGameLoad = %d, resetting tutorialStep from %d to %d", 
 					nextStepIndex, forceStepIndex, currentStep, targetStep)
 				
-				-- Update profile with new tutorial step
+				-- Update profile with new tutorial step (deferred persistence)
 				local success, updatedProfile = ProfileManager.UpdateProfile(playerId, function(profile)
 					profile.tutorialStep = targetStep
 					return profile
-				end)
+				end, { immediate = false })
 				
 				if success and updatedProfile then
 					currentStep = targetStep
@@ -209,7 +210,7 @@ function TutorialService.ResetProgress(playerId)
 	local success, updatedProfile = ProfileManager.UpdateProfile(playerId, function(profile)
 		profile.tutorialStep = 0
 		return profile
-	end)
+	end, { immediate = false })
 	
 	if not success then
 		return { ok = false, error = TutorialService.ErrorCodes.INTERNAL }

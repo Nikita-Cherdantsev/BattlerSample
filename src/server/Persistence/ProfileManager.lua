@@ -33,6 +33,7 @@ ProfileManager.DEFAULT_DECK = {
 
 -- Cache for loaded profiles with version tracking
 local profileCache = {}  -- profileKey -> {profile = {...}, version = timestamp}
+local dirtyProfiles = {} -- userId (string) -> true if profile has unsaved in-memory changes
 local memoryStore = nil
 local messageSubscription = nil
 local serverId = HttpService:GenerateGUID(false)  -- Unique ID for this server instance
@@ -40,6 +41,22 @@ local serverId = HttpService:GenerateGUID(false)  -- Unique ID for this server i
 -- Utility functions (must be defined before InitializeSyncServices for use in callbacks)
 local function GenerateProfileKey(userId)
 	return string.format(ProfileManager.KEY_PATTERN:gsub("{userId}", tostring(userId)))
+end
+
+-- Dirty flag helpers (for delayed persistence / autosave)
+local function MarkProfileDirty(userId)
+	userId = tostring(userId)
+	dirtyProfiles[userId] = true
+end
+
+local function ClearProfileDirty(userId)
+	userId = tostring(userId)
+	dirtyProfiles[userId] = nil
+end
+
+function ProfileManager.IsProfileDirty(userId)
+	userId = tostring(userId)
+	return dirtyProfiles[userId] == true
 end
 
 -- Initialize MemoryStore and MessagingService
@@ -781,6 +798,8 @@ function ProfileManager.SaveProfile(userId, profile)
 				profile = result,
 				version = savedVersion
 			}
+			-- DataStore now has the latest version; clear dirty flag
+			ClearProfileDirty(userId)
 			-- Don't update MemoryStore or broadcast - the version is already known
 			warn("⚠️ Kept newer version for user:", userId, "version:", savedVersion)
 			return true
@@ -792,6 +811,9 @@ function ProfileManager.SaveProfile(userId, profile)
 			profile = result,
 			version = savedVersion
 		}
+		
+		-- DataStore now has the latest version; clear dirty flag
+		ClearProfileDirty(userId)
 		
 		-- Update MemoryStore with new version
 		UpdateProfileVersion(userId, savedVersion)
@@ -811,6 +833,8 @@ function ProfileManager.SaveProfile(userId, profile)
 			profile = profile,
 			version = currentTimestamp
 		}
+		-- Save has been queued; consider profile as clean from our perspective
+		ClearProfileDirty(userId)
 		warn("⚠️ Profile save queued for later (budget) for user:", userId, 
 			"- sync services will update when write completes")
 		return true
@@ -1083,6 +1107,8 @@ function ProfileManager.ClearCache(userId)
 	userId = tostring(userId)
 	local profileKey = GenerateProfileKey(userId)
 	profileCache[profileKey] = nil
+	-- Also clear dirty flag for this user (if any)
+	ClearProfileDirty(userId)
 end
 
 -- Get cache status
@@ -1119,8 +1145,15 @@ function ProfileManager.ForceSave(userId)
 end
 
 -- Atomic profile update function
-function ProfileManager.UpdateProfile(userId, updateFunction)
+-- options:
+--   immediate (boolean, default true): if false, do not save immediately, only mark profile as dirty in memory
+function ProfileManager.UpdateProfile(userId, updateFunction, options)
 	userId = tostring(userId)
+	options = options or {}
+	local immediate = options.immediate
+	if immediate == nil then
+		immediate = true
+	end
 	
 	-- Load the profile (always gets latest)
 	local profile = ProfileManager.LoadProfile(userId)
@@ -1147,16 +1180,19 @@ function ProfileManager.UpdateProfile(userId, updateFunction)
 		profile.playerId = tostring(userId)
 	end
 	
-	-- Update timestamp
-	profile.updatedAt = os.time()
-	
-	-- Save the updated profile
-	local saveSuccess = ProfileManager.SaveProfile(userId, profile)
-	if not saveSuccess then
-		return false, "Failed to save profile"
+	if immediate then
+		-- Save the updated profile immediately (existing behavior)
+		local saveSuccess = ProfileManager.SaveProfile(userId, profile)
+		if not saveSuccess then
+			return false, "Failed to save profile"
+		end
+		
+		return true, profile
+	else
+		-- Defer persistence: keep profile only in memory and mark as dirty
+		MarkProfileDirty(userId)
+		return true, profile
 	end
-	
-	return true, profile
 end
 
 -- Flush pending DataStore operations
