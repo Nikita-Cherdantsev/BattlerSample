@@ -182,10 +182,11 @@ TutorialConfig.Steps = {
 	},
 	-- 19 Claim boss reward
 	[19] = {
+		forceStepOnGameLoad = 20,
 		startCondition = { type = "window_open", target = "Reward" },
 		highlightObjects = { "Reward.Victory", "Reward.PacksSelector.Packs", "Reward.Buttons.BtnClaim" },
 		arrow = { objectName = "Reward.Buttons.BtnClaim", side = "left" },
-		completeCondition = { type = "button_click", target = "Reward.Buttons.BtnClaim", force = true }
+		completeCondition = { type = "button_click", target = "Reward.Buttons.BtnClaim" }
 	},
 	-- 20 Go to playtime rewards
 	[20] = {
