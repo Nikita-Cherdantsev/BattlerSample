@@ -204,6 +204,12 @@ function BattleAnimationHandler:GetCardFrame(role, cardId)
 	local battleFrame = findChildWithWarning(self.GameUI, "Battle")
 	if not battleFrame then return nil end
 	
+	-- Check if Battle frame is visible (battle is active)
+	if not battleFrame.Visible then
+		-- Battle frame is hidden, battle likely ended - don't warn, just return nil
+		return nil
+	end
+	
 	local roleFrame = findChildWithWarning(battleFrame, roleName)
 	if not roleFrame then return nil end
 	
@@ -232,15 +238,15 @@ function BattleAnimationHandler:ResetEffect(effectFrame)
 	
 	for _, child in ipairs(effectFrame:GetDescendants()) do
 		if child:IsA("ImageLabel") or child:IsA("ImageButton") then
-			child.ImageTransparency = CONSTANTS.TRANSPARENCY_VISIBLE
+			child.ImageTransparency = CONSTANTS.TRANSPARENCY_HIDDEN
 		elseif child:IsA("TextLabel") or child:IsA("TextButton") then
-			child.TextTransparency = CONSTANTS.TRANSPARENCY_VISIBLE
-			child.TextStrokeTransparency = CONSTANTS.TRANSPARENCY_VISIBLE
+			child.TextTransparency = CONSTANTS.TRANSPARENCY_HIDDEN
+			child.TextStrokeTransparency = CONSTANTS.TRANSPARENCY_HIDDEN
 			-- Handle TxtValue UIStroke separately
 			if child == txtValue then
 				local uiStroke = child:FindFirstChild("UIStroke")
 				if uiStroke then
-					uiStroke.Transparency = CONSTANTS.UISTROKE_VISIBLE_TRANSPARENCY
+					uiStroke.Transparency = CONSTANTS.TRANSPARENCY_HIDDEN
 				end
 			end
 		elseif child:IsA("Frame") then

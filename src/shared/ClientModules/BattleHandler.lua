@@ -24,6 +24,7 @@ BattleHandler.isBattleActive = false -- Track if any battle window is open (prep
 BattleHandler.originalCardSizes = {} -- Store original sizes to prevent accumulation
 BattleHandler.cardHealthValues = {} -- Store current health values for each card frame
 BattleHandler._notif = nil -- Notification UI reference
+BattleHandler._battleProcessingActive = false -- Track if battle log processing is active
 
 --// Constants
 local ANIMATION_DURATION = 0.5
@@ -237,20 +238,24 @@ function BattleHandler:StartBattle(battleData)
 		return false
 	end
 	
+	-- Cancel any pending battle processing from previous battle
+	self._battleProcessingActive = false
+	
 	-- Store battle data
 	self.currentBattle = battleData
 	self.isBattleActive = true
-	
-	-- Reset all effects before battle starts
-	if self.BattleAnimationHandler then
-		self.BattleAnimationHandler:ResetAllEffects()
-	end
+	self._battleProcessingActive = true
 	
 	-- Show battle frame
 	self:ShowBattleFrame()
 	
-	-- Display decks
+	-- Display decks (must be done before resetting effects)
 	self:DisplayDecks(battleData)
+	
+	-- Reset all effects after decks are displayed
+	if self.BattleAnimationHandler then
+		self.BattleAnimationHandler:ResetAllEffects()
+	end
 	
 	-- Start battle simulation
 	self:SimulateBattle(battleData)
@@ -720,6 +725,11 @@ function BattleHandler:ProcessBattleLog(battleLog)
 end
 
 function BattleHandler:ProcessNextBattleAction(battleLog, index)
+	-- Check if battle processing was cancelled (e.g., battle ended early)
+	if not self._battleProcessingActive then
+		return
+	end
+	
 	if index > #battleLog then
 		-- Store battle result from current battle
 		if self.currentBattle and self.currentBattle.result then
@@ -760,6 +770,8 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 			if prevRound1 == 0 and prevRound2 == 0 then
 				-- Last 2 rounds had no damage - skip remaining animations
 				warn("BattleHandler: Last 2 rounds had no damage, skipping remaining animations")
+				-- Cancel battle processing to stop any pending animations
+				self._battleProcessingActive = false
 				-- Show notification to player explaining the stalemate
 				self:ShowNotification("The forces are equal. The battle is over...")
 				-- Store battle result from current battle
@@ -779,6 +791,11 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 		
 	-- Check if this is an attack (abbreviated: t = "a")
 	elseif logEntry.t == "a" then
+		-- Check if battle processing was cancelled before starting animation
+		if not self._battleProcessingActive then
+			return
+		end
+		
 		-- Track damage for stalemate detection
 		local roundNumber = logEntry.r or self._currentRound
 		local damage = logEntry.d or 0
@@ -800,11 +817,14 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 		local ANIMATION_TIMEOUT = 10 -- 10 second timeout per animation
 		
 		self:AnimateAttack(logEntry, roundNumber, function()
-			animationComplete = true
+			-- Check if battle is still active before marking animation complete
+			if self._battleProcessingActive then
+				animationComplete = true
+			end
 		end)
 		
 		-- Wait for animation to actually complete, with timeout
-		while not animationComplete do
+		while not animationComplete and self._battleProcessingActive do
 			if tick() - animationStartTime > ANIMATION_TIMEOUT then
 				warn("BattleHandler: Animation timeout at index", index, "- forcing completion")
 				animationComplete = true
@@ -813,14 +833,21 @@ function BattleHandler:ProcessNextBattleAction(battleLog, index)
 			task.wait(0.1)
 		end
 		
+		-- Only continue processing if battle is still active
+		if not self._battleProcessingActive then
+			return
+		end
+		
 		-- Small delay after animation before next action
 		task.wait(0.1)
 		self:ProcessNextBattleAction(battleLog, index + 1)
 		
 	else
 		-- Unknown action type, skip with small delay
-		task.wait(0.1)
-		self:ProcessNextBattleAction(battleLog, index + 1)
+		if self._battleProcessingActive then
+			task.wait(0.1)
+			self:ProcessNextBattleAction(battleLog, index + 1)
+		end
 	end
 end
 
@@ -846,6 +873,12 @@ function BattleHandler:ConvertToAnimationParams(attackerPlayer, attackerSlot, de
 end
 
 function BattleHandler:AnimateAttack(logEntry, round, onComplete)
+	-- Check if battle processing is still active
+	if not self._battleProcessingActive then
+		if onComplete then onComplete() end
+		return
+	end
+	
 	-- Use abbreviated field names from compact log
 	local attackerSlot = logEntry.as
 	local defenderSlot = logEntry.ds
@@ -873,8 +906,11 @@ function BattleHandler:AnimateAttack(logEntry, round, onComplete)
 		
 		-- Launch animation with callback
 		self.BattleAnimationHandler:Attack(attackerRole, attackerId, targetId, damageType, damageValue, isDeath, function()
-			-- Update defender's health after animation completes
-			self:UpdateCardHealth(defenderFrame, defenderHealth, defenderPlayer, defenderSlot)
+			-- Check if battle is still active before updating health
+			if self._battleProcessingActive then
+				-- Update defender's health after animation completes
+				self:UpdateCardHealth(defenderFrame, defenderHealth, defenderPlayer, defenderSlot)
+			end
 			if onComplete then onComplete() end
 		end)
 	else
@@ -1039,6 +1075,10 @@ end
 
 function BattleHandler:OnBattleEnd()
 	print("🎁 BattleHandler:OnBattleEnd called")
+	
+	-- Cancel battle processing to stop any pending animations
+	self._battleProcessingActive = false
+	
 	print("🎁 BattleHandler: battleResult =", self.battleResult and "present" or "nil")
 	print("🎁 BattleHandler: currentBattle =", self.currentBattle and "present" or "nil")
 	if self.currentBattle then
