@@ -1311,13 +1311,35 @@ function TutorialHandler:WaitForConditionalCondition(step, stepIndex)
 	end
 	
 	if conditionName == "playtime_reward_claimable" then
-		task.spawn(function()
-			local playtimeWindow = self:WaitForUIObject("Playtime", 10)
-			if playtimeWindow then
-				local connections = {}
-				self:SetupConditionalPropertyListener(playtimeWindow, "Visible", step, stepIndex, connections)
+		-- Check condition immediately first
+		if conditionMet then
+			if stepIndex then
+				self:ShowTutorialStep(stepIndex)
+			end
+			return
+		end
+		
+		-- Listen for WindowOpened event instead of waiting for UI object
+		-- This is much faster and avoids race conditions
+		local windowOpenedConnection = EventBus:On("WindowOpened", function(windowName)
+			if windowName == "Playtime" then
+				-- Playtime window opened, check condition immediately
+				local conditionMetNow = self:CheckConditionalStartCondition(step)
+				if conditionMetNow then
+					if windowOpenedConnection then
+						windowOpenedConnection()
+						windowOpenedConnection = nil
+					end
+					if stepIndex then
+						self:ShowTutorialStep(stepIndex)
+					end
+				end
 			end
 		end)
+		
+		if windowOpenedConnection then
+			table.insert(self.Connections, windowOpenedConnection)
+		end
 	elseif conditionName == "playtime_reward_available" then
 		task.spawn(function()
 			local leftPanel = self:WaitForUIObject("LeftPanel", 10)
@@ -1726,9 +1748,10 @@ end
 
 -- Execute method: HandleClaimPlaytimeReward
 -- Finds the first available and visible BtnClaim button in Playtime window
+-- Optimized: asks PlaytimeHandler which reward is available first, then finds the button
 function TutorialHandler:HandleClaimPlaytimeReward(step)
 	-- Check if Playtime window is open and visible
-	local playtimeWindow = self:FindUIObject("Playtime")
+	local playtimeWindow = self:GetCachedUIObject("Playtime")
 	if not playtimeWindow or not playtimeWindow.Visible then
 		return false
 	end
@@ -1739,52 +1762,49 @@ function TutorialHandler:HandleClaimPlaytimeReward(step)
 		return require(ReplicatedStorage.ClientModules.PlaytimeHandler)
 	end)
 	
-	-- Find List frame with rewards
+	if not success or not PlaytimeHandler then
+		return false
+	end
+	
+	-- Ask handler which reward is available (much faster than searching all buttons)
+	local targetRewardIndex = nil
+	for i = 1, 7 do
+		if PlaytimeHandler:IsRewardAvailable(i) and not PlaytimeHandler:IsRewardClaimed(i) then
+			targetRewardIndex = i
+			break
+		end
+	end
+	
+	if not targetRewardIndex then
+		return false
+	end
+	
+	-- Now find the button for this specific reward index
 	local listFrame = playtimeWindow:FindFirstChild("List")
 	if not listFrame then
 		return false
 	end
 	
-	-- Find first available reward with claimable button
-	local targetBtnClaim = nil
-	local targetRewardIndex = nil
-	local targetContent = nil
-	
-	-- Check rewards from 1 to 7
-	for i = 1, 7 do
-		local rewardFrame = listFrame:FindFirstChild("Reward" .. i)
-		if rewardFrame then
-			-- Check if reward frame is visible
-			if rewardFrame.Visible then
-				local content = rewardFrame:FindFirstChild("Content")
-				if content then
-					local btnClaim = content:FindFirstChild("BtnClaim")
-					if btnClaim and btnClaim.Visible and btnClaim.Active then
-						-- Check if reward is available (if PlaytimeHandler is available)
-						local isAvailable = true
-						if success and PlaytimeHandler then
-							-- Check if reward is available and not claimed
-							isAvailable = PlaytimeHandler:IsRewardAvailable(i) and not PlaytimeHandler:IsRewardClaimed(i)
-						end
-						
-						if isAvailable then
-							targetContent = content:FindFirstChild("Content")
-							targetBtnClaim = btnClaim
-							targetRewardIndex = i
-							break
-						end
-					end
-				end
-			end
-		end
-	end
-	
-	if not targetBtnClaim then
+	local rewardFrame = listFrame:FindFirstChild("Reward" .. targetRewardIndex)
+	if not rewardFrame or not rewardFrame.Visible then
 		return false
 	end
 	
+	local content = rewardFrame:FindFirstChild("Content")
+	if not content then
+		return false
+	end
+	
+	local btnClaim = content:FindFirstChild("BtnClaim")
+	if not btnClaim or not btnClaim.Visible or not btnClaim.Active then
+		return false
+	end
+	
+	-- Found the button, set up targets
+	local targetContent = content:FindFirstChild("Content")
 	local contentPath = targetContent and self:GetRelativePath(targetContent, self.UI) or nil
-	local relativePath = self:GetRelativePath(targetBtnClaim, self.UI)
+	local relativePath = self:GetRelativePath(btnClaim, self.UI)
+	
 	if relativePath then
 		local highlightPath = contentPath and (contentPath .. "," .. relativePath) or relativePath
 		self.conditionalTargets = {
@@ -1795,6 +1815,7 @@ function TutorialHandler:HandleClaimPlaytimeReward(step)
 		return true
 	end
 	
+	-- Fallback to path-based lookup
 	local fallbackContentPath = "Playtime.List.Reward" .. targetRewardIndex .. ".Content.Content"
 	local fallbackBtnPath = "Playtime.List.Reward" .. targetRewardIndex .. ".Content.BtnClaim"
 	local foundContent = self:FindUIObject(fallbackContentPath)
