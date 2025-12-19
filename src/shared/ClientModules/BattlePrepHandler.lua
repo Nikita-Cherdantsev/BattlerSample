@@ -390,6 +390,9 @@ function BattlePrepHandler:OpenBattlePrep()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = false
 	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = false
+	end
 	
 	-- Load enemy data based on mode
 	if isNPCMode then
@@ -973,6 +976,10 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		if self.UI.BottomPanel then
 			self.UI.BottomPanel.Visible = true
 			EventBus:Emit("HudShown", "BottomPanel")
+		end
+		if self.UI.RightPanel then
+			self.UI.RightPanel.Visible = true
+			EventBus:Emit("HudShown", "RightPanel")
 		end
 	end
 	

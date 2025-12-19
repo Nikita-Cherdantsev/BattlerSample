@@ -69,7 +69,14 @@ ProfileSchema.Profile = {
 	
 	-- Pending battle rewards (unclaimed rewards from battles)
 	-- Format: { {type = "soft", amount = number}, {type = "lootbox", rarity = string} }
-	pendingBattleRewards = {}    -- Array of unclaimed battle rewards
+	pendingBattleRewards = {},    -- Array of unclaimed battle rewards
+	
+	-- Like reward data
+	likeReward = {
+		lastRequest = nil,  -- Unix timestamp when window was last opened (optional)
+		claimed = false,    -- Whether the like reward has been claimed
+		eligible = false    -- Cached eligibility result (checked at game start)
+	}
 }
 
 -- Lootbox entry structure
@@ -460,7 +467,12 @@ function ProfileSchema.CreateProfile(playerId)
 		bossWins = {},
 		npcWins = 0,
 		totalRobuxSpent = 0,
-		pendingBattleRewards = {}
+		pendingBattleRewards = {},
+		likeReward = {
+			lastRequest = nil,
+			claimed = false,
+			eligible = false
+		}
 	}
 	
 	return profile
@@ -497,7 +509,12 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 		bossWins = v1Profile.bossWins or {},
 		npcWins = v1Profile.npcWins or 0,
 		totalRobuxSpent = v1Profile.totalRobuxSpent or 0,
-		pendingBattleRewards = {}
+		pendingBattleRewards = {},
+		likeReward = {
+			lastRequest = nil,
+			claimed = false,
+			eligible = false
+		}
 	}
 	
 	-- Migrate collection from v1 format to v2 format
@@ -544,7 +561,12 @@ function ProfileSchema.MigrateV2ToV3(v2Profile)
 		npcWins = v2Profile.npcWins,
 		totalRobuxSpent = v2Profile.totalRobuxSpent,
 		pendingBattleRewards = v2Profile.pendingBattleRewards,
-		bossDifficulties = v2Profile.bossDifficulties
+		bossDifficulties = v2Profile.bossDifficulties,
+		likeReward = v2Profile.likeReward or {
+			lastRequest = nil,
+			claimed = false,
+			eligible = false
+		}
 	}
 	
 	return v3Profile

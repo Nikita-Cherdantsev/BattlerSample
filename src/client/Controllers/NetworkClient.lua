@@ -45,6 +45,10 @@ local RequestClaimBattleReward = Network:WaitForChild("RequestClaimBattleReward"
 local RequestSaveBattleRewardToPending = Network:WaitForChild("RequestSaveBattleRewardToPending")
 local RequestTutorialProgress = Network:WaitForChild("RequestTutorialProgress")
 local RequestCompleteTutorialStep = Network:WaitForChild("RequestCompleteTutorialStep")
+local RequestCheckGameInfo = Network:WaitForChild("RequestCheckGameInfo")
+local RequestCheckLikeRewardEligibility = Network:WaitForChild("RequestCheckLikeRewardEligibility")
+local RequestRecordLikeRewardWindowOpen = Network:WaitForChild("RequestRecordLikeRewardWindowOpen")
+local RequestClaimLikeReward = Network:WaitForChild("RequestClaimLikeReward")
 
 -- State
 local lastServerNow = 0
@@ -393,6 +397,38 @@ function NetworkClient.requestCompleteTutorialStep(stepIndex, useAltNextStep)
 		stepIndex = stepIndex,
 		useAltNextStep = useAltNextStep or false
 	})
+	
+	return true
+end
+
+-- Check game info (votes and favorites)
+function NetworkClient.requestCheckGameInfo()
+	log("Requesting check game info")
+	RequestCheckGameInfo:FireServer({})
+	
+	return true
+end
+
+-- Check like reward eligibility
+function NetworkClient.requestCheckLikeRewardEligibility()
+	log("Requesting check like reward eligibility")
+	RequestCheckLikeRewardEligibility:FireServer({})
+	
+	return true
+end
+
+-- Record like reward window open
+function NetworkClient.requestRecordLikeRewardWindowOpen()
+	log("Requesting record like reward window open")
+	RequestRecordLikeRewardWindowOpen:FireServer({})
+	
+	return true
+end
+
+-- Claim like reward
+function NetworkClient.requestClaimLikeReward()
+	log("Requesting claim like reward")
+	RequestClaimLikeReward:FireServer({})
 	
 	return true
 end

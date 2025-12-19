@@ -1186,25 +1186,27 @@ end
 
 -- Configure currencies from rewards data
 function LootboxUIHandler:ConfigureCurrenciesFromRewards(rewards)
-	-- Configure Currency1 (hard currency) - hide if hardDelta == 0
-	if rewards.hardDelta == 0 then
+	-- Configure Currency1 (hard currency) - hide if hardDelta == 0 or nil
+	local hardDelta = rewards.hardDelta or 0
+	if hardDelta == 0 then
 		self.LootboxOpening.Currency1.Visible = false
 	else
 		self.LootboxOpening.Currency1.Visible = true
 		local currency1TxtValue = self.LootboxOpening.Currency1:FindFirstChild("TxtValue")
 		if currency1TxtValue then
-			currency1TxtValue.Text = tostring(rewards.hardDelta)
+			currency1TxtValue.Text = tostring(hardDelta)
 		end
 	end
 	
-	-- Configure Currency2 (soft currency) - hide if softDelta == 0
-	if rewards.softDelta == 0 then
+	-- Configure Currency2 (soft currency) - hide if softDelta == 0 or nil
+	local softDelta = rewards.softDelta or 0
+	if softDelta == 0 then
 		self.LootboxOpening.Currency2.Visible = false
 	else
 		self.LootboxOpening.Currency2.Visible = true
 		local currency2TxtValue = self.LootboxOpening.Currency2:FindFirstChild("TxtValue")
 		if currency2TxtValue then
-			currency2TxtValue.Text = tostring(rewards.softDelta)
+			currency2TxtValue.Text = tostring(softDelta)
 		end
 	end
 end
@@ -1276,8 +1278,8 @@ function LootboxUIHandler:OpenLootboxAnimation(rewards)
 	cardSizeTween:Play()
 	cardSizeTween.Completed:Wait()
 
-	self.LootboxOpening.Currency1.Visible = rewards.hardDelta > 0
-	self.LootboxOpening.Currency2.Visible = rewards.softDelta > 0
+	self.LootboxOpening.Currency1.Visible = (rewards.hardDelta or 0) > 0
+	self.LootboxOpening.Currency2.Visible = (rewards.softDelta or 0) > 0
 
 	local hardSizeTween = TweenService:Create(self.LootboxOpening.Currency1, TweenInfo.new(fadeInTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.281, 0.558) })
 	hardSizeTween:Play()

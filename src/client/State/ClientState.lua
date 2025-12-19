@@ -163,7 +163,7 @@ function ClientState.applyProfileUpdate(payload)
 	end
 	
 	-- Update profile data (merge with existing if available)
-	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies or payload.playtime then
+	if payload.deck or payload.collectionSummary or payload.loginInfo or payload.squadPower or payload.lootboxes or payload.pendingLootbox or payload.currencies or payload.playtime or payload.likeReward then
 		-- Create or update profile
 		local didCreateProfile = false
 		if not state.profile then
@@ -243,6 +243,27 @@ function ClientState.applyProfileUpdate(payload)
 		-- Update playtime
 		if payload.playtime then
 			state.profile.playtime = payload.playtime
+		end
+		
+		-- Update likeReward
+		if payload.likeReward then
+			if not state.profile.likeReward then
+				state.profile.likeReward = {
+					lastRequest = nil,
+					claimed = false,
+					eligible = false
+				}
+			end
+			-- Merge likeReward updates
+			if payload.likeReward.claimed ~= nil then
+				state.profile.likeReward.claimed = payload.likeReward.claimed
+			end
+			if payload.likeReward.eligible ~= nil then
+				state.profile.likeReward.eligible = payload.likeReward.eligible
+			end
+			if payload.likeReward.lastRequest ~= nil then
+				state.profile.likeReward.lastRequest = payload.likeReward.lastRequest
+			end
 		end
 		
 		local collectionSize = 0

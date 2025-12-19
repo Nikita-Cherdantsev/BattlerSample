@@ -63,6 +63,9 @@
         },
         "TutorialHandler": {
           "$path": "src/shared/ClientModules/TutorialHandler.lua"
+        },
+        "LikeHandler": {
+          "$path": "src/shared/ClientModules/LikeHandler.lua"
         }
       },
       "Modules": {
@@ -286,6 +289,9 @@
         },
         "TutorialService": {
           "$path": "src/server/Services/TutorialService.lua"
+        },
+        "LikeService": {
+          "$path": "src/server/Services/LikeService.lua"
         },
         "CommandService": {
           "$path": "src/server/Services/CommandService.lua"

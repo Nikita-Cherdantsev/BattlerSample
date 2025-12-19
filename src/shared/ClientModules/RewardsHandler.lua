@@ -863,6 +863,10 @@ function RewardsHandler:CloseRewards()
 				self.UI.BottomPanel.Visible = true
 				EventBus:Emit("HudShown", "BottomPanel")
 			end
+			if self.UI.RightPanel then
+				self.UI.RightPanel.Visible = true
+				EventBus:Emit("HudShown", "RightPanel")
+			end
 		end
 
 		self.currentReward = nil

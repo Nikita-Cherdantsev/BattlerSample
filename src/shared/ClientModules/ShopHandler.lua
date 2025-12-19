@@ -479,6 +479,9 @@ function ShopHandler:OpenWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = false
 	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = false
+	end
 
 	self.ShopFrame.Visible = true
 
@@ -544,6 +547,10 @@ function ShopHandler:CloseWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
 		EventBus:Emit("HudShown", "BottomPanel")
+	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = true
+		EventBus:Emit("HudShown", "RightPanel")
 	end
 	
 	print("✅ ShopHandler: Shop window closed")

@@ -1164,7 +1164,7 @@ function TutorialHandler:CheckStartCondition(step)
 		-- Reuse the same window list that is used for temporarily hiding the tutorial
 		local windowNames = {
 			"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
-			"StartBattle", "Battle", "LootboxOpening"
+			"StartBattle", "Battle", "LootboxOpening", "LikeReward"
 		}
 		
 		for _, windowName in ipairs(windowNames) do
@@ -4097,7 +4097,7 @@ function TutorialHandler:SetupWindowVisibilityTracking(step)
 	
 	local windowNames = {
 		"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
-		"StartBattle", "Battle", "LootboxOpening"
+		"StartBattle", "Battle", "LootboxOpening", "LikeReward"
 	}
 	
 	for _, conn in ipairs(self.windowVisibilityConnections) do
@@ -4188,7 +4188,7 @@ function TutorialHandler:RestoreTutorial()
 	
 	local windowNames = {
 		"Deck", "Daily", "Playtime", "Shop", "RedeemCode", 
-		"StartBattle", "Battle", "LootboxOpening"
+		"StartBattle", "Battle", "LootboxOpening", "LikeReward"
 	}
 	
 	local anyWindowOpen = false

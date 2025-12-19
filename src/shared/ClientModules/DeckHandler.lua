@@ -767,12 +767,12 @@ function DeckHandler:OpenWindow()
 	-- Hide HUD panels if they exist
 	if self.UI.LeftPanel then
 		self.UI.LeftPanel.Visible = false
-	else
 	end
-	
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = false
-	else
+	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = false
 	end
 
 	-- Update displays
@@ -852,6 +852,10 @@ function DeckHandler:CloseWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
 		EventBus:Emit("HudShown", "BottomPanel")
+	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = true
+		EventBus:Emit("HudShown", "RightPanel")
 	end
 	
 	-- Register with close button handler

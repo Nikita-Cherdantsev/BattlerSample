@@ -104,6 +104,11 @@ local function sanitizeProfileSnapshot(player, profile)
 		lootboxes = sanitizeLootboxes(profile.lootboxes or {}),
 		pendingLootbox = sanitizePendingLootbox(profile.pendingLootbox),
 		playtime = sanitizePlaytime(profile.playtime),
+		likeReward = profile.likeReward and deepCopy(profile.likeReward) or {
+			lastRequest = nil,
+			claimed = false,
+			eligible = false
+		},
 		updatedAt = profile.updatedAt or os.time(),
 	}
 

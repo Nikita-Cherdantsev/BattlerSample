@@ -376,6 +376,9 @@ function PlaytimeHandler:OpenWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = false
 	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = false
+	end
 
 	-- Show playtime gui
 	self.PlaytimeFrame.Visible = true
@@ -445,6 +448,10 @@ function PlaytimeHandler:CloseWindow()
 	if self.UI.BottomPanel then
 		self.UI.BottomPanel.Visible = true
 		EventBus:Emit("HudShown", "BottomPanel")
+	end
+	if self.UI.RightPanel then
+		self.UI.RightPanel.Visible = true
+		EventBus:Emit("HudShown", "RightPanel")
 	end
 	
 	-- Register with close button handler

@@ -18,6 +18,7 @@ local PromoCodeService = require(game.ServerScriptService:WaitForChild("Services
 local ProfileSnapshotService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("ProfileSnapshotService"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
 local TutorialService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("TutorialService"))
+local LikeService = require(game.ServerScriptService:WaitForChild("Services"):WaitForChild("LikeService"))
 local Logger = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Logger"))
 
 -- Network folder and RemoteEvents (created in Init)
@@ -50,6 +51,10 @@ local RequestClaimBattleReward = nil
 local RequestSaveBattleRewardToPending = nil
 local RequestTutorialProgress = nil
 local RequestCompleteTutorialStep = nil
+local RequestCheckGameInfo = nil
+local RequestCheckLikeRewardEligibility = nil
+local RequestRecordLikeRewardWindowOpen = nil
+local RequestClaimLikeReward = nil
 
 -- Utility functions
 local function LogInfo(player, message, ...)
@@ -1065,6 +1070,64 @@ local function HandleRequestCompleteTutorialStep(player, requestData)
 	end
 end
 
+local function HandleRequestCheckGameInfo(player, requestData)
+	LogInfo(player, "Processing check game info request")
+	
+	local result = LikeService.CheckGameInfo(player)
+	
+	-- Note: This doesn't send a response back to client, just logs to server
+	-- The logging happens inside LikeService.CheckGameInfo
+end
+
+local function HandleRequestCheckLikeRewardEligibility(player, requestData)
+	LogInfo(player, "Processing check like reward eligibility request")
+	
+	local result = LikeService.CheckRewardEligibility(player.UserId)
+	
+	if result.ok then
+		-- Include reward config in response
+		local rewardConfig = LikeService.GetRewardConfig()
+		SendSnapshot(player, "RequestCheckLikeRewardEligibility.success", {
+			likeRewardEligibility = result.eligible,
+			likeRewardConfig = rewardConfig
+		}, { snapshot = false })
+	else
+		SendErrorUpdate(player, "RequestCheckLikeRewardEligibility.failure", result.reason or "INTERNAL", "Failed to check eligibility")
+	end
+end
+
+local function HandleRequestRecordLikeRewardWindowOpen(player, requestData)
+	LogInfo(player, "Processing record like reward window open request")
+	
+	local success = LikeService.RecordWindowOpen(player.UserId)
+	
+	if success then
+		SendSnapshot(player, "RequestRecordLikeRewardWindowOpen.success", nil, { snapshot = false })
+	else
+		SendErrorUpdate(player, "RequestRecordLikeRewardWindowOpen.failure", "INTERNAL", "Failed to record window open")
+	end
+end
+
+local function HandleRequestClaimLikeReward(player, requestData)
+	LogInfo(player, "Processing claim like reward request")
+	
+	local result = LikeService.ClaimReward(player.UserId)
+	
+	if result.ok then
+		-- Don't send rewards array - card is already added to collection directly
+		-- Just update profile with likeReward.claimed = true and includeCollection
+		SendSnapshot(player, "RequestClaimLikeReward.success", {
+			likeReward = { claimed = true }
+		}, {
+			includeCollection = true
+		})
+		LogInfo(player, "Like reward claimed successfully")
+	else
+		SendErrorUpdate(player, "RequestClaimLikeReward.failure", result.error or "INTERNAL", "Failed to claim reward")
+		LogWarning(player, "Claim like reward failed: %s", tostring(result.error))
+	end
+end
+
 -- Connection code moved to Init() function
 
 -- Public API for other server modules
@@ -1095,6 +1158,10 @@ RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
 RemoteEvents.RequestSaveBattleRewardToPending = RequestSaveBattleRewardToPending
 RemoteEvents.RequestTutorialProgress = RequestTutorialProgress
 RemoteEvents.RequestCompleteTutorialStep = RequestCompleteTutorialStep
+RemoteEvents.RequestCheckGameInfo = RequestCheckGameInfo
+RemoteEvents.RequestCheckLikeRewardEligibility = RequestCheckLikeRewardEligibility
+RemoteEvents.RequestRecordLikeRewardWindowOpen = RequestRecordLikeRewardWindowOpen
+RemoteEvents.RequestClaimLikeReward = RequestClaimLikeReward
 
 -- Export SendSnapshot for use in other services
 RemoteEvents.SendSnapshot = SendSnapshot
@@ -1229,6 +1296,24 @@ function RemoteEvents.Init()
 	RequestCompleteTutorialStep.Name = "RequestCompleteTutorialStep"
 	RequestCompleteTutorialStep.Parent = NetworkFolder
 	
+	-- Check Game Info RemoteEvent
+	RequestCheckGameInfo = Instance.new("RemoteEvent")
+	RequestCheckGameInfo.Name = "RequestCheckGameInfo"
+	RequestCheckGameInfo.Parent = NetworkFolder
+	
+	-- Like Reward RemoteEvents
+	RequestCheckLikeRewardEligibility = Instance.new("RemoteEvent")
+	RequestCheckLikeRewardEligibility.Name = "RequestCheckLikeRewardEligibility"
+	RequestCheckLikeRewardEligibility.Parent = NetworkFolder
+	
+	RequestRecordLikeRewardWindowOpen = Instance.new("RemoteEvent")
+	RequestRecordLikeRewardWindowOpen.Name = "RequestRecordLikeRewardWindowOpen"
+	RequestRecordLikeRewardWindowOpen.Parent = NetworkFolder
+	
+	RequestClaimLikeReward = Instance.new("RemoteEvent")
+	RequestClaimLikeReward.Name = "RequestClaimLikeReward"
+	RequestClaimLikeReward.Parent = NetworkFolder
+	
 	
 	-- Connect RemoteEvents to handlers
 	RequestSetDeck.OnServerEvent:Connect(HandleRequestSetDeck)
@@ -1256,6 +1341,10 @@ function RemoteEvents.Init()
 	RequestSaveBattleRewardToPending.OnServerEvent:Connect(HandleRequestSaveBattleRewardToPending)
 	RequestTutorialProgress.OnServerEvent:Connect(HandleRequestTutorialProgress)
 	RequestCompleteTutorialStep.OnServerEvent:Connect(HandleRequestCompleteTutorialStep)
+	RequestCheckGameInfo.OnServerEvent:Connect(HandleRequestCheckGameInfo)
+	RequestCheckLikeRewardEligibility.OnServerEvent:Connect(HandleRequestCheckLikeRewardEligibility)
+	RequestRecordLikeRewardWindowOpen.OnServerEvent:Connect(HandleRequestRecordLikeRewardWindowOpen)
+	RequestClaimLikeReward.OnServerEvent:Connect(HandleRequestClaimLikeReward)
 	
 	-- Initialize PlaytimeService
 	PlaytimeService.Init()

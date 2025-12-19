@@ -82,6 +82,12 @@ local function ResetProfileCommand(player)
 		}
 		
 		newProfile.squadPower = ComputeSquadPower(newProfile)
+		-- Reset likeReward
+		newProfile.likeReward = {
+			lastRequest = nil,
+			claimed = false,
+			eligible = false
+		}
 		ProfileManager.ClearCache(userId)
 		
 		if not ProfileManager.SaveProfile(userId, newProfile) then
