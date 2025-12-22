@@ -14,6 +14,7 @@ local Players = game:GetService("Players")
 local ProfileManager = require(script.Parent.Parent.Persistence.ProfileManager)
 local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
 local Logger = require(game.ReplicatedStorage.Modules.Logger)
+local AnalyticsService = require(script.Parent.AnalyticsService)
 
 -- Error codes
 TutorialService.ErrorCodes = {
@@ -136,6 +137,9 @@ function TutorialService.CompleteStep(playerId, stepIndex, useAltNextStep)
 	local newStep = finalProfile and finalProfile.tutorialStep or 0
 	
 	Logger.debug("Tutorial step %d completed for player %d (newStep=%d)", stepIndex, playerId, newStep)
+	
+	-- Log onboarding step to analytics (only for specific steps to avoid duplicate events)
+	AnalyticsService.LogOnboardingStep(playerId, stepIndex)
 	
 	return { 
 		ok = true, 

@@ -649,5 +649,84 @@ function AnalyticsService.Init()
 	print("✅ AnalyticsService initialized")
 end
 
+-- Log onboarding step completion
+-- Only logs specific steps to avoid duplicate events from repeated actions
+function AnalyticsService.LogOnboardingStep(userId, stepIndex)
+	if not ANALYTICS_CONFIG.enabled then
+		return
+	end
+	
+	-- Check if admin
+	if IsAdmin(userId) then
+		return
+	end
+	
+	-- Validate step index
+	if not stepIndex or type(stepIndex) ~= "number" or stepIndex < 1 then
+		warn(string.format("[AnalyticsService] Invalid stepIndex for onboarding: %s", tostring(stepIndex)))
+		return
+	end
+	
+	-- Only log specific steps: 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 16, 18, 19, 20, 21
+	-- This prevents logging duplicate events from repeated actions (e.g., opening/closing cards multiple times,
+	-- losing boss battles multiple times, etc.)
+	local allowedSteps = {
+		[1] = true, [2] = true, [3] = true, [4] = true,
+		[5] = true, [6] = true, [7] = true, [8] = true,
+		[12] = true, [13] = true, [14] = true, [16] = true,
+		[18] = true, [19] = true, [20] = true, [21] = true
+	}
+	
+	if not allowedSteps[stepIndex] then
+		-- Skip logging for steps not in the list
+		return
+	end
+	
+	-- Get player object
+	local player = Players:GetPlayerByUserId(userId)
+	if not player then
+		warn(string.format("[AnalyticsService] Cannot log onboarding step - player %s not found", tostring(userId)))
+		return
+	end
+	
+	-- Get or create session ID for this player (same logic as SendEvent)
+	local funnelSessionId = playerSessions[userId]
+	if not funnelSessionId then
+		funnelSessionId = tostring(userId) .. "_" .. game.JobId
+		playerSessions[userId] = funnelSessionId
+		print(string.format("[AnalyticsService] ✅ Created NEW session for onboarding userId %s: %s", 
+			tostring(userId), funnelSessionId))
+	else
+		print(string.format("[AnalyticsService] ♻️  Reusing EXISTING session for onboarding userId %s: %s", 
+			tostring(userId), funnelSessionId))
+	end
+	
+	local funnelName = "Onboarding_1"
+	local step = stepIndex
+	local stepName = "Step_" .. tostring(stepIndex)
+	
+	-- No custom fields for onboarding steps (can be added later if needed)
+	local customFields = {}
+	
+	local success, errorMsg = pcall(function()
+		RobloxAnalytics:LogFunnelStepEvent(
+			player,
+			funnelName,
+			funnelSessionId,
+			step,
+			stepName,
+			customFields
+		)
+	end)
+	
+	if success then
+		print(string.format("[AnalyticsService] ✅ Onboarding step logged: step=%d | userId=%s | sessionId=%s", 
+			stepIndex, tostring(userId), funnelSessionId))
+	else
+		warn(string.format("[AnalyticsService] ❌ Failed to log onboarding step %d for userId %s: %s", 
+			stepIndex, tostring(userId), tostring(errorMsg)))
+	end
+end
+
 return AnalyticsService
 
