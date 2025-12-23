@@ -670,15 +670,29 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 	-- Only log specific steps: 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 16, 18, 19, 20, 21
 	-- This prevents logging duplicate events from repeated actions (e.g., opening/closing cards multiple times,
 	-- losing boss battles multiple times, etc.)
-	local allowedSteps = {
-		[1] = true, [2] = true, [3] = true, [4] = true,
-		[5] = true, [6] = true, [7] = true, [8] = true,
-		[12] = true, [13] = true, [14] = true, [16] = true,
-		[18] = true, [19] = true, [20] = true, [21] = true
+	-- Step names mapping: stepIndex -> stepName
+	local stepNames = {
+		[1] = "Claim daily reward",
+		[2] = "Claim card",
+		[3] = "Open first lootbox",
+		[4] = "Claim card",
+		[5] = "Open Deck window",
+		[6] = "Select card",
+		[7] = "Card selected, level up",
+		[8] = "CardInfo closed",
+		[12] = "Start battle",
+		[13] = "Claim lootbox",
+		[14] = "Unlock lootbox",
+		[16] = "Start second battle",
+		[18] = "Start boss battle",
+		[19] = "Claim boss reward",
+		[20] = "Go to playtime rewards",
+		[21] = "Claim playtime reward"
 	}
 	
-	if not allowedSteps[stepIndex] then
-		-- Skip logging for steps not in the list
+	-- Check if this step should be logged
+	if not stepNames[stepIndex] then
+		-- Skip logging for steps not in the list (9, 10, 11, 15, 17)
 		return
 	end
 	
@@ -702,8 +716,9 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 	end
 	
 	local funnelName = "Onboarding_1"
+	-- Use real tutorial step index as step (1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 16, 18, 19, 20, 21)
 	local step = stepIndex
-	local stepName = "Step_" .. tostring(stepIndex)
+	local stepName = stepNames[stepIndex]
 	
 	-- No custom fields for onboarding steps (can be added later if needed)
 	local customFields = {}
@@ -720,8 +735,8 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 	end)
 	
 	if success then
-		print(string.format("[AnalyticsService] ✅ Onboarding step logged: step=%d | userId=%s | sessionId=%s", 
-			stepIndex, tostring(userId), funnelSessionId))
+		print(string.format("[AnalyticsService] ✅ Onboarding step logged: step=%d (%s) | userId=%s | sessionId=%s", 
+			stepIndex, stepName, tostring(userId), funnelSessionId))
 	else
 		warn(string.format("[AnalyticsService] ❌ Failed to log onboarding step %d for userId %s: %s", 
 			stepIndex, tostring(userId), tostring(errorMsg)))
