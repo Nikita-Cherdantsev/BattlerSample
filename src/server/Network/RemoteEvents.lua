@@ -1091,8 +1091,10 @@ local function HandleRequestCheckLikeRewardEligibility(player, requestData)
 			likeRewardEligibility = result.eligible,
 			likeRewardConfig = rewardConfig
 		}, { snapshot = false })
+		LogInfo(player, "Like reward eligibility: %s, reason: %s", tostring(result.eligible), result.reason)
 	else
 		SendErrorUpdate(player, "RequestCheckLikeRewardEligibility.failure", result.reason or "INTERNAL", "Failed to check eligibility")
+		LogWarning(player, "Failed to check eligibility: %s", result.reason or "INTERNAL")
 	end
 end
 

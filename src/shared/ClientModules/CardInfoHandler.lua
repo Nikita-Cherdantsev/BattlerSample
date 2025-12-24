@@ -528,13 +528,13 @@ function CardInfoHandler:UpdateProgressSection(cardData, hasCard, cardLevel, car
 	local txtValue = progressSection:FindFirstChild("TxtValue")
 	if txtValue then
 		if cardLevel >= 10 then
-			txtValue.Text = "Max level"
+			txtValue.Text = "MAX"
 		else
 			local nextLevelCost = CardLevels.GetLevelCost(cardLevel + 1, cardData.rarity)
 			if nextLevelCost then
 				txtValue.Text = "To level up:\n" .. cardCount .. " / " .. nextLevelCost.requiredCount
 			else
-				txtValue.Text = "Max level"
+				txtValue.Text = "MAX"
 			end
 		end
 	end
