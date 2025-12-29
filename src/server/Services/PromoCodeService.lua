@@ -73,6 +73,26 @@ local PROMO_CODES = {
 			{ type = "hard", amount = 50 }
 		}
 	},
+	["50LIKES"] = {
+		rewards = {
+			{ type = "lootbox", rarity = "epic" }
+		}
+	},
+	["GOLD200"] = {
+		rewards = {
+			{ type = "hard", amount = 200 }
+		}
+	},
+	["KICHEKO"] = {
+		rewards = {
+			{ type = "lootbox", rarity = "legendary" }
+		}
+	},
+	["FIVE"] = {
+		rewards = {
+			{ type = "hard", amount = 500 }
+		}
+	},
 }
 
 -- Error codes
