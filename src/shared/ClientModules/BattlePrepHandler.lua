@@ -2,6 +2,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 --// Modules
 local EventBus = require(ReplicatedStorage.Modules.EventBus)
@@ -15,6 +17,10 @@ BattlePrepHandler._initialized = false
 BattlePrepHandler.isAnimating = false
 BattlePrepHandler.currentEnemyData = nil
 BattlePrepHandler.currentPartName = nil -- Store current part name for NPC/Boss detection
+BattlePrepHandler.currentBattleMode = "NPC" -- "NPC" or "Boss"
+BattlePrepHandler.forceMode = nil -- Can be set externally (e.g., by tutorial) to force battle mode
+BattlePrepHandler.selectedNPCModelName = nil -- Store selected NPC model name until next battle
+BattlePrepHandler.currentViewportModel = nil -- Store cloned model in ViewportFrame
 
 --// Constants
 local LOOTBOX_ASSETS = {
@@ -157,6 +163,20 @@ function BattlePrepHandler:SetupBattlePrep()
 	-- Setup close button
 	self:SetupCloseButton()
 	
+	-- Setup RightPanel.BtnBattle button
+	self:SetupRightPanelBattleButton()
+	
+	-- Setup tab buttons (BtnNPC, BtnBoss)
+	self:SetupTabButtons()
+	
+	-- Find and store ViewportFrame reference
+	local viewportFrame = mainFrame:FindFirstChild("ViewportFrame")
+	if viewportFrame then
+		self.ViewportFrame = viewportFrame
+	else
+		warn("BattlePrepHandler: ViewportFrame not found in Main")
+	end
+	
 	print("✅ BattlePrepHandler: Battle preparation UI setup completed")
 end
 
@@ -232,38 +252,38 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 	
 	-- Connect interaction (use original part name for battle logic)
 	local connection = proximityPrompt.Triggered:Connect(function()
-		-- Extract NPC name from model (prefer model name over part name)
+		-- Extract NPC/Boss name from model (prefer model name over part name)
 		-- For tutorial, we need to match with path like "Workspace.Noob" or "Workspace.Rubber King"
-		local npcName = nil
+		local modelName = nil
 		if originalPart and originalPart.Parent then
 			-- Try to get model name (Model.Name)
 			local model = originalPart.Parent
 			if model:IsA("Model") then
-				npcName = model.Name
+				modelName = model.Name
 			else
 				-- Fallback: try to find parent model
 				local parentModel = originalPart:FindFirstAncestorOfClass("Model")
 				if parentModel then
-					npcName = parentModel.Name
+					modelName = parentModel.Name
 				end
 			end
 		end
 		
 		-- Fallback to part name if model name not found
-		if not npcName and originalPartName then
+		if not modelName and originalPartName then
 			-- Try to extract NPC name from part name
 			-- NPCMode1Head -> Noob, BossMode1Head -> Rubber King, etc.
 			if originalPartName:match("^NPCMode") then
-				npcName = "Noob"  -- Default NPC name
+				modelName = "Noob"  -- Default NPC name
 			elseif originalPartName:match("^BossMode") then
-				npcName = "Rubber King"  -- Default boss name
+				modelName = "Rubber King"  -- Default boss name
 			else
-				npcName = originalPartName
+				modelName = originalPartName
 			end
 		end
 		
 		-- Emit prompt activated event
-		EventBus:Emit("PromptActivated", npcName or "NPC")
+		EventBus:Emit("PromptActivated", modelName or "NPC")
 		
 		-- Check if battle is already active
 		local battleHandler = handler.Controller and handler.Controller:GetBattleHandler()
@@ -272,6 +292,18 @@ local function SetupPartInteractionHelper(part, partName, partType, handler)
 		end
 		
 		handler.currentPartName = originalPartName -- Use original name (e.g., "BossMode1Head") not "HumanoidRootPart"
+		
+		-- Save model name based on part type
+		if originalPartName:match("^NPCMode") then
+			-- NPC mode: save model name for display
+			handler.selectedNPCModelName = modelName
+			handler.currentBattleMode = "NPC"
+		elseif originalPartName:match("^BossMode") then
+			-- Boss mode: save model name temporarily
+			handler._tempBossModelName = modelName
+			handler.currentBattleMode = "Boss"
+		end
+		
 		handler:OpenBattlePrep()
 	end)
 	
@@ -369,6 +401,514 @@ function BattlePrepHandler:SetupCloseButton()
 	-- No need to set up individual close button here
 end
 
+function BattlePrepHandler:SetupRightPanelBattleButton()
+	-- Find RightPanel and BtnBattle
+	local rightPanel = self.UI:FindFirstChild("RightPanel")
+	if not rightPanel then
+		warn("BattlePrepHandler: RightPanel not found in GameUI")
+		return
+	end
+	
+	local btnBattle = rightPanel:FindFirstChild("BtnBattle")
+	if not btnBattle then
+		warn("BattlePrepHandler: BtnBattle not found in RightPanel")
+		return
+	end
+	
+	-- Connect click event
+	local connection = btnBattle.MouseButton1Click:Connect(function()
+		-- Emit button click event
+		EventBus:Emit("ButtonClicked", "RightPanel.BtnBattle")
+		
+		-- Check if battle is already active
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler and battleHandler.isBattleActive then
+			return -- Don't allow interaction during battle
+		end
+		
+		-- Open battle prep window
+		if self.forceMode then
+			-- Force mode is set externally (e.g., by tutorial)
+			self.currentBattleMode = self.forceMode
+			-- Don't set currentPartName to placeholder - let OpenBattlePrep() call EnsurePartNameForMode() to find real NPC/Boss
+			-- This ensures the correct model is loaded and displayed
+			self.currentPartName = nil
+		else
+			-- Default behavior: open in NPC mode
+			self.currentBattleMode = "NPC"
+			self.currentPartName = nil -- Will be set when selecting NPC
+		end
+		self:OpenBattlePrep()
+	end)
+	
+	table.insert(self.Connections, connection)
+	print("✅ BattlePrepHandler: RightPanel.BtnBattle button connected")
+end
+
+function BattlePrepHandler:SetupTabButtons()
+	-- Find Main frame and Content frame
+	local mainFrame = self.StartBattleFrame:FindFirstChild("Main")
+	if not mainFrame then
+		warn("BattlePrepHandler: Main frame not found for tab buttons")
+		return
+	end
+	
+	local contentFrame = mainFrame:FindFirstChild("Content")
+	if not contentFrame then
+		warn("BattlePrepHandler: Content frame not found for tab buttons")
+		return
+	end
+	
+	-- Find Tabs frame
+	local tabsFrame = contentFrame:FindFirstChild("Tabs")
+	if not tabsFrame then
+		warn("BattlePrepHandler: Tabs frame not found in Content")
+		return
+	end
+	
+	-- Find BtnNPC and BtnBoss
+	self.BtnNPC = tabsFrame:FindFirstChild("BtnNPC")
+	self.BtnBoss = tabsFrame:FindFirstChild("BtnBoss")
+	
+	if not self.BtnNPC then
+		warn("BattlePrepHandler: BtnNPC not found in Tabs")
+	end
+	
+	if not self.BtnBoss then
+		warn("BattlePrepHandler: BtnBoss not found in Tabs")
+	end
+	
+	-- Setup BtnNPC click handler
+	if self.BtnNPC then
+		local connection = self.BtnNPC.MouseButton1Click:Connect(function()
+			-- Don't do anything if already in NPC mode
+			if self.currentBattleMode == "NPC" then
+				return
+			end
+			
+			-- Switch to NPC mode
+			self.currentBattleMode = "NPC"
+			self:UpdateTabGradients()
+			self:SwitchBattleMode()
+		end)
+		table.insert(self.Connections, connection)
+	end
+	
+	-- Setup BtnBoss click handler
+	if self.BtnBoss then
+		local connection = self.BtnBoss.MouseButton1Click:Connect(function()
+			-- Don't do anything if already in Boss mode
+			if self.currentBattleMode == "Boss" then
+				return
+			end
+			
+			-- Switch to Boss mode
+			self.currentBattleMode = "Boss"
+			self:UpdateTabGradients()
+			self:SwitchBattleMode()
+		end)
+		table.insert(self.Connections, connection)
+	end
+	
+	print("✅ BattlePrepHandler: Tab buttons (BtnNPC, BtnBoss) connected")
+	
+	-- Update gradients for initial state (NPC is default active)
+	self:UpdateTabGradients()
+end
+
+-- Update gradients for tab buttons based on active mode
+function BattlePrepHandler:UpdateTabGradients()
+	-- Create gradients once (optimization)
+	local activeGradient = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromHex("#49ba4a")),
+		ColorSequenceKeypoint.new(1, Color3.fromHex("#00afa9"))
+	})
+	local inactiveGradient = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromHex("#225622")),
+		ColorSequenceKeypoint.new(1, Color3.fromHex("#00615c"))
+	})
+	
+	-- Helper function to update gradient
+	local function UpdateGradient(button, isActive)
+		if not button then return end
+		local gradient = button:FindFirstChild("UIGradient")
+		if gradient then
+			gradient.Color = isActive and activeGradient or inactiveGradient
+		end
+	end
+	
+	UpdateGradient(self.BtnNPC, self.currentBattleMode == "NPC")
+	UpdateGradient(self.BtnBoss, self.currentBattleMode == "Boss")
+end
+
+-- Helper function to find a model by name in all descendants (replacement for FindFirstDescendant)
+local function FindModelInDescendants(parent, modelName)
+	-- First try direct child
+	local found = parent:FindFirstChild(modelName)
+	if found and found:IsA("Model") then
+		return found
+	end
+	
+	-- Then search in all descendants
+	for _, descendant in pairs(parent:GetDescendants()) do
+		if descendant:IsA("Model") and descendant.Name == modelName then
+			return descendant
+		end
+	end
+	
+	return nil
+end
+
+-- Helper function to find a part by name in all descendants
+local function FindPartInDescendants(parent, partName)
+	-- First try direct child
+	local found = parent:FindFirstChild(partName)
+	if found and (found:IsA("BasePart") or found:IsA("MeshPart") or found:IsA("Part")) then
+		return found
+	end
+	
+	-- Then search in all descendants
+	for _, descendant in pairs(parent:GetDescendants()) do
+		if (descendant:IsA("BasePart") or descendant:IsA("MeshPart") or descendant:IsA("Part")) and descendant.Name == partName then
+			return descendant
+		end
+	end
+	
+	return nil
+end
+
+-- Helper function to find models by part prefix (optimized with set for O(1) lookup)
+local function FindModelsByPartPrefix(prefix)
+	local models = {}
+	local modelSet = {} -- Use set for O(1) lookup instead of O(n) linear search
+	local workspace = Workspace
+	
+	for _, descendant in pairs(workspace:GetDescendants()) do
+		if (descendant:IsA("BasePart") or descendant:IsA("MeshPart") or descendant:IsA("Part")) 
+			and descendant.Name:match("^" .. prefix) then
+			local model = descendant:FindFirstAncestorOfClass("Model")
+			if model and model.Name and not modelSet[model.Name] then
+				modelSet[model.Name] = true
+				table.insert(models, model.Name)
+			end
+		end
+	end
+	
+	return models
+end
+
+-- Helper function to find NPC models in Workspace
+function BattlePrepHandler:FindNPCModels()
+	return FindModelsByPartPrefix("NPCMode")
+end
+
+-- Helper function to find Boss models in Workspace
+function BattlePrepHandler:FindBossModels()
+	return FindModelsByPartPrefix("BossMode")
+end
+
+-- Helper function to set currentPartName from model name
+local function SetPartNameFromModel(handler, modelName, expectedPrefix)
+	if not modelName then return false end
+	
+	local workspace = Workspace
+	local model = FindModelInDescendants(workspace, modelName)
+	if not model or not model:IsA("Model") then
+		return false
+	end
+	
+	for _, descendant in pairs(model:GetDescendants()) do
+		if (descendant:IsA("BasePart") or descendant:IsA("MeshPart") or descendant:IsA("Part")) 
+			and descendant.Name:match("^" .. expectedPrefix) then
+			handler.currentPartName = descendant.Name
+			return true
+		end
+	end
+	
+	return false
+end
+
+-- Select random NPC model and save it
+function BattlePrepHandler:SelectRandomNPC()
+	local npcModels = self:FindNPCModels()
+	if #npcModels == 0 then
+		warn("BattlePrepHandler: No NPC models found in Workspace")
+		return nil
+	end
+	
+	-- Select random NPC
+	local randomIndex = math.random(1, #npcModels)
+	local selectedNPC = npcModels[randomIndex]
+	
+	-- Save selected NPC until next battle
+	self.selectedNPCModelName = selectedNPC
+	
+	-- Set part name using helper function
+	if not SetPartNameFromModel(self, selectedNPC, "NPCMode") then
+		warn("BattlePrepHandler: Failed to find NPCMode part for NPC:", selectedNPC)
+	end
+	
+	print("✅ BattlePrepHandler: Selected random NPC:", selectedNPC)
+	return selectedNPC
+end
+
+-- Clone model into ViewportFrame
+function BattlePrepHandler:CloneModelToViewport(modelName, isBoss)
+	if not self.ViewportFrame then
+		warn("BattlePrepHandler: ViewportFrame not found")
+		return
+	end
+	
+	-- Clean up existing model in ViewportFrame
+	if self.currentViewportModel then
+		self.currentViewportModel:Destroy()
+		self.currentViewportModel = nil
+	end
+	
+	-- Find model in Workspace (search in all descendants, not just direct children)
+	local workspace = Workspace
+	local sourceModel = FindModelInDescendants(workspace, modelName)
+	
+	if not sourceModel then
+		warn("BattlePrepHandler: Model not found in Workspace:", modelName)
+		return
+	end
+	
+	-- Ensure it's a Model
+	if not sourceModel:IsA("Model") then
+		warn("BattlePrepHandler: Found object is not a Model:", modelName, sourceModel.ClassName)
+		return
+	end
+	
+	-- Clone model
+	local clonedModel = sourceModel:Clone()
+	
+	-- Get current pivot
+	local modelPivot = clonedModel:GetPivot()
+	local targetCFrame = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(-150), 0)
+	
+	-- Set Scale to 1 for the entire model using ScaleTo (once, before moving)
+	pcall(function()
+		clonedModel:ScaleTo(1)
+	end)
+	
+	if modelPivot then
+		-- Model uses Pivot - use PivotTo to move to origin with rotation
+		clonedModel:PivotTo(targetCFrame)
+	else
+		-- Model uses PrimaryPart - move using PrimaryPart
+		local primaryPart = clonedModel.PrimaryPart
+		if not primaryPart then
+			-- Try to find HumanoidRootPart
+			primaryPart = clonedModel:FindFirstChild("HumanoidRootPart")
+		end
+		if not primaryPart then
+			-- Find first BasePart
+			for _, descendant in pairs(clonedModel:GetDescendants()) do
+				if descendant:IsA("BasePart") then
+					primaryPart = descendant
+					break
+				end
+			end
+		end
+		
+		if primaryPart then
+			-- Move all parts to origin (0,0,0) and apply rotation
+			for _, part in pairs(clonedModel:GetDescendants()) do
+				if part:IsA("BasePart") then
+					-- Calculate relative position from primary part
+					local relativeCFrame = primaryPart.CFrame:ToObjectSpace(part.CFrame)
+					-- Apply to target position
+					part.CFrame = targetCFrame:ToWorldSpace(relativeCFrame)
+				end
+			end
+			
+			-- Set PrimaryPart if model has one
+			if clonedModel.PrimaryPart then
+				clonedModel:SetPrimaryPartCFrame(targetCFrame)
+			end
+		else
+			warn("BattlePrepHandler: No primary part found in model:", modelName)
+		end
+	end
+	
+	-- Parent to ViewportFrame
+	clonedModel.Parent = self.ViewportFrame
+	
+	-- Store reference
+	self.currentViewportModel = clonedModel
+	
+	print("✅ BattlePrepHandler: Cloned model to ViewportFrame:", modelName)
+end
+
+-- Animate ViewportFrame sliding in from left
+function BattlePrepHandler:AnimateViewportFrameIn(callback)
+	if not self.ViewportFrame then
+		if callback then callback() end
+		return
+	end
+	
+	-- Set initial position (off-screen to the left)
+	local initialPosition = UDim2.new(-1, 0, 1.418, 0)
+	self.ViewportFrame.Position = initialPosition
+	
+	-- Set target position (on-screen)
+	local targetPosition = UDim2.new(-0.095, 0, 1.418, 0)
+	
+	-- Get TweenUI duration (default 0.3 seconds)
+	local duration = 0.3
+	
+	-- Create tween
+	local tween = TweenService:Create(
+		self.ViewportFrame,
+		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{Position = targetPosition}
+	)
+	
+	tween:Play()
+	
+	if callback then
+		tween.Completed:Connect(function()
+			callback()
+		end)
+	end
+end
+
+-- Animate ViewportFrame sliding out to left
+function BattlePrepHandler:AnimateViewportFrameOut(callback)
+	if not self.ViewportFrame then
+		if callback then callback() end
+		return
+	end
+	
+	-- Set target position (off-screen to the left)
+	local targetPosition = UDim2.new(-1, 0, 1.418, 0)
+	
+	-- Get TweenUI duration (default 0.3 seconds)
+	local duration = 0.3
+	
+	-- Create tween
+	local tween = TweenService:Create(
+		self.ViewportFrame,
+		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{Position = targetPosition}
+	)
+	
+	tween:Play()
+	
+	if callback then
+		tween.Completed:Connect(function()
+			callback()
+		end)
+	end
+end
+
+-- Reload enemy data and update UI (used when switching modes with window already open)
+function BattlePrepHandler:ReloadEnemyData()
+	local loadFunction = nil
+	if self.currentBattleMode == "NPC" then
+		loadFunction = self.LoadNPCEnemyData
+	elseif self.currentBattleMode == "Boss" then
+		loadFunction = self.LoadBossEnemyData
+	end
+	
+	if loadFunction then
+		loadFunction(self, function()
+			self:UpdateRewardsDisplay()
+			self:UpdateRivalsDeckDisplay()
+			self:UpdateDifficultyDisplay()
+		end)
+	end
+end
+
+-- Ensure currentPartName is set for current battle mode
+function BattlePrepHandler:EnsurePartNameForMode()
+	if self.currentBattleMode == "NPC" then
+		-- Always ensure we have a selected NPC
+		if not self.selectedNPCModelName then
+			self:SelectRandomNPC()
+		end
+		-- Ensure currentPartName is set
+		if not self.currentPartName or not self.currentPartName:match("^NPCMode") then
+			if not SetPartNameFromModel(self, self.selectedNPCModelName, "NPCMode") then
+				-- If failed, try to select NPC again
+				local npcModelName = self:SelectRandomNPC()
+				if not npcModelName then
+					warn("BattlePrepHandler: Failed to select NPC model")
+					return false
+				end
+				-- After selecting NPC again, try to set part name once more
+				if not SetPartNameFromModel(self, self.selectedNPCModelName, "NPCMode") then
+					warn("BattlePrepHandler: Failed to set part name for NPC:", self.selectedNPCModelName)
+					return false
+				end
+			end
+		end
+		return true
+	elseif self.currentBattleMode == "Boss" then
+		-- Ensure currentPartName is set for Boss mode
+		if not self.currentPartName or not self.currentPartName:match("^BossMode") then
+			local bossModels = self:FindBossModels()
+			if #bossModels > 0 then
+				if not SetPartNameFromModel(self, bossModels[1], "BossMode") then
+					warn("BattlePrepHandler: Failed to set part name for Boss:", bossModels[1])
+					return false
+				end
+			else
+				warn("BattlePrepHandler: No boss models found")
+				return false
+			end
+		end
+		return true
+	end
+	return false
+end
+
+-- Switch battle mode (NPC <-> Boss)
+function BattlePrepHandler:SwitchBattleMode()
+	if self.isAnimating then return end
+	
+	local modelName = nil
+	local expectedPrefix = nil
+	local isBoss = false
+	
+	if self.currentBattleMode == "NPC" then
+		modelName = self.selectedNPCModelName
+		if not modelName then
+			modelName = self:SelectRandomNPC()
+		end
+		expectedPrefix = "NPCMode"
+		isBoss = false
+	elseif self.currentBattleMode == "Boss" then
+		local bossModels = self:FindBossModels()
+		if #bossModels > 0 then
+			modelName = bossModels[1]
+		end
+		expectedPrefix = "BossMode"
+		isBoss = true
+	end
+	
+	-- Set part name if needed
+	if modelName and expectedPrefix then
+		if not self.currentPartName or not self.currentPartName:match("^" .. expectedPrefix) then
+			SetPartNameFromModel(self, modelName, expectedPrefix)
+		end
+		
+		-- Clone model to viewport (model existence is checked inside CloneModelToViewport)
+		if FindModelInDescendants(Workspace, modelName) then
+			self:CloneModelToViewport(modelName, isBoss)
+		end
+	end
+	
+	-- Reload data if window is already open
+	if self.StartBattleFrame and self.StartBattleFrame.Visible then
+		self:ReloadEnemyData()
+	else
+		-- Window not open, use full OpenBattlePrep
+		self:OpenBattlePrep()
+	end
+end
+
 function BattlePrepHandler:OpenBattlePrep()
 	if self.isAnimating then return end
 	self.isAnimating = true
@@ -379,9 +919,32 @@ function BattlePrepHandler:OpenBattlePrep()
 		battleHandler.isBattleActive = true
 	end
 
-	-- Determine battle mode from part name
-	local isNPCMode = self.currentPartName and self.currentPartName:match("^NPCMode")
-	local isBossMode = self.currentPartName and self.currentPartName:match("^BossMode")
+	-- Determine battle mode
+	-- If opened from proximity prompt, use part name to determine mode
+	-- If opened from button or tab switch, use currentBattleMode
+	local isNPCMode = false
+	local isBossMode = false
+	
+	if self.currentPartName then
+		-- Opened from proximity prompt - determine from part name
+		-- Model name and battle mode should already be set in proximity prompt handler
+		isNPCMode = self.currentPartName:match("^NPCMode")
+		isBossMode = self.currentPartName:match("^BossMode")
+		
+		-- Ensure battle mode is set (should already be set in proximity prompt handler)
+		if isNPCMode then
+			self.currentBattleMode = "NPC"
+		elseif isBossMode then
+			self.currentBattleMode = "Boss"
+		end
+	else
+		-- Opened from button or tab switch - use currentBattleMode
+		isNPCMode = (self.currentBattleMode == "NPC")
+		isBossMode = (self.currentBattleMode == "Boss")
+		
+		-- Ensure part name is set for current mode
+		self:EnsurePartNameForMode()
+	end
 	
 	-- Hide HUD panels if they exist
 	if self.UI.LeftPanel then
@@ -396,6 +959,17 @@ function BattlePrepHandler:OpenBattlePrep()
 	
 	-- Load enemy data based on mode
 	if isNPCMode then
+		-- Verify currentPartName is set before loading NPC deck
+		if not self.currentPartName or not self.currentPartName:match("^NPCMode") then
+			warn("BattlePrepHandler: currentPartName not set for NPC mode, cannot load deck")
+			self:LoadTestEnemyData()
+			self:UpdateRewardsDisplay()
+			self:UpdateRivalsDeckDisplay()
+			self:UpdateDifficultyDisplay()
+			self:ShowBattlePrepWindow()
+			return
+		end
+		
 		-- NPC mode: request NPC deck from server (async)
 		self:LoadNPCEnemyData(function()
 			-- After NPC deck loads, update UI and show window
@@ -438,11 +1012,45 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 		self.StartButton.Active = true
 	end
 	
+	-- Update tab gradients to reflect current battle mode
+	self:UpdateTabGradients()
+	
+	-- Update ViewportFrame with appropriate model
+	if self.currentBattleMode == "NPC" then
+		local npcModelName = self.selectedNPCModelName
+		if npcModelName and FindModelInDescendants(Workspace, npcModelName) then
+			self:CloneModelToViewport(npcModelName, false)
+		elseif npcModelName then
+			warn("BattlePrepHandler: NPC model not found in Workspace:", npcModelName, "- skipping ViewportFrame update")
+		end
+	elseif self.currentBattleMode == "Boss" then
+		-- Use temp boss model name if set (from proximity prompt), otherwise find first boss
+		local bossModelName = self._tempBossModelName
+		if not bossModelName then
+			local bossModels = self:FindBossModels()
+			if #bossModels > 0 then
+				bossModelName = bossModels[1]
+			end
+		end
+		if bossModelName and FindModelInDescendants(Workspace, bossModelName) then
+			self:CloneModelToViewport(bossModelName, true)
+		elseif bossModelName then
+			warn("BattlePrepHandler: Boss model not found in Workspace:", bossModelName, "- skipping ViewportFrame update")
+		end
+		-- Clear temp boss model name
+		self._tempBossModelName = nil
+	end
+	
 	-- Show battle prep gui
 	self.StartBattleFrame.Visible = true
 	
 	-- Register with close button handler
 	self:RegisterWithCloseButton(true)
+
+	-- Animate ViewportFrame sliding in
+	self:AnimateViewportFrameIn(function()
+		-- ViewportFrame animation completed
+	end)
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities then
@@ -902,6 +1510,16 @@ function BattlePrepHandler:CloseWindow(showHUD)
 	-- Clean up dynamically created frames
 	self:CleanupDynamicFrames()
 
+	-- Animate ViewportFrame sliding out
+	self:AnimateViewportFrameOut(function()
+		-- ViewportFrame animation completed
+		-- Clean up cloned model
+		if self.currentViewportModel then
+			self.currentViewportModel:Destroy()
+			self.currentViewportModel = nil
+		end
+	end)
+
 	-- Note: NPC deck will be cleared server-side after battle completes
 	-- If prep window is closed without starting battle, the deck will persist
 	-- until next battle or server restart (this is acceptable for simplicity)
@@ -965,8 +1583,10 @@ function BattlePrepHandler:CloseWindow(showHUD)
 		self.TxtDifficultyLabel.Visible = false
 	end
 	
-	self.currentPartName = nil
-
+	-- Don't clear currentPartName if opened from button (keep it for next battle)
+	-- Only clear if opened from proximity prompt
+	-- Actually, we should keep it to remember the mode
+	
 	-- Show HUD panels
 	if showHUD and self.UI then
 		if self.UI.LeftPanel then
@@ -1069,7 +1689,13 @@ function BattlePrepHandler:SetupStartButton()
 			return
 		end
 		
-		-- Verify currentPartName is set (should be set when window opens)
+		-- Ensure currentPartName is set before starting battle
+		-- This handles cases where it might not have been set during window opening
+		if not self.currentPartName then
+			self:EnsurePartNameForMode()
+		end
+		
+		-- Verify currentPartName is set (should be set when window opens or by EnsurePartNameForMode)
 		if not self.currentPartName then
 			warn("BattlePrepHandler: Cannot start battle - no part name set")
 			return
@@ -1174,6 +1800,9 @@ function BattlePrepHandler:OnBattleResponse(response)
 		warn("BattlePrepHandler: Battle request failed:", response.error and response.error.message or "Unknown error")
 		return
 	end
+	
+	-- Clear selected NPC after battle starts (will select new one next time)
+	self.selectedNPCModelName = nil
 	
 	-- Hide battle prep frame
 	self:CloseWindow(false)
