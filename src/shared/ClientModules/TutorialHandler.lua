@@ -856,6 +856,59 @@ function TutorialHandler:HandleTutorialProgress(tutorialStep)
 						end
 						
 						-- Condition not met and no altNextStep - wait for condition
+						-- Special handling for window_open with force = true: CheckStartCondition opens window asynchronously and returns false
+						-- In this case, we need to wait for window to open, not use WaitForConditionalCondition
+						if forceStepConfig.startCondition and forceStepConfig.startCondition.type == "window_open" and forceStepConfig.startCondition.force == true then
+							Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d has window_open with force=true, waiting for window to open", forceStepIndex)
+							-- Set up listener for window opening
+							self.pendingStepIndex = forceStepIndex
+							task.spawn(function()
+								local window = self:WaitForUIObject(forceStepConfig.startCondition.target, 10)
+								if window then
+									-- Check immediately if already open
+									local isOpen = false
+									if window:IsA("ScreenGui") then
+										isOpen = window.Enabled == true
+									else
+										isOpen = window.Visible == true
+									end
+									
+									if isOpen then
+										Logger.debug("[TutorialHandler] forceStepOnGameLoad: window %s opened, showing step %d", 
+											forceStepConfig.startCondition.target, forceStepIndex)
+										self.pendingStepIndex = nil
+										self:ShowTutorialStep(forceStepIndex, true)
+										self.isInitialLoad = false
+										return
+									end
+									
+									-- Listen for window state changes
+									local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
+									local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
+										local isOpenNow = false
+										if window:IsA("ScreenGui") then
+											isOpenNow = window.Enabled == true
+										else
+											isOpenNow = window.Visible == true
+										end
+										
+										if isOpenNow and self.pendingStepIndex == forceStepIndex then
+											Logger.debug("[TutorialHandler] forceStepOnGameLoad: window %s became open, showing step %d", 
+												forceStepConfig.startCondition.target, forceStepIndex)
+											self.pendingStepIndex = nil
+											if connection then
+												connection:Disconnect()
+											end
+											self:ShowTutorialStep(forceStepIndex, true)
+											self.isInitialLoad = false
+										end
+									end)
+									table.insert(self.Connections, connection)
+								end
+							end)
+							return
+						end
+						
 						Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, waiting for condition", forceStepIndex)
 						self:WaitForConditionalCondition(forceStepConfig, forceStepIndex)
 						self.isInitialLoad = false
@@ -1013,6 +1066,57 @@ function TutorialHandler:ProcessTutorialStep(nextStepIndex, isInitialLoad, isRol
 					end
 					
 					-- Condition not met and no altNextStep - wait for condition
+					-- Special handling for window_open with force = true: CheckStartCondition opens window asynchronously and returns false
+					-- In this case, we need to wait for window to open, not use WaitForConditionalCondition
+					if forceStepConfig.startCondition and forceStepConfig.startCondition.type == "window_open" and forceStepConfig.startCondition.force == true then
+						Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d has window_open with force=true, waiting for window to open", forceStepIndex)
+						-- Set up listener for window opening
+						self.pendingStepIndex = forceStepIndex
+						task.spawn(function()
+							local window = self:WaitForUIObject(forceStepConfig.startCondition.target, 10)
+							if window then
+								-- Check immediately if already open
+								local isOpen = false
+								if window:IsA("ScreenGui") then
+									isOpen = window.Enabled == true
+								else
+									isOpen = window.Visible == true
+								end
+								
+								if isOpen then
+									Logger.debug("[TutorialHandler] forceStepOnGameLoad: window %s opened, showing step %d", 
+										forceStepConfig.startCondition.target, forceStepIndex)
+									self.pendingStepIndex = nil
+									self:ShowTutorialStep(forceStepIndex, true)
+									return
+								end
+								
+								-- Listen for window state changes
+								local propertyName = window:IsA("ScreenGui") and "Enabled" or "Visible"
+								local connection = window:GetPropertyChangedSignal(propertyName):Connect(function()
+									local isOpenNow = false
+									if window:IsA("ScreenGui") then
+										isOpenNow = window.Enabled == true
+									else
+										isOpenNow = window.Visible == true
+									end
+									
+									if isOpenNow and self.pendingStepIndex == forceStepIndex then
+										Logger.debug("[TutorialHandler] forceStepOnGameLoad: window %s became open, showing step %d", 
+											forceStepConfig.startCondition.target, forceStepIndex)
+										self.pendingStepIndex = nil
+										if connection then
+											connection:Disconnect()
+										end
+										self:ShowTutorialStep(forceStepIndex, true)
+									end
+								end)
+								table.insert(self.Connections, connection)
+							end
+						end)
+						return
+					end
+					
 					Logger.debug("[TutorialHandler] forceStepOnGameLoad: step %d condition not met, waiting for condition", forceStepIndex)
 					self:WaitForConditionalCondition(forceStepConfig, forceStepIndex)
 					return
@@ -1187,6 +1291,67 @@ function TutorialHandler:CheckStartCondition(step)
 	end
 	
 	if condition.type == "window_open" then
+		-- Check if force flag is set - if so, we need to open the window
+		if condition.force == true then
+			-- Force open the window
+			if condition.target == "StartBattle" then
+				-- Get BattlePrepHandler and open the window
+				local BattlePrepHandler = require(game.ReplicatedStorage.ClientModules.BattlePrepHandler)
+				if BattlePrepHandler and BattlePrepHandler.OpenBattlePrep then
+					-- Use setBattleMode from condition if specified, otherwise use battleMode, otherwise default to NPC
+					local battleMode = condition.setBattleMode or condition.battleMode or "NPC"
+					
+					-- Check if window is already open BEFORE changing battle mode
+					local window = self:GetCachedUIObject(condition.target)
+					local isAlreadyOpen = false
+					if window then
+						if window:IsA("ScreenGui") then
+							isAlreadyOpen = window.Enabled == true
+						else
+							isAlreadyOpen = window.Visible == true
+						end
+					end
+					
+					if isAlreadyOpen then
+						-- Window already open - check current mode BEFORE changing it
+						local currentMode = BattlePrepHandler.currentBattleMode or "NPC"
+						if currentMode ~= battleMode then
+							-- Mode mismatch - switch to correct mode
+							BattlePrepHandler.forceMode = battleMode
+							BattlePrepHandler.currentBattleMode = battleMode
+							BattlePrepHandler.currentPartName = nil
+							BattlePrepHandler:SwitchBattleMode()
+							return false -- Wait for window to update
+						end
+						-- Window is open and mode already matches - ensure forceMode is set
+						BattlePrepHandler.forceMode = battleMode
+						return true
+					end
+					
+					-- Window not open - set battle mode and open it
+					BattlePrepHandler.forceMode = battleMode
+					BattlePrepHandler.currentBattleMode = battleMode
+					-- Don't set currentPartName to placeholder - let OpenBattlePrep() call EnsurePartNameForMode() to find real NPC/Boss
+					-- This ensures the correct model is loaded and displayed
+					BattlePrepHandler.currentPartName = nil
+					
+					-- Open battle prep window (async operation)
+					BattlePrepHandler:OpenBattlePrep()
+					
+					-- Return false to trigger waiting logic
+					-- The window will open asynchronously, and the normal window_open
+					-- waiting logic (property listener + WindowOpened event) will handle it
+					return false
+				else
+					warn("TutorialHandler: Cannot force open StartBattle - BattlePrepHandler not found or not initialized")
+					return false
+				end
+			else
+				warn("TutorialHandler: Force open not implemented for window:", condition.target)
+				return false
+			end
+		end
+		
 		-- Check if window is open (use cached lookup for performance)
 		local window = self:GetCachedUIObject(condition.target)
 		if not window then
@@ -2132,6 +2297,20 @@ function TutorialHandler:ShowTutorialStep(stepIndex, forceShow)
 	self.lastShownStepIndex = stepIndex  -- Store last shown step for tracking
 	-- Note: self.currentStepIndex stores the last completed step (from profile), not the currently showing step
 	self.isTutorialActive = true
+	
+	-- Update forceMode based on new step's startCondition.setBattleMode
+	local BattlePrepHandler = require(game.ReplicatedStorage.ClientModules.BattlePrepHandler)
+	if BattlePrepHandler then
+		if step.startCondition and step.startCondition.setBattleMode then
+			BattlePrepHandler.forceMode = step.startCondition.setBattleMode
+		else
+			-- Clear forceMode if new step doesn't have setBattleMode in startCondition
+			-- But only if completeCondition also doesn't have it (to preserve it if set by previous step's completeCondition)
+			if not (step.completeCondition and step.completeCondition.setBattleMode) then
+				BattlePrepHandler.forceMode = nil
+			end
+		end
+	end
 	
 	if step.startCondition and step.startCondition.target == "StartBattle" then
 		local startBattleWindow = self:GetCachedUIObject("StartBattle")
@@ -3763,6 +3942,14 @@ function TutorialHandler:CompleteCurrentStep()
 	
 	local stepIndexToSend = self.showingStepIndex
 	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	
+	-- Set forceMode if current step's completeCondition has setBattleMode (AFTER step completion)
+	if self.currentStep and self.currentStep.completeCondition and self.currentStep.completeCondition.setBattleMode then
+		local BattlePrepHandler = require(game.ReplicatedStorage.ClientModules.BattlePrepHandler)
+		if BattlePrepHandler then
+			BattlePrepHandler.forceMode = self.currentStep.completeCondition.setBattleMode
+		end
+	end
 	
 	-- IMPORTANT: Always send the CURRENT showing step to server (e.g., step 13)
 	-- Server will check if this step has altNextStep and handle the rollback

@@ -428,6 +428,48 @@ local function GenerateNPCDeckForPlayer(player, partName)
 		return nil
 	end
 	
+	-- Check if this is the first battle (npcWins == 0) - use hardcoded deck
+	local isFirstBattle = profile.npcWins == nil or profile.npcWins == 0
+	
+	if isFirstBattle then
+		-- First battle: hardcode NPC deck with card_1300 and card_1600
+		local hardcodedDeck = {"card_1300", "card_1600"}
+		local hardcodedLevels = {1, 1}  -- Both cards at level 1
+		
+		-- Calculate strength for hardcoded deck
+		local hardcodedStrength = 0
+		for i, cardId in ipairs(hardcodedDeck) do
+			local card = CardCatalog.GetCard(cardId)
+			if card then
+				local stats = CardStats.ComputeStats(cardId, hardcodedLevels[i] or 1)  -- Передаем cardId, а не card
+				hardcodedStrength = hardcodedStrength + (stats.power or 0)
+			end
+		end
+		hardcodedStrength = RoundToDecimals(hardcodedStrength, 1)
+		
+		-- Generate seed for this part
+		local seed = os.time() * 1000 + player.UserId + (os.clock() * 1000) % 1000
+		
+		-- Reward is BEGINNER (will be overridden in battle completion, but set here for prep window)
+		local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+		local reward = {
+			type = "lootbox",
+			rarity = BoxTypes.BoxRarity.BEGINNER,
+			count = 1
+		}
+		
+		LogInfo(player, "First battle: Using hardcoded NPC deck for part %s: %d cards (card_1300, card_1600), strength %.2f, seed %d, reward: BEGINNER lootbox", 
+			partName, #hardcodedDeck, hardcodedStrength, seed)
+		
+		return {
+			deck = hardcodedDeck,
+			levels = hardcodedLevels,
+			strength = hardcodedStrength,
+			seed = seed,
+			reward = reward
+		}
+	end
+	
 	local playerDeckInfo = BuildPlayerDeckInfo(profile)
 	if playerDeckInfo.size == 0 then
 		LogWarning(player, "Player deck is empty during NPC deck generation")
@@ -1120,10 +1162,21 @@ function MatchService.ExecuteMatch(player, requestData)
 	local rewards = nil
 	
 	if isPlayerVictory then
+		-- Check if this is the first battle (npcWins == 0) - give BEGINNER lootbox
+		local profile = PlayerDataService.EnsureProfileLoaded(player)
+		local isFirstBattle = profile and (profile.npcWins == nil or profile.npcWins == 0)
+		
+		if isFirstBattle and partName and partName:match("^NPCMode") then
+			-- First battle: hardcode BEGINNER lootbox reward
+			local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
+			rewards = {
+				type = "lootbox",
+				rarity = BoxTypes.BoxRarity.BEGINNER,
+				count = 1
+			}
+			LogInfo(player, "First battle victory reward: BEGINNER lootbox")
 		-- For NPC mode: use the reward that was generated with the deck (shown in prep window)
-		-- For Boss mode: use the hardcoded reward from BossDecks (shown in prep window)
-		-- For other modes: generate random reward
-		if partName and partName:match("^NPCMode") and npcDeckData and npcDeckData.reward then
+		elseif partName and partName:match("^NPCMode") and npcDeckData and npcDeckData.reward then
 			-- Use the reward that was shown in prep window
 			rewards = npcDeckData.reward
 			LogInfo(player, "Victory reward (NPC from prep window): %s lootbox", rewards.rarity)

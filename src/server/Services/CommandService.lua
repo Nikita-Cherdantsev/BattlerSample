@@ -70,17 +70,6 @@ local function ResetProfileCommand(player)
 			newProfile.lootboxes = {}
 		end
 		
-		local now = os.time()
-		newProfile.lootboxes[1] = {
-			id = BoxRoller.GenerateBoxId(),
-			rarity = BoxTypes.BoxRarity.BEGINNER,
-			state = BoxTypes.BoxState.READY,
-			seed = BoxRoller.GenerateSeed(),
-			source = "starter",
-			startedAt = now,
-			unlocksAt = now
-		}
-		
 		newProfile.squadPower = ComputeSquadPower(newProfile)
 		-- Reset likeReward
 		newProfile.likeReward = {

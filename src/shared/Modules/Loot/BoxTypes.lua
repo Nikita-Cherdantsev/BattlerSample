@@ -31,7 +31,7 @@ BoxTypes.DurationSeconds = {
 	[BoxTypes.BoxRarity.EPIC] = 120 * 60,     -- 120 minutes
 	[BoxTypes.BoxRarity.LEGENDARY] = 240 * 60,  -- 240 minutes
 	[BoxTypes.BoxRarity.ONEPIECE] = 180 * 60,
-	[BoxTypes.BoxRarity.BEGINNER] = 7 * 60    -- 7 minutes (same as uncommon)
+	[BoxTypes.BoxRarity.BEGINNER] = 1 -- 1 seconds for tutorial
 }
 
 -- Hard currency cost to buy a box from store

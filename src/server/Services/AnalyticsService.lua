@@ -671,14 +671,16 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 	-- This prevents logging duplicate events from repeated actions (e.g., opening/closing cards multiple times,
 	-- losing boss battles multiple times, etc.)
 	-- Mapping: tutorialStep -> {funnelStep (sequential 1-16), stepName (with real tutorial step number)}
-	local stepMapping = {
+
+	-- funnelName = "Onboarding_1"
+	--[[local stepMapping = {
 		[1] = {funnelStep = 1, stepName = "1: Claim daily reward"},
 		[2] = {funnelStep = 2, stepName = "2: Claim card"},
 		[3] = {funnelStep = 3, stepName = "3: Open first lootbox"},
 		[4] = {funnelStep = 4, stepName = "4: Claim card"},
 		[5] = {funnelStep = 5, stepName = "5: Open Deck window"},
 		[6] = {funnelStep = 6, stepName = "6: Select card"},
-		[7] = {funnelStep = 7, stepName = "7: Card selected, level up"},
+		[7] = {funnelStep = 7, stepName = "7: Level up card"},
 		[8] = {funnelStep = 8, stepName = "8: CardInfo closed"},
 		[12] = {funnelStep = 9, stepName = "12: Start battle"},
 		[13] = {funnelStep = 10, stepName = "13: Claim lootbox"},
@@ -688,12 +690,32 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 		[19] = {funnelStep = 14, stepName = "19: Claim boss reward"},
 		[20] = {funnelStep = 15, stepName = "20: Go to playtime rewards"},
 		[21] = {funnelStep = 16, stepName = "21: Claim playtime reward"}
+	}]]
+
+	-- funnelName = "Onboarding_2"
+	local stepMapping = {
+		[1] = {funnelStep = 1, stepName = "1: Show daily reward"},
+		[2] = {funnelStep = 2, stepName = "2: Claim daily reward"},
+		[3] = {funnelStep = 3, stepName = "3: Force open StartBattle"},
+		[4] = {funnelStep = 4, stepName = "4: Start first battle"},
+		[5] = {funnelStep = 5, stepName = "5: Claim battle reward"},
+		[6] = {funnelStep = 6, stepName = "6: Open first lootbox"},
+		[7] = {funnelStep = 7, stepName = "7: Claim card"},
+		[8] = {funnelStep = 8, stepName = "8: Open Deck"},
+		[9] = {funnelStep = 9, stepName = "9: Select card"},
+		[10] = {funnelStep = 10, stepName = "10: Level up card"},
+		[14] = {funnelStep = 11, stepName = "14: Open second StartBattle"},
+		[15] = {funnelStep = 12, stepName = "15: Start second battle"},
+		[16] = {funnelStep = 13, stepName = "16: Open boss StartBattle"},
+		[17] = {funnelStep = 14, stepName = "17: Start boss battle"},
+		[18] = {funnelStep = 15, stepName = "18: Claim boss reward"},
+		[19] = {funnelStep = 16, stepName = "19: Go to playtime rewards"},
+		[20] = {funnelStep = 17, stepName = "20: Claim playtime reward"}
 	}
-	
 	-- Check if this step should be logged
 	local mapping = stepMapping[stepIndex]
 	if not mapping then
-		-- Skip logging for steps not in the list (9, 10, 11, 15, 17)
+		-- Skip logging for steps not in the list
 		return
 	end
 	
@@ -716,7 +738,7 @@ function AnalyticsService.LogOnboardingStep(userId, stepIndex)
 			tostring(userId), funnelSessionId))
 	end
 	
-	local funnelName = "Onboarding_1"
+	local funnelName = "Onboarding_2"
 	-- Use sequential funnel step (1-16) to avoid gaps in Roblox Analytics
 	local step = mapping.funnelStep
 	local stepName = mapping.stepName

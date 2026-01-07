@@ -69,12 +69,24 @@ function TutorialService.CompleteStep(playerId, stepIndex, useAltNextStep)
 		
 		if stepIndex > currentStep then
 			-- Forward progress (normal progression or optimistic update)
-			-- Check if the completed step has altNextStep (e.g., step 13 with loss -> step 11)
+			-- Check if the completed step has altNextStep (e.g., step 5 with loss -> step 3)
 			local completedStepConfig = TutorialConfig.GetStep(stepIndex)
 			if completedStepConfig and completedStepConfig.altNextStep and completedStepConfig.altNextStep < stepIndex then
-				-- Special case for step 13: use client-provided useAltNextStep flag to determine victory/loss
-				-- Client knows victory/loss from HandleRewardWindowOpen (stepOverrides[13])
-				if stepIndex == 13 then
+				-- Special case for step 5: use client-provided useAltNextStep flag to determine victory/loss
+				-- Client knows victory/loss from HandleRewardWindowOpen (stepOverrides[5])
+				if stepIndex == 5 then
+					if useAltNextStep then
+						-- Loss case: use altNextStep (3)
+						local targetStep = completedStepConfig.altNextStep - 1
+						profile.tutorialStep = targetStep
+						Logger.debug("TutorialService.CompleteStep: Step 5 completed with loss (useAltNextStep=true), setting tutorialStep to %d (altNextStep rollback)", targetStep)
+					else
+						-- Victory case: use normal nextStep (6)
+						profile.tutorialStep = stepIndex
+						Logger.debug("TutorialService.CompleteStep: Step 5 completed with victory (useAltNextStep=false), setting tutorialStep to %d", stepIndex)
+					end
+				elseif stepIndex == 13 then
+					-- Keep old step 13 logic for backward compatibility (if it still exists)
 					if useAltNextStep then
 						-- Loss case: use altNextStep (11)
 						local targetStep = completedStepConfig.altNextStep - 1

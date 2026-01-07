@@ -30,7 +30,8 @@ local TutorialConfig = {}
 --   }
 -- }
 
-TutorialConfig.Steps = {
+--[[TutorialConfig.Steps = {
+	-- funnelName = "Onboarding_1"
     -- 1 Claim daily reward
     [1] = {
         startCondition = { type = "window_open", target = "Daily" },
@@ -198,6 +199,173 @@ TutorialConfig.Steps = {
 	-- 21 Claim playtime reward
 	[21] = {
 		forceStepOnGameLoad = 20,
+		startCondition = { type = "conditional", condition = "playtime_reward_claimable", execute = "HandleClaimPlaytimeReward" },
+		highlightObjects = { "conditional" },
+		arrow = { objectName = "conditional", side = "left" },
+		text = "These rewards are <b>infinite</b> – just keep <b>coming back and playing</b>.",
+		completeCondition = { type = "button_click", target = "conditional" }
+	},
+}]]
+
+TutorialConfig.Steps = {
+	-- funnelName = "Onboarding_2"
+    -- 1 Show daily reward
+    [1] = {
+        startCondition = { type = "window_open", target = "Daily" },
+        highlightObjects = { "Daily.Frame.Main", "Daily.Frame.Buttons.BtnClaim" },
+		arrow = { objectName = "Daily.Frame.Buttons.BtnClaim", side = "left" },
+        text = "Welcome to <b>ANIME!</b>\nClaim your first <b>daily bonus</b> and see what happens…",
+        completeCondition = { type = "button_click", target = "Daily.Frame.Buttons.BtnClaim" },
+    },
+	-- 2 Claim daily reward
+	[2] = {
+		forceStepOnGameLoad = 3,
+		startCondition = { type = "conditional", condition = "lootbox_claim_available", execute = "HandleLootboxClaimAvailable" },
+		arrow = { objectName = "LootboxOpening.BtnClaim", side = "left" },
+		text = "Wow! A <b>new card</b> for your <b>collection</b>! Ready to get another one?",
+		completeCondition = { type = "button_click", target = "LootboxOpening.BtnClaim" }
+	},
+	-- 3 Force open StartBattle
+	[3] = {
+		startCondition = { type = "window_open", target = "StartBattle", force = true, setBattleMode = "NPC" },
+		completeCondition = { type = "window_open", target = "StartBattle" }
+	},
+	-- 4 StartBattle opened
+	[4] = {
+		forceStepOnGameLoad = 3,
+		startCondition = { type = "window_open", target = "StartBattle" },
+		highlightObjects = { "StartBattle.Main.Content.RivalsDeck", "StartBattle.Main.Content.Rewards", "StartBattle.Buttons.BtnStart" },
+		arrow = { objectName = "StartBattle.Buttons.BtnStart", side = "left" },
+		text = "This is your <b>rival’s deck</b>. Beat them to earn a <b>card capsule</b>. Let’s go!",
+		completeCondition = { type = "button_click", target = "StartBattle.Buttons.BtnStart", setBattleMode = nil }
+	},
+	-- 5 Claim 1st battle reward
+	[5] = {
+		forceStepOnGameLoad = 6,
+		startCondition = { type = "conditional", condition = "reward_window_open", execute = "HandleRewardWindowOpen" },
+		highlightObjects = { "conditional" },
+		arrow = { objectName = "Reward.Buttons.BtnClaim", side = "left" },
+		text = "Your first <b>victory!</b> Capsules go straight to <b>your inventory</b>. Try claiming one.",
+		altText = "Don't worry! <b>You still get rewards</b> even when you lose.",
+		nextStep = 6,      -- Next step for victory case
+		altNextStep = 3,   -- Next step for loss case
+		completeCondition = { type = "button_click", target = "conditional" }
+	},
+	-- 6 Open first lootbox
+	[6] = {
+		startCondition = { type = "hud_show", target = "BottomPanel" },
+		highlightObjects = { "BottomPanel.Packs.Outline.Content.Pack1" },
+		arrow = { objectName = "BottomPanel.Packs.Outline.Content.Pack1.BtnOpen", side = "left" },
+		text = "You've got a <b>card capsule</b> in your <b>inventory</b>... <b>Unlock</b> and <b>open</b> it!",
+		completeCondition = { type = "button_click", target = "BottomPanel.Packs.Outline.Content.Pack1.BtnOpen" }
+	},
+	-- 7 Claim card
+	[7] = {
+		forceStepOnGameLoad = 8,
+		startCondition = { type = "conditional", condition = "lootbox_claim_available", execute = "HandleLootboxClaimAvailable" },
+		arrow = { objectName = "LootboxOpening.BtnClaim", side = "left" },
+		completeCondition = { type = "button_click", target = "LootboxOpening.BtnClaim" }
+	},
+	-- 8 Open Deck
+	[8] = {
+		startCondition = { type = "hud_show", target = "LeftPanel" }, 
+		highlightObjects = { "LeftPanel.BtnDeck" },
+		arrow = { objectName = "BtnDeck", side = "right" },
+		text = "Time to check your <b>deck</b>!",
+		completeCondition = { type = "button_click", target = "LeftPanel.BtnDeck" }
+	},
+	-- 9 Select card
+	[9] = {
+		forceStepOnGameLoad = 8,
+		startCondition = { type = "window_open", target = "Deck" },
+		highlightObjects = { "Deck.Deck.Content.Content.DeckCard_card_600_1" },
+		arrow = { objectName = "Deck.Deck.Content.Content.DeckCard_card_600_1", side = "left" },
+		text = "Nice! You can <b>level up</b> the card!",
+		completeCondition = { type = "button_click", target = "Deck.Deck.Content.Content.DeckCard_card_600_1.BtnInfo" }
+	},
+	-- 10 Level up card
+	[10] = {
+		forceStepOnGameLoad = 8,
+		startCondition = { type = "window_open", target = "CardInfo" },
+		highlightObjects = { "CardInfo.Main.Content.Content", "CardInfo.Buttons.BtnLevelUp" },  
+		arrow = { objectName = "CardInfo.Buttons.BtnLevelUp", side = "left" },
+		text = "The higher the <b>level</b>, the stronger the card.",
+		completeCondition = { type = "button_click", target = "CardInfo.Buttons.BtnLevelUp" }  
+	},
+	-- 11 CardInfo closed
+	[11] = {
+		startCondition = { type = "window_open", target = "CardInfo" },
+		completeCondition = { type = "window_close", target = "CardInfo", force = true }
+	},
+	-- 12 Add another card to the deck
+	[12] = {
+		startCondition = { type = "conditional", condition = "collection_count", execute = "HandleAddCardToDeck" },
+		highlightObjects = { "conditional" },
+		arrow = { objectName = "conditional", side = "left" },
+		text = "Now let’s <b>add another card to the deck</b>.",
+		completeCondition = { type = "button_click", target = "conditional", force = true }
+	},
+	-- 13 Card selected - to deck
+	[13] = {
+		startCondition = { type = "window_open", target = "CardInfo" },
+		highlightObjects = { "CardInfo.Main.Content.Content", "CardInfo.Buttons.BtnDeck" },  
+		arrow = { objectName = "CardInfo.Buttons.BtnDeck", side = "left" },
+		text = "A deck can have <b>no fewer than 1 and no more than 6 cards</b>.",
+		completeCondition = { type = "button_click", target = "CardInfo.Buttons.BtnDeck", force = true }  
+	},
+	-- 14 Second battle
+	[14] = {
+		startCondition = { type = "hud_show", target = "RightPanel", setBattleMode = "NPC" }, 
+		highlightObjects = { "RightPanel.BtnBattle" },
+		arrow = { objectName = "BtnBattle", side = "left" },
+		text = "Now let’s jump into <b>another battle!</b>",
+		completeCondition = { type = "button_click", target = "RightPanel.BtnBattle" }
+	},
+	-- 15 Start second battle
+	[15] = {
+		forceStepOnGameLoad = 14,
+		startCondition = { type = "window_open", target = "StartBattle" },
+		highlightObjects = { "StartBattle.Main.Content.RivalsDeck", "StartBattle.Buttons.BtnStart" },
+		arrow = { objectName = "StartBattle.Buttons.BtnStart", side = "left" },
+		text = "The rival’s deck <b>changes after every battle</b>.",
+		completeCondition = { type = "button_click", target = "StartBattle.Buttons.BtnStart", setBattleMode = nil }
+	},
+	-- 16 Boss battle
+	[16] = {
+		startCondition = { type = "hud_show", target = "RightPanel", setBattleMode = "Boss" }, 
+		highlightObjects = { "RightPanel.BtnBattle" },
+		arrow = { objectName = "BtnBattle", side = "left" },
+		text = "You're doing great! Ready to take on <b>the boss?</b>",
+		completeCondition = { type = "button_click", target = "RightPanel.BtnBattle" }
+	},
+	-- 17 Start boss battle
+	[17] = {
+		forceStepOnGameLoad = 16,
+		startCondition = { type = "window_open", target = "StartBattle" },
+		highlightObjects = { "StartBattle.Main.Content.TxtRival.TxtDifficulty", "StartBattle.Main.Content.RivalsDeck", "StartBattle.Main.Content.Rewards", "StartBattle.Buttons.BtnStart" },
+		arrow = { objectName = "StartBattle.Buttons.BtnStart", side = "left" },
+		text = "Each boss win makes <b>the next battle harder</b>. But you'll earn <b>a themed capsule</b> as a reward!",
+		completeCondition = { type = "button_click", target = "StartBattle.Buttons.BtnStart", setBattleMode = "Boss" }
+	},
+	-- 18 Claim boss reward
+	[18] = {
+		forceStepOnGameLoad = 19,
+		startCondition = { type = "window_open", target = "Reward" },
+		highlightObjects = { "Reward.Victory", "Reward.PacksSelector.Packs", "Reward.Buttons.BtnClaim" },
+		arrow = { objectName = "Reward.Buttons.BtnClaim", side = "left" },
+		completeCondition = { type = "button_click", target = "Reward.Buttons.BtnClaim" }
+	},
+	-- 19 Go to playtime rewards
+	[19] = {
+		startCondition = { type = "conditional", condition = "playtime_reward_available", execute = "HandlePlaytimeRewardAvailable" },
+		highlightObjects = { "LeftPanel.BtnPlaytime" },  
+		arrow = { objectName = "LeftPanel.BtnPlaytime", side = "right" },
+		text = "You can claim <b>rewards</b> for the time <b>you spend in-game</b>!",
+		completeCondition = { type = "button_click", target = "LeftPanel.BtnPlaytime" }  
+	},
+	-- 20 Claim playtime reward
+	[20] = {
+		forceStepOnGameLoad = 19,
 		startCondition = { type = "conditional", condition = "playtime_reward_claimable", execute = "HandleClaimPlaytimeReward" },
 		highlightObjects = { "conditional" },
 		arrow = { objectName = "conditional", side = "left" },

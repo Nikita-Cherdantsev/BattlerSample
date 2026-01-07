@@ -440,7 +440,7 @@ function ProfileSchema.CreateProfile(playerId)
 	
 	local profile = {
 		playerId = tostring(playerId),
-		version = "v3",  -- New profiles are created with v3
+		version = "v4",  -- New profiles are created with v4
 		createdAt = now,
 		lastLoginAt = now,
 		loginStreak = 0,
@@ -570,6 +570,38 @@ function ProfileSchema.MigrateV2ToV3(v2Profile)
 	}
 	
 	return v3Profile
+end
+
+-- Migrate v3 profile to v4
+-- All v3 profiles migrate to v4:
+-- - If tutorialStep > 0: set to lastStep (old users who started tutorial)
+-- - If tutorialStep = 0: keep as 0 (old users who didn't start, will see new tutorial)
+function ProfileSchema.MigrateV3ToV4(v3Profile)
+	if not v3Profile then
+		return nil, "No profile to migrate"
+	end
+	
+	-- Get last tutorial step to mark tutorial as complete
+	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	local lastStep = TutorialConfig.GetStepCount()
+	
+	-- Create v4 profile
+	local v4Profile = {}
+	for key, value in pairs(v3Profile) do
+		v4Profile[key] = value
+	end
+	
+	-- If user has tutorial records (tutorialStep > 0), mark tutorial as complete
+	-- Otherwise, keep tutorialStep = 0 so they see the new tutorial
+	if v3Profile.tutorialStep and type(v3Profile.tutorialStep) == "number" and v3Profile.tutorialStep > 0 then
+		v4Profile.tutorialStep = lastStep  -- Mark tutorial as complete for existing users
+	else
+		v4Profile.tutorialStep = 0  -- Keep as 0 for users who haven't started tutorial
+	end
+	
+	v4Profile.version = "v4"
+	
+	return v4Profile
 end
 
 -- Update profile timestamps

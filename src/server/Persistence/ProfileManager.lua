@@ -464,8 +464,33 @@ local function MigrateProfileIfNeeded(profile)
 		end
 	end
 	
-	-- For existing v3 profiles, ensure all new fields are initialized
-	if profile.version == "v3" then
+	-- Migrate v3 → v4 if needed (all v3 profiles migrate to v4)
+	local needsV3ToV4Migration = profile.version == "v3"
+	
+	if needsV3ToV4Migration then
+		print("🔄 Migrating profile from v3 to v4")
+		
+		local migratedProfile = ProfileSchema.MigrateV3ToV4(profile)
+		if migratedProfile then
+			if migratedProfile.version == "v4" then
+				wasMigrated = true
+				local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+				local lastStep = TutorialConfig.GetStepCount()
+				if migratedProfile.tutorialStep == lastStep then
+					print("🔄 Profile migrated to v4, tutorialStep set to last step (tutorial marked as complete)")
+				else
+					print("🔄 Profile migrated to v4, tutorialStep = 0 (will see new tutorial)")
+				end
+			end
+			profile = migratedProfile
+		else
+			warn("❌ Failed to migrate profile from v3 to v4")
+			return nil, false
+		end
+	end
+	
+	-- For existing v3/v4 profiles, ensure all new fields are initialized
+	if profile.version == "v3" or profile.version == "v4" then
 		-- Initialize playtime if missing
 		if not profile.playtime then
 			profile.playtime = {
@@ -667,28 +692,8 @@ function ProfileManager.LoadProfile(userId)
 	-- Create new profile if loading failed or profile was invalid
 	local newProfile = ProfileSchema.CreateProfile(userId)
 	
-	-- Grant beginner lootbox to new players (add directly to profile before saving)
-	local BoxTypes = require(game.ReplicatedStorage.Modules.Loot.BoxTypes)
-	local BoxRoller = require(game.ReplicatedStorage.Modules.Loot.BoxRoller)
-	
-	-- Ensure lootboxes array exists
-	if not newProfile.lootboxes then
-		newProfile.lootboxes = {}
-	end
-	
-	-- Add beginner lootbox to first slot (already ready to open)
-	local now = os.time()
-	local beginnerBox = {
-		id = BoxRoller.GenerateBoxId(),
-		rarity = BoxTypes.BoxRarity.BEGINNER,
-		state = BoxTypes.BoxState.READY,  -- Ready to open immediately
-		seed = BoxRoller.GenerateSeed(),
-		source = "starter",
-		startedAt = now,
-		unlocksAt = now  -- Already unlocked
-	}
-	newProfile.lootboxes[1] = beginnerBox
-	print("✅ Granted beginner lootbox (ready to open) to new player:", userId)
+	-- Note: Beginner lootbox is no longer granted at profile creation
+	-- It will be granted after the first battle victory instead
 	
 	-- Compute initial squad power
 	newProfile.squadPower = ComputeSquadPower(newProfile)
