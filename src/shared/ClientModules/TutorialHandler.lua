@@ -476,6 +476,13 @@ end
 -- Helper: Handle event for next step (when tutorial is not active)
 function TutorialHandler:HandleEventForNextStep(eventType, eventValue)
 	local TutorialConfig = require(game.ReplicatedStorage.Modules.Tutorial.TutorialConfig)
+	
+	-- Don't process events if tutorial is complete or not yet initialized properly
+	-- If currentStepIndex is -1, we haven't received tutorial progress from server yet
+	if self.currentStepIndex == -1 or (type(self.currentStepIndex) == "number" and TutorialConfig.IsComplete(self.currentStepIndex)) then
+		return false
+	end
+	
 	local nextStepIndex = self.pendingStepIndex or self:GetNextStepIndex(self.currentStepIndex)
 	if not nextStepIndex then
 		return false

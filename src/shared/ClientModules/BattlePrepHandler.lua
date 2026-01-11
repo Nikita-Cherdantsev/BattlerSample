@@ -1713,7 +1713,6 @@ end
 function BattlePrepHandler:OnStartButtonClicked()
 	-- Prevent duplicate battle requests (concurrency guard)
 	if self._isRequestingBattle then
-		warn("BattlePrepHandler: Battle request already in progress")
 		return
 	end
 	
@@ -1788,16 +1787,14 @@ end
 
 -- Handle battle response from server
 function BattlePrepHandler:OnBattleResponse(response)
-	-- Reset request flag
-	self._isRequestingBattle = false
-	
-	-- Re-enable button (in case of error)
-	if self.StartButton then
-		self.StartButton.Active = true
-	end
-	
 	if not response.ok then
 		warn("BattlePrepHandler: Battle request failed:", response.error and response.error.message or "Unknown error")
+		-- Re-enable button (in case of error)
+		if self.StartButton then
+			self.StartButton.Active = true
+		end
+		-- Reset request flag
+		self._isRequestingBattle = false
 		return
 	end
 	
@@ -1827,6 +1824,9 @@ function BattlePrepHandler:OnBattleResponse(response)
 	else
 		warn("BattlePrepHandler: BattleHandler not available")
 	end
+
+	-- Reset request flag
+	self._isRequestingBattle = false
 end
 
 -- Clean up dynamically created frames and restore templates
