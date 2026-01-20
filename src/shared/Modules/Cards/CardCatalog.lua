@@ -18,7 +18,9 @@ CardCatalog.Classes = {
 }
 
 -- Base card template
-local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth, description, passive, specialBox)
+-- NOTE: Catalog historically calls this helper with an extra, unused argument in some places.
+-- Keep varargs to avoid Luau linter warnings without changing runtime behavior.
+local function CreateCard(id, name, rarity, class, baseStats, slotNumber, growth, description, passive, specialBox, ...)
 	-- Use provided growth table or create default if none provided
 	if not growth then
 		growth = {}
@@ -258,6 +260,237 @@ CardCatalog.Cards = {
 		[9] = { atk = 1, hp = 0, defence = 0 },
 		[10] = { atk = 0, hp = 1, defence = 0 }
 		}, 130, "", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	-- 2026-01 content drop: new cards (no passives yet; stats only)
+	-- IMPORTANT: slotNumber controls board ordering (lower = earlier/front).
+	-- Tanks are placed earlier, DPS mid, Supports later.
+
+	-- Tanks (front)
+	["card_30"] = CreateCard("card_30", "Desert King", CardCatalog.Rarities.EPIC, CardCatalog.Classes.TANK, { -- Gaara
+		atk = 1,
+		hp = 9,
+		defence = 1
+	}, 30, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 1 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 2, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 1 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 1 }
+	}, 30, "Unbreakable tank/control archetype (no abilities yet)."),
+
+	["card_40"] = CreateCard("card_40", "Iron Cyborg", CardCatalog.Rarities.RARE, CardCatalog.Classes.TANK, { -- Franky
+		atk = 1,
+		hp = 6,
+		defence = 1
+	}, 40, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 1 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+	}, 40, "High survivability bruiser-tank archetype (no abilities yet).", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	-- DPS (mid)
+	["card_120"] = CreateCard("card_120", "Endless Will", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, { -- Naruto
+		atk = 7,
+		hp = 6,
+		defence = 1
+	}, 120, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 1 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 1 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 2, hp = 1, defence = 0 }
+	}, 120, "Legendary bruiser DPS archetype (no abilities yet)."),
+
+	["card_130"] = CreateCard("card_130", "Future Sight", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, { -- Charlotte Katakuri
+		atk = 3,
+		hp = 7,
+		defence = 1
+	}, 130, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 2, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 1 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+	}, 130, "Elite bruiser DPS archetype (no abilities yet).", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	["card_140"] = CreateCard("card_140", "Eternal Vengeance", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, { -- Sasuke
+		atk = 8,
+		hp = 4,
+		defence = 0
+	}, 140, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 1, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 2, hp = 0, defence = 0 }
+	}, 140, "Legendary assassin DPS archetype (no abilities yet)."),
+
+	["card_150"] = CreateCard("card_150", "Strongest Blade", CardCatalog.Rarities.LEGENDARY, CardCatalog.Classes.DPS, { -- Levi Ackerman
+		atk = 7,
+		hp = 5,
+		defence = 0
+	}, 150, {
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 1, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 1, hp = 0, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+	}, 150, "Legendary melee DPS archetype (no abilities yet)."),
+
+	["card_160"] = CreateCard("card_160", "Lightning Assassin", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, { -- Killua
+		atk = 4,
+		hp = 3,
+		defence = 0
+	}, 160, {
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 1, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 1, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 1, hp = 0, defence = 0 },
+		[9] = { atk = 1, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+	}, 160, "Epic assassin DPS archetype (no abilities yet)."),
+
+	["card_170"] = CreateCard("card_170", "Shadow Monarch", CardCatalog.Rarities.EPIC, CardCatalog.Classes.DPS, { -- Sung Jin-Woo
+		atk = 3,
+		hp = 4,
+		defence = 0
+	}, 170, {
+		[2] = { atk = 1, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 1, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 1, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+	}, 170, "Epic scaling DPS archetype (no abilities yet)."),
+
+	["card_180"] = CreateCard("card_180", "Deadeye Scout", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.DPS, { -- Sasha Blouse
+		atk = 1,
+		hp = 2,
+		defence = 0
+	}, 180, {
+		[2] = { atk = 1, hp = 0, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 0 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 0 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+	}, 180, "Uncommon ranged DPS archetype (no abilities yet)."),
+
+	["card_190"] = CreateCard("card_190", "Soul Swordsman", CardCatalog.Rarities.RARE, CardCatalog.Classes.DPS, { -- Brook
+		atk = 3,
+		hp = 3,
+		defence = 0
+	}, 190, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 1, hp = 0, defence = 0 },
+		[10] = { atk = 1, hp = 1, defence = 0 }
+	}, 190, "Rare DPS/control archetype (no abilities yet).", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	-- Supports (back)
+	["card_620"] = CreateCard("card_620", "Combat Medic", CardCatalog.Rarities.RARE, CardCatalog.Classes.SUPPORT, { -- Leorio
+		atk = 1,
+		hp = 5,
+		defence = 1
+	}, 620, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 1, hp = 0, defence = 0 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 1, hp = 0, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 1, hp = 0, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+	}, 620, "Rare support/bruiser archetype (no abilities yet)."),
+
+	["card_630"] = CreateCard("card_630", "Weather Witch", CardCatalog.Rarities.RARE, CardCatalog.Classes.SUPPORT, { -- Nami
+		atk = 0,
+		hp = 4,
+		defence = 1
+	}, 630, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 0, hp = 1, defence = 0 },
+		[5] = { atk = 1, hp = 0, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 1 },
+		[7] = { atk = 0, hp = 1, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 1 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+	}, 630, "Rare support/control archetype (no abilities yet).", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	["card_640"] = CreateCard("card_640", "Thousand Hands", CardCatalog.Rarities.RARE, CardCatalog.Classes.SUPPORT, { -- Nico Robin
+		atk = 1,
+		hp = 4,
+		defence = 1
+	}, 640, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 1 },
+		[4] = { atk = 1, hp = 0, defence = 0 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 1 },
+		[7] = { atk = 1, hp = 0, defence = 0 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 1 },
+		[10] = { atk = 1, hp = 0, defence = 0 }
+	}, 640, "Rare control/support archetype (no abilities yet).", nil, { CardCatalog.Rarities.ONEPIECE }),
+
+	["card_650"] = CreateCard("card_650", "Master Strategist", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, { -- Armin Arlert
+		atk = 0,
+		hp = 3,
+		defence = 1
+	}, 650, {
+		[2] = { atk = 0, hp = 1, defence = 0 },
+		[3] = { atk = 0, hp = 1, defence = 0 },
+		[4] = { atk = 0, hp = 0, defence = 1 },
+		[5] = { atk = 0, hp = 1, defence = 0 },
+		[6] = { atk = 0, hp = 1, defence = 0 },
+		[7] = { atk = 0, hp = 0, defence = 1 },
+		[8] = { atk = 0, hp = 1, defence = 0 },
+		[9] = { atk = 0, hp = 1, defence = 0 },
+		[10] = { atk = 0, hp = 1, defence = 0 }
+	}, 650, "Uncommon support/control archetype (no abilities yet)."),
 
 	["card_1400"] = CreateCard("card_1400", "Solar Strike", CardCatalog.Rarities.UNCOMMON, CardCatalog.Classes.SUPPORT, { -- Krillin
 		atk = 1,

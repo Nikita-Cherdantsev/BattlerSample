@@ -47,6 +47,7 @@ local RequestClaimDailyReward = nil
 local RequestClaimFollowReward = nil
 local RequestRedeemPromoCode = nil
 local RequestNPCDeck = nil -- RemoteFunction for NPC deck requests
+local RequestRankedOpponent = nil -- RemoteFunction for Ranked PvP opponent requests
 local RequestClaimBattleReward = nil
 local RequestSaveBattleRewardToPending = nil
 local RequestTutorialProgress = nil
@@ -248,12 +249,17 @@ end
 local function HandleRequestStartMatch(player, requestData)
 	LogInfo(player, "Processing match request")
 	
-	-- Extract seed, variant, and partName from request data (optional)
+	-- Extract match request payload (optional fields; server validates inside MatchService)
 	local matchRequestData = {
 		mode = requestData and requestData.mode or "PvE",
 		seed = requestData and requestData.seed or nil,
 		variant = requestData and requestData.variant or nil,
-		partName = requestData and requestData.partName or nil
+		partName = requestData and requestData.partName or nil,
+
+		-- PvP / Ranked
+		pvpMode = requestData and requestData.pvpMode or nil,
+		opponentUserId = requestData and requestData.opponentUserId or nil,
+		ticket = requestData and requestData.ticket or nil,
 	}
 	
 	-- Execute match via MatchService
@@ -1156,6 +1162,7 @@ RemoteEvents.RequestDailyData = RequestDailyData
 RemoteEvents.RequestClaimDailyReward = RequestClaimDailyReward
 RemoteEvents.RequestClaimFollowReward = RequestClaimFollowReward
 RemoteEvents.RequestNPCDeck = RequestNPCDeck
+RemoteEvents.RequestRankedOpponent = RequestRankedOpponent
 RemoteEvents.RequestClaimBattleReward = RequestClaimBattleReward
 RemoteEvents.RequestSaveBattleRewardToPending = RequestSaveBattleRewardToPending
 RemoteEvents.RequestTutorialProgress = RequestTutorialProgress
@@ -1278,6 +1285,10 @@ function RemoteEvents.Init()
 	RequestNPCDeck = Instance.new("RemoteFunction")
 	RequestNPCDeck.Name = "RequestNPCDeck"
 	RequestNPCDeck.Parent = NetworkFolder
+
+	RequestRankedOpponent = Instance.new("RemoteFunction")
+	RequestRankedOpponent.Name = "RequestRankedOpponent"
+	RequestRankedOpponent.Parent = NetworkFolder
 	
 	-- Battle Reward Claim RemoteEvent
 	RequestClaimBattleReward = Instance.new("RemoteEvent")
@@ -1442,6 +1453,12 @@ function RemoteEvents.Init()
 				}
 			}
 		end
+	end
+
+	-- Ranked PvP: opponent preview request (two-phase flow)
+	RequestRankedOpponent.OnServerInvoke = function(player)
+		local RankedService = require(game.ServerScriptService.Services.RankedService)
+		return RankedService.RequestOpponent(player)
 	end
 	
 	LogInfo(nil, "RemoteEvents initialized successfully")

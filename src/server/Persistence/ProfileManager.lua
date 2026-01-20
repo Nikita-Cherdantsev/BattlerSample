@@ -491,6 +491,11 @@ local function MigrateProfileIfNeeded(profile)
 	
 	-- For existing v3/v4 profiles, ensure all new fields are initialized
 	if profile.version == "v3" or profile.version == "v4" then
+		-- Initialize ranked PvP rating if missing
+		if type(profile.pvpRating) ~= "number" or profile.pvpRating < 0 then
+			profile.pvpRating = 1000
+		end
+
 		-- Initialize playtime if missing
 		if not profile.playtime then
 			profile.playtime = {

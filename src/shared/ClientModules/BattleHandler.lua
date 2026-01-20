@@ -595,7 +595,8 @@ function BattleHandler:SimulateBattle(battleData)
 end
 
 -- Local helper to show notifications (reused from CardInfoHandler pattern)
-function BattleHandler:ShowNotification(message)
+function BattleHandler:ShowNotification(message, opts)
+	opts = opts or {}
 	-- Cache references
 	if not self._notif then
 		local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
@@ -674,6 +675,20 @@ function BattleHandler:ShowNotification(message)
 	local stroke = self._notif.stroke
 	self._notif.token = (self._notif.token or 0) + 1
 	local token = self._notif.token
+
+	-- Optional styling (best-effort, safe for both FollowText and fallback toast)
+	local textColor = opts.textColor
+	local strokeColor = opts.strokeColor
+	local bgColor = opts.bgColor
+	if textColor and label then
+		label.TextColor3 = textColor
+	end
+	if strokeColor and stroke then
+		stroke.Color = strokeColor
+	end
+	if bgColor and frame then
+		frame.BackgroundColor3 = bgColor
+	end
 	
 	-- Prepare (ensure it renders above battle UI)
 	frame.ZIndex = 1000
@@ -688,14 +703,17 @@ function BattleHandler:ShowNotification(message)
 
 	-- Fade in using TweenService (match CardInfoHandler behaviour)
 	local fadeInInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	TweenService:Create(frame, fadeInInfo, { BackgroundTransparency = 0.5 }):Play()
+	local targetBgT = (type(opts.bgTransparency) == "number") and opts.bgTransparency or 0.5
+	TweenService:Create(frame, fadeInInfo, { BackgroundTransparency = targetBgT }):Play()
 	TweenService:Create(label, fadeInInfo, { TextTransparency = 0 }):Play()
 	if stroke then
-		TweenService:Create(stroke, fadeInInfo, { Transparency = 0.5 }):Play()
+		local targetStrokeT = (type(opts.strokeTransparency) == "number") and opts.strokeTransparency or 0.5
+		TweenService:Create(stroke, fadeInInfo, { Transparency = targetStrokeT }):Play()
 	end
 
 	-- Auto fade out
-	task.delay(3.0, function()
+	local duration = (type(opts.duration) == "number") and opts.duration or 3.0
+	task.delay(duration, function()
 		if self._notif and self._notif.token == token then
 			local fadeOutInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 			local tween1 = TweenService:Create(frame, fadeOutInfo, { BackgroundTransparency = 1 })
@@ -711,6 +729,40 @@ function BattleHandler:ShowNotification(message)
 					frame.Visible = false
 				end
 			end)
+		end
+	end)
+end
+
+-- Immediately dismiss the current notification toast (if any).
+-- Safe to call even if no notification has been shown yet.
+function BattleHandler:HideNotification()
+	if not self._notif then
+		return
+	end
+
+	local frame = self._notif.frame
+	local label = self._notif.label
+	local stroke = self._notif.stroke
+
+	-- Invalidate any pending auto-hide callbacks.
+	self._notif.token = (self._notif.token or 0) + 1
+
+	if not frame or not label then
+		return
+	end
+
+	local fadeOutInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween1 = TweenService:Create(frame, fadeOutInfo, { BackgroundTransparency = 1 })
+	local tween2 = TweenService:Create(label, fadeOutInfo, { TextTransparency = 1 })
+	tween1:Play()
+	tween2:Play()
+	if stroke then
+		local tween3 = TweenService:Create(stroke, fadeOutInfo, { Transparency = 1 })
+		tween3:Play()
+	end
+	tween2.Completed:Connect(function()
+		if frame then
+			frame.Visible = false
 		end
 	end)
 end

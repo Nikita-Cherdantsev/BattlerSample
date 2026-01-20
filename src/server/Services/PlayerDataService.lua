@@ -11,6 +11,7 @@ local DeckValidator = require(game.ReplicatedStorage:WaitForChild("Modules"):Wai
 local CardCatalog = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardCatalog"))
 local CardLevels = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardLevels"))
 local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Cards"):WaitForChild("CardStats"))
+local RankedService = require(script.Parent:WaitForChild("RankedService"))
 
 -- Lazy load RemoteEvents to avoid circular dependency
 local RemoteEvents = nil
@@ -123,8 +124,8 @@ StartAutosave = function(player)
 			
 			-- Only autosave if profile has unsaved in-memory changes
 			if not ProfileManager.IsProfileDirty(player.UserId) then
-				continue
-			end
+				-- No changes since last save; skip this tick
+			else
 			
 			-- Attempt autosave with exponential backoff
 			local retryCount = 0
@@ -145,6 +146,7 @@ StartAutosave = function(player)
 			
 			if not success then
 				LogWarning(player, "Autosave failed after %d attempts", MAX_AUTOSAVE_RETRIES)
+				end
 			end
 		end
 	end)
@@ -183,6 +185,29 @@ local function OnPlayerAdded(player)
 		
 		-- Store profile reference
 		playerProfiles[player] = profile
+
+		-- Leaderstats: show Ranked rating in the default Roblox player list (top-right)
+		do
+			local leaderstats = player:FindFirstChild("leaderstats")
+			if not leaderstats then
+				leaderstats = Instance.new("Folder")
+				leaderstats.Name = "leaderstats"
+				leaderstats.Parent = player
+			end
+			
+			local ratingValue = leaderstats:FindFirstChild("Rating")
+			if not ratingValue then
+				ratingValue = Instance.new("IntValue")
+				ratingValue.Name = "Rating"
+				ratingValue.Parent = leaderstats
+			end
+			
+			local initialRating = profile and profile.pvpRating
+			if type(initialRating) ~= "number" or initialRating < 0 then
+				initialRating = 1000
+			end
+			ratingValue.Value = math.floor(initialRating)
+		end
 		
 		-- Update profile with current player info and login time atomically
 		local success, updatedProfile = ProfileManager.UpdateProfile(player.UserId, function(profile)
@@ -203,6 +228,13 @@ local function OnPlayerAdded(player)
 		
 		-- Check and grant pending battle rewards
 		local finalProfile = updatedProfile or profile
+
+		-- Ranked PvP: publish/refresh this player's deck snapshot for cross-server matchmaking (best effort)
+		if finalProfile then
+			pcall(function()
+				RankedService.UpsertSnapshot(player.UserId, finalProfile)
+			end)
+		end
 		
 		-- Ensure pendingBattleRewards is initialized (should be done by MigrateProfileIfNeeded, but fallback here)
 		if finalProfile and not finalProfile.pendingBattleRewards then
@@ -456,6 +488,10 @@ function PlayerDataService.SetDeck(player, deckIds)
 		if updatedProfile then
 			playerProfiles[player] = updatedProfile
 			LogInfo(player, "Deck updated successfully, squad power: %.1f", updatedProfile.squadPower)
+			-- Ranked PvP: refresh matchmaking snapshot after deck changes (best effort)
+			pcall(function()
+				RankedService.UpsertSnapshot(player.UserId, updatedProfile)
+			end)
 		else
 			LogWarning(player, "Failed to get updated profile after deck update")
 		end
@@ -526,6 +562,11 @@ function PlayerDataService.LevelUpCard(player, cardId)
 			return false, "Failed to refresh profile after level-up"
 		end
 		playerProfiles[player] = updatedProfile
+
+		-- Ranked PvP: refresh matchmaking snapshot after collection level changes (best effort)
+		pcall(function()
+			RankedService.UpsertSnapshot(player.UserId, updatedProfile)
+		end)
 		
 		LogInfo(player, "Card %s leveled up to level %d (cost: %d copies, %d soft)", 
 			cardId, updatedProfile.collection[cardId].level, cost.requiredCount, cost.softAmount)

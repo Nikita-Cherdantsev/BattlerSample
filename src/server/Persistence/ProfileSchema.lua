@@ -196,6 +196,13 @@ function ProfileSchema.ValidateProfile(profile)
 		return false, "Invalid totalRobuxSpent"
 	end
 
+	-- PvP ranked rating (optional for older profiles, but should be a number when present)
+	if profile.pvpRating ~= nil then
+		if type(profile.pvpRating) ~= "number" or profile.pvpRating < 0 then
+			return false, "Invalid pvpRating"
+		end
+	end
+
 	if profile.followRewardClaimed ~= nil and type(profile.followRewardClaimed) ~= "boolean" then
 		return false, "Invalid followRewardClaimed"
 	end
@@ -444,6 +451,7 @@ function ProfileSchema.CreateProfile(playerId)
 		createdAt = now,
 		lastLoginAt = now,
 		loginStreak = 0,
+		pvpRating = 1000, -- Ranked PvP rating (MVP)
 		collection = starterCollection,
 		deck = starterDeck,  -- Starter deck with card_600 and card_1800
 		currencies = {
@@ -489,6 +497,7 @@ function ProfileSchema.MigrateV1ToV2(v1Profile)
 		createdAt = v1Profile.createdAt,
 		lastLoginAt = v1Profile.lastLoginAt,
 		loginStreak = v1Profile.loginStreak,
+		pvpRating = 1000, -- Initialize ranked rating for migrated profiles
 		deck = v1Profile.deck,
 		currencies = v1Profile.currencies,
 		favoriteLastSeen = nil,
@@ -546,6 +555,7 @@ function ProfileSchema.MigrateV2ToV3(v2Profile)
 		createdAt = v2Profile.createdAt,
 		lastLoginAt = v2Profile.lastLoginAt,
 		loginStreak = v2Profile.loginStreak,
+		pvpRating = (type(v2Profile.pvpRating) == "number" and v2Profile.pvpRating) or 1000,
 		collection = v2Profile.collection,
 		deck = v2Profile.deck,
 		currencies = v2Profile.currencies,

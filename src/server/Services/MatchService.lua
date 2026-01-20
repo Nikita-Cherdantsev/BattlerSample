@@ -14,6 +14,8 @@ local CardStats = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitFor
 local Types = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Types"))
 local BossDecks = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Boss"):WaitForChild("BossDecks"))
 local ProfileManager = require(game.ServerScriptService:WaitForChild("Persistence"):WaitForChild("ProfileManager"))
+local RankedService = require(script.Parent:WaitForChild("RankedService"))
+local RankedConstants = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Constants"):WaitForChild("RankedConstants"))
 
 -- Configuration
 
@@ -844,8 +846,11 @@ function MatchService.ExecuteMatch(player, requestData)
 	local mode = requestData.mode or "PvE"
 	local variant = requestData.variant -- Optional variant selector
 	local partName = requestData.partName -- Part name for NPC/Boss mode detection
+	local pvpMode = requestData.pvpMode -- Optional PvP mode selector (e.g. "Ranked")
+	local opponentUserId = requestData.opponentUserId -- Ranked: selected opponent
+	local ticket = requestData.ticket -- Ranked: selection ticket
 	
-	LogInfo(player, "Match request - mode: %s, variant: %s, partName: %s", mode, tostring(variant), tostring(partName))
+	LogInfo(player, "Match request - mode: %s, pvpMode: %s, variant: %s, partName: %s", mode, tostring(pvpMode), tostring(variant), tostring(partName))
 	
 	if mode ~= "PvE" and mode ~= "PvP" then
 		LogWarning(player, "Invalid match mode: %s", mode)
@@ -996,9 +1001,61 @@ function MatchService.ExecuteMatch(player, requestData)
 			partName, bossDeckInfo.bossId, bossDeckInfo.difficulty, #opponentDeck, 
 			bossDeckInfo.reward and bossDeckInfo.reward.rarity or "none")
 	else
-		-- Regular PvE mode: use existing generation logic
+		-- Ranked PvP: use another player's deck snapshot (no world partName)
+		if mode == "PvP" and pvpMode == "Ranked" then
+			if opponentUserId == nil or opponentUserId == "" then
+				CleanupPlayerState(player)
+				return {
+					ok = false,
+					error = { code = "INVALID_REQUEST", message = "Missing or invalid opponentUserId" }
+				}
+			end
+			-- Hard block self-matches (should never happen, but important safety invariant)
+			if tostring(opponentUserId) == tostring(player.UserId) then
+				CleanupPlayerState(player)
+				return {
+					ok = false,
+					error = { code = "SELF_MATCH", message = "You can't play ranked against yourself" }
+				}
+			end
+			local ticketOk, ticketPayloadOrErr = RankedService.ValidateTicketAndGetPayload(player.UserId, opponentUserId, ticket)
+			if not ticketOk then
+				CleanupPlayerState(player)
+				return {
+					ok = false,
+					error = { code = "INVALID_TICKET", message = ticketPayloadOrErr or "Invalid ticket" }
+				}
+			end
+
+			local ticketPayload = ticketPayloadOrErr
+			local snapshot = ticketPayload and ticketPayload.ghostSnapshot or nil
+			local isGhost = (snapshot ~= nil and snapshot.isGhost == true)
+			if not snapshot then
+				snapshot = RankedService.GetOpponentSnapshot(opponentUserId)
+			end
+			if not snapshot or type(snapshot.deck) ~= "table" or #snapshot.deck == 0 then
+				CleanupPlayerState(player)
+				return {
+					ok = false,
+					error = { code = "OPPONENT_NOT_AVAILABLE", message = "Opponent deck snapshot not available" }
+				}
+			end
+
+			LogInfo(player, "Ranked PvP snapshot loaded: opponentUserId=%s rating=%s deckSize=%d ghost=%s",
+				tostring(opponentUserId), tostring(snapshot.rating), #snapshot.deck, tostring(isGhost))
+
+			opponentDeck = snapshot.deck
+			opponentCollection = {}
+			local levels = snapshot.levels or {}
+			for i, cardId in ipairs(opponentDeck) do
+				local lvl = levels[i] or 1
+				opponentCollection[cardId] = { count = 1, level = lvl }
+			end
+		else
+			-- Regular PvE/PvP (non-ranked): use existing generation logic
 		local rng = SeededRNG.New(serverSeed)
 		opponentDeck = GenerateOpponentDeck(playerDeck, mode, rng, variant)
+		end
 	end
 	
 	-- Stretch the BUSY window before the battle (Studio-only, test mode)
@@ -1097,6 +1154,44 @@ function MatchService.ExecuteMatch(player, requestData)
 	-- CombatEngine returns "A" for player, "B" for opponent, "Draw" for draw
 	local isPlayerVictory = (battleResult.winner == "A")
 	local bossId = ExtractBossId(partName)
+
+	-- Ranked PvP rating update (player only; opponent is unaffected)
+	if mode == "PvP" and pvpMode == "Ranked" then
+		local delta = 0
+		if battleResult.winner == "A" then
+			delta = RankedConstants.WIN_DELTA
+		elseif battleResult.winner == "B" then
+			delta = -RankedConstants.LOSE_DELTA
+		else
+			delta = 0
+		end
+
+		if delta ~= 0 then
+			local okUpdate = ProfileManager.UpdateProfile(player.UserId, function(profile)
+				if type(profile.pvpRating) ~= "number" or profile.pvpRating < 0 then
+					profile.pvpRating = RankedConstants.START_RATING
+				end
+				profile.pvpRating = math.max(0, math.floor(profile.pvpRating + delta))
+				return profile
+			end)
+			if okUpdate then
+				local updatedProfile = ProfileManager.GetCachedProfile(player.UserId)
+				if updatedProfile then
+					-- Keep local caches aligned and refresh snapshot for matchmaking
+					if playerProfile then
+						playerProfile.pvpRating = updatedProfile.pvpRating
+					end
+					-- Update leaderstats (default Roblox player list)
+					local leaderstats = player and player:FindFirstChild("leaderstats")
+					local ratingValue = leaderstats and leaderstats:FindFirstChild("Rating")
+					if ratingValue and ratingValue:IsA("IntValue") then
+						ratingValue.Value = math.floor(updatedProfile.pvpRating or 0)
+					end
+					RankedService.UpsertSnapshot(player.UserId, updatedProfile)
+				end
+			end
+		end
+	end
 	
 	-- Clear NPC deck after battle completes (win or lose)
 	-- This ensures fresh deck generation next time prep window opens
@@ -1159,7 +1254,9 @@ function MatchService.ExecuteMatch(player, requestData)
 	end
 	
 	-- Generate battle rewards based on outcome
+	-- Ranked PvP: allow rewards (same as other battles) + rating updates.
 	local rewards = nil
+	local isRanked = (mode == "PvP" and pvpMode == "Ranked")
 	
 	if isPlayerVictory then
 		-- Check if this is the first battle (npcWins == 0) - give BEGINNER lootbox
@@ -1266,7 +1363,11 @@ function MatchService.ExecuteMatch(player, requestData)
 		playerDeck = playerDeck,
 		rivalDeck = opponentDeck,
 		rivalDeckLevels = rivalDeckLevels, -- Include levels for rival deck display
-		rewards = rewards -- Include battle rewards
+		rewards = rewards, -- Include battle rewards
+		pvp = (mode == "PvP") and {
+			mode = pvpMode,
+			opponentUserId = opponentUserId
+		} or nil
 	}
 end
 

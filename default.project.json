@@ -110,6 +110,9 @@
           },
           "UIConstants": {
             "$path": "src/shared/Modules/Constants/UIConstants.lua"
+          },
+          "RankedConstants": {
+            "$path": "src/shared/Modules/Constants/RankedConstants.lua"
           }
         },
         "Loot": {
@@ -125,6 +128,12 @@
           },
           "BoxValidator": {
             "$path": "src/shared/Modules/Loot/BoxValidator.lua"
+          }
+        },
+        "Matchmaking": {
+          "$className": "Folder",
+          "GhostDeckGenerator": {
+            "$path": "src/shared/Modules/Matchmaking/GhostDeckGenerator.lua"
           }
         },
         "RNG": {
@@ -265,6 +274,9 @@
         },
         "MatchService": {
           "$path": "src/server/Services/MatchService.lua"
+        },
+        "RankedService": {
+          "$path": "src/server/Services/RankedService.lua"
         },
         "PlayerDataService": {
           "$path": "src/server/Services/PlayerDataService.lua"

@@ -86,10 +86,20 @@ function NetworkClient.requestStartMatch(opts)
 		mode = opts.mode or "PvE",
 		seed = opts.seed,
 		variant = opts.variant,
-		partName = opts.partName -- Include part name for NPC/Boss mode detection
+		partName = opts.partName, -- Include part name for NPC/Boss mode detection
+
+		-- PvP (Ranked) passthrough fields
+		pvpMode = opts.pvpMode,
+		opponentUserId = opts.opponentUserId,
+		ticket = opts.ticket,
 	}
 	
-	log("Requesting match start: mode=%s, partName=%s", requestData.mode, tostring(requestData.partName))
+	log(
+		"Requesting match start: mode=%s, pvpMode=%s, partName=%s",
+		tostring(requestData.mode),
+		tostring(requestData.pvpMode),
+		tostring(requestData.partName)
+	)
 	RequestStartMatch:FireServer(requestData)
 end
 

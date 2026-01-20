@@ -17,10 +17,31 @@ BattlePrepHandler._initialized = false
 BattlePrepHandler.isAnimating = false
 BattlePrepHandler.currentEnemyData = nil
 BattlePrepHandler.currentPartName = nil -- Store current part name for NPC/Boss detection
-BattlePrepHandler.currentBattleMode = "NPC" -- "NPC" or "Boss"
+BattlePrepHandler.currentBattleMode = "NPC" -- "NPC" | "Boss" | "Ranked"
 BattlePrepHandler.forceMode = nil -- Can be set externally (e.g., by tutorial) to force battle mode
 BattlePrepHandler.selectedNPCModelName = nil -- Store selected NPC model name until next battle
 BattlePrepHandler.currentViewportModel = nil -- Store cloned model in ViewportFrame
+BattlePrepHandler._rankedThumbCache = {} -- userId -> thumbnail content id string
+
+-- Lightweight toast helper (reuses BattleHandler notification UI)
+function BattlePrepHandler:ShowToast(message)
+	local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+	if battleHandler and battleHandler.ShowNotification then
+		-- Backward compatible: allow optional styling via second arg (table)
+		battleHandler:ShowNotification(tostring(message))
+	else
+		warn("BattlePrepHandler toast:", tostring(message))
+	end
+end
+
+function BattlePrepHandler:ShowToastStyled(message, opts)
+	local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+	if battleHandler and battleHandler.ShowNotification then
+		battleHandler:ShowNotification(tostring(message), opts)
+	else
+		warn("BattlePrepHandler toast:", tostring(message))
+	end
+end
 
 --// Constants
 local LOOTBOX_ASSETS = {
@@ -122,10 +143,12 @@ function BattlePrepHandler:SetupBattlePrep()
 	-- Find TxtRival frame for difficulty display (boss mode only)
 	local txtRivalFrame = contentFrame:FindFirstChild("TxtRival")
 	if txtRivalFrame then
+		self.TxtRivalFrame = txtRivalFrame
 		self.TxtDifficultyLabel = txtRivalFrame:FindFirstChild("TxtDifficulty")
 		if not self.TxtDifficultyLabel then
 			warn("BattlePrepHandler: TxtDifficulty TextLabel not found in TxtRival frame")
 		end
+		self:EnsureRankedInfoUI()
 	end
 	
 	-- Find START button (Buttons frame is directly under StartBattle frame)
@@ -165,6 +188,8 @@ function BattlePrepHandler:SetupBattlePrep()
 	
 	-- Setup RightPanel.BtnBattle button
 	self:SetupRightPanelBattleButton()
+	-- Setup RightPanel.BtnRankedBattle button (Ranked PvP MVP)
+	self:SetupRightPanelRankedBattleButton()
 	
 	-- Setup tab buttons (BtnNPC, BtnBoss)
 	self:SetupTabButtons()
@@ -445,6 +470,44 @@ function BattlePrepHandler:SetupRightPanelBattleButton()
 	print("✅ BattlePrepHandler: RightPanel.BtnBattle button connected")
 end
 
+function BattlePrepHandler:SetupRightPanelRankedBattleButton()
+	-- Find RightPanel and BtnRankedBattle
+	local rightPanel = self.UI:FindFirstChild("RightPanel")
+	if not rightPanel then
+		warn("BattlePrepHandler: RightPanel not found in GameUI")
+		return
+	end
+	
+	local btnRankedBattle = rightPanel:FindFirstChild("BtnRankedBattle")
+	if not btnRankedBattle then
+		warn("BattlePrepHandler: BtnRankedBattle not found in RightPanel")
+		return
+	end
+	
+	local connection = btnRankedBattle.MouseButton1Click:Connect(function()
+		EventBus:Emit("ButtonClicked", "RightPanel.BtnRankedBattle")
+		
+		-- Check if battle is already active
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler and battleHandler.isBattleActive then
+			return
+		end
+		
+		self.currentBattleMode = "Ranked"
+		self.currentPartName = nil
+
+		-- Two-phase flow: only open the prep window if an opponent was found.
+		self:LoadRankedOpponentData(function(ok)
+			if ok then
+				self:OpenBattlePrep()
+			end
+		end)
+	end)
+	
+	table.insert(self.Connections, connection)
+	print("✅ BattlePrepHandler: RightPanel.BtnRankedBattle button connected")
+end
+
 function BattlePrepHandler:SetupTabButtons()
 	-- Find Main frame and Content frame
 	local mainFrame = self.StartBattleFrame:FindFirstChild("Main")
@@ -465,6 +528,7 @@ function BattlePrepHandler:SetupTabButtons()
 		warn("BattlePrepHandler: Tabs frame not found in Content")
 		return
 	end
+	self.TabsFrame = tabsFrame
 	
 	-- Find BtnNPC and BtnBoss
 	self.BtnNPC = tabsFrame:FindFirstChild("BtnNPC")
@@ -810,6 +874,8 @@ function BattlePrepHandler:ReloadEnemyData()
 		loadFunction = self.LoadNPCEnemyData
 	elseif self.currentBattleMode == "Boss" then
 		loadFunction = self.LoadBossEnemyData
+	elseif self.currentBattleMode == "Ranked" then
+		loadFunction = self.LoadRankedOpponentData
 	end
 	
 	if loadFunction then
@@ -924,6 +990,7 @@ function BattlePrepHandler:OpenBattlePrep()
 	-- If opened from button or tab switch, use currentBattleMode
 	local isNPCMode = false
 	local isBossMode = false
+	local isRankedMode = false
 	
 	if self.currentPartName then
 		-- Opened from proximity prompt - determine from part name
@@ -941,9 +1008,12 @@ function BattlePrepHandler:OpenBattlePrep()
 		-- Opened from button or tab switch - use currentBattleMode
 		isNPCMode = (self.currentBattleMode == "NPC")
 		isBossMode = (self.currentBattleMode == "Boss")
+		isRankedMode = (self.currentBattleMode == "Ranked")
 		
-		-- Ensure part name is set for current mode
+		-- Ensure part name is set for current mode (NPC/Boss only)
+		if not isRankedMode then
 		self:EnsurePartNameForMode()
+		end
 	end
 	
 	-- Hide HUD panels if they exist
@@ -989,6 +1059,20 @@ function BattlePrepHandler:OpenBattlePrep()
 			self:ShowBattlePrepWindow()
 		end)
 		return -- Will continue after boss deck loads
+	elseif isRankedMode then
+		-- Ranked mode: opponent must already be selected by the button (two-phase flow).
+		-- If selection is missing, do not open the window (toast is handled by LoadRankedOpponentData).
+		if not self._rankedOpponentUserId or not self._rankedTicket then
+			self.isAnimating = false
+			return
+		end
+		
+		-- Update UI and show window (no extra server call)
+		self:UpdateRewardsDisplay()
+		self:UpdateRivalsDeckDisplay()
+		self:UpdateDifficultyDisplay()
+		self:ShowBattlePrepWindow()
+		return
 	else
 		-- Default: use test data
 		self:LoadTestEnemyData()
@@ -1003,13 +1087,278 @@ function BattlePrepHandler:OpenBattlePrep()
 	self:ShowBattlePrepWindow()
 end
 
+function BattlePrepHandler:EnsureRankedInfoUI()
+	-- We create small UI widgets in code so you don't need to edit the Roblox UI hierarchy manually.
+	-- They live under Content/TxtRival (already present in the battle prep UI).
+	if not self.TxtRivalFrame or not self.TxtRivalFrame:IsA("GuiObject") then
+		return
+	end
+
+	if self.TxtRivalFrame:FindFirstChild("RankedInfo") then
+		self.RankedInfoFrame = self.TxtRivalFrame:FindFirstChild("RankedInfo")
+		self.RankedOpponentNameLabel = self.RankedInfoFrame:FindFirstChild("TxtOpponentName")
+		self.RankedOpponentRatingLabel = self.RankedInfoFrame:FindFirstChild("TxtOpponentRating")
+		self.RankedOpponentThumb = self.RankedInfoFrame:FindFirstChild("ImgOpponentThumb")
+		self.RankedTitleLabel = self.RankedInfoFrame:FindFirstChild("TxtRankedTitle")
+		return
+	end
+
+	local rankedInfo = Instance.new("Frame")
+	rankedInfo.Name = "RankedInfo"
+	rankedInfo.BackgroundTransparency = 1
+	-- Keep it in the left gutter so it doesn't overlap rival cards.
+	-- Height follows parent (TxtRival), width is constrained.
+	rankedInfo.AnchorPoint = Vector2.new(0, 0)
+	rankedInfo.Position = UDim2.fromOffset(0, 0)
+	rankedInfo.Size = UDim2.new(0, 170, 1, 0)
+	rankedInfo.Visible = false
+	rankedInfo.Parent = self.TxtRivalFrame
+
+	local thumb = Instance.new("ImageLabel")
+	thumb.Name = "ImgOpponentThumb"
+	thumb.BackgroundTransparency = 1
+	thumb.Size = UDim2.fromOffset(34, 34)
+	thumb.Position = UDim2.fromOffset(0, 2)
+	thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+	thumb.ScaleType = Enum.ScaleType.Crop
+	thumb.Parent = rankedInfo
+
+	local thumbCorner = Instance.new("UICorner")
+	thumbCorner.CornerRadius = UDim.new(1, 0)
+	thumbCorner.Parent = thumb
+
+	local title = Instance.new("TextLabel")
+	title.Name = "TxtRankedTitle"
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromOffset(40, 0)
+	title.Size = UDim2.new(1, -40, 0, 16)
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 13
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextYAlignment = Enum.TextYAlignment.Top
+	title.TextColor3 = Color3.fromRGB(255, 215, 0)
+	title.Text = "RANKED"
+	title.Parent = rankedInfo
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "TxtOpponentName"
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Position = UDim2.fromOffset(40, 16)
+	nameLabel.Size = UDim2.new(1, -40, 0, 18)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 14
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Text = "Opponent"
+	nameLabel.Parent = rankedInfo
+
+	local ratingLabel = Instance.new("TextLabel")
+	ratingLabel.Name = "TxtOpponentRating"
+	ratingLabel.BackgroundTransparency = 1
+	ratingLabel.Position = UDim2.fromOffset(40, 34)
+	ratingLabel.Size = UDim2.new(1, -40, 0, 14)
+	ratingLabel.Font = Enum.Font.Gotham
+	ratingLabel.TextSize = 11
+	ratingLabel.TextXAlignment = Enum.TextXAlignment.Left
+	ratingLabel.TextYAlignment = Enum.TextYAlignment.Top
+	ratingLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	ratingLabel.Text = "Rating: ?"
+	-- Many UI variants clip TxtRival height; we keep rating hidden and fold it into the name line.
+	ratingLabel.Visible = false
+	ratingLabel.Parent = rankedInfo
+
+	self.RankedInfoFrame = rankedInfo
+	self.RankedOpponentNameLabel = nameLabel
+	self.RankedOpponentRatingLabel = ratingLabel
+	self.RankedOpponentThumb = thumb
+	self.RankedTitleLabel = title
+end
+
+function BattlePrepHandler:UpdateRankedInfoDisplay()
+	-- Called as part of UpdateDifficultyDisplay() flow so it refreshes whenever the prep window data reloads.
+	if not self.TxtRivalFrame then
+		return
+	end
+
+	self:EnsureRankedInfoUI()
+
+	local isRanked = (self.currentBattleMode == "Ranked")
+	if not isRanked then
+		if self.RankedInfoFrame then
+			self.RankedInfoFrame.Visible = false
+		end
+		return
+	end
+
+	if not self.RankedInfoFrame then
+		return
+	end
+
+	local opponent = self.currentEnemyData and self.currentEnemyData.rankedOpponent or nil
+	local oppName = opponent and opponent.name or "Opponent"
+	local oppRating = opponent and opponent.rating
+
+	self.RankedInfoFrame.Visible = true
+
+	if self.RankedOpponentNameLabel then
+		if type(oppRating) == "number" then
+			self.RankedOpponentNameLabel.Text = string.format("%s  •  %d", tostring(oppName), math.floor(oppRating))
+		else
+			self.RankedOpponentNameLabel.Text = tostring(oppName)
+		end
+	end
+	-- Rating label is intentionally hidden; rating is shown inline with name.
+
+	-- Thumbnail: only available for real numeric userIds. Ghosts/unknown fall back to placeholder.
+	local thumb = self.RankedOpponentThumb
+	if thumb then
+		local oppUserId = opponent and opponent.userId
+		local numericId = tonumber(oppUserId)
+		if numericId and numericId > 0 then
+			local cached = self._rankedThumbCache[numericId]
+			if cached then
+				thumb.Image = cached
+			else
+				task.spawn(function()
+					local ok, content = pcall(function()
+						return Players:GetUserThumbnailAsync(numericId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+					end)
+					if ok and type(content) == "string" and content ~= "" then
+						self._rankedThumbCache[numericId] = content
+						-- Guard against the UI being destroyed/recreated.
+						if self.RankedOpponentThumb == thumb then
+							thumb.Image = content
+						end
+					else
+						thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+					end
+				end)
+			end
+		else
+			thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+		end
+	end
+end
+
+function BattlePrepHandler:LoadRankedOpponentData(onComplete)
+	task.spawn(function()
+		-- Show "searching" toast while InvokeServer is in-flight (it can take a while).
+		self._rankedFindToken = (self._rankedFindToken or 0) + 1
+		local findToken = self._rankedFindToken
+		self:ShowToastStyled("Looking for a rival...", {
+			textColor = Color3.fromRGB(255, 255, 255),
+			strokeColor = Color3.fromRGB(0, 160, 255),
+			duration = 3.0,
+		})
+		task.spawn(function()
+			-- Re-show periodically so the user always sees feedback (ShowNotification auto-hides after ~3s).
+			while self._rankedFindToken == findToken do
+				task.wait(2.7)
+				if self._rankedFindToken ~= findToken then
+					break
+				end
+				self:ShowToastStyled("Looking for a rival...", {
+					textColor = Color3.fromRGB(255, 255, 255),
+					strokeColor = Color3.fromRGB(0, 160, 255),
+					duration = 3.0,
+				})
+			end
+		end)
+
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		local NetworkFolder = ReplicatedStorage:WaitForChild("Network", 10)
+		if not NetworkFolder then
+			warn("BattlePrepHandler: Network folder not found (ranked)")
+			self:LoadTestEnemyData()
+			self._rankedFindToken = self._rankedFindToken + 1
+			if onComplete then onComplete() end
+			return
+		end
+		
+		local RequestRankedOpponent = NetworkFolder:FindFirstChild("RequestRankedOpponent")
+		if not RequestRankedOpponent then
+			warn("BattlePrepHandler: RequestRankedOpponent RemoteFunction not found")
+			self:LoadTestEnemyData()
+			self._rankedFindToken = self._rankedFindToken + 1
+			if onComplete then onComplete() end
+			return
+		end
+		
+		local success, result = pcall(function()
+			return RequestRankedOpponent:InvokeServer()
+		end)
+
+		-- Stop "searching" loop
+		self._rankedFindToken = self._rankedFindToken + 1
+
+		-- Hide the searching toast immediately (so it doesn't linger for a couple seconds after success).
+		local battleHandler = self.Controller and self.Controller:GetBattleHandler()
+		if battleHandler and battleHandler.HideNotification then
+			battleHandler:HideNotification()
+		end
+		
+		if not success or not result or not result.ok then
+			local code = result and result.error and result.error.code
+			local msg = result and result.error and result.error.message or "Unknown error"
+			warn("BattlePrepHandler: Failed to get ranked opponent:", msg)
+			
+			-- Ranked MVP: show toast and keep window open, but disable Start
+			if code == "NO_OPPONENTS" then
+				self:ShowToast("No opponents found. Please try again later.")
+			else
+				self:ShowToast("Couldn't find an opponent. Please try again later.")
+			end
+			
+			self._rankedOpponentUserId = nil
+			self._rankedTicket = nil
+			self.currentEnemyData = { deck = {}, levels = {}, rewards = {}, rankedOpponent = nil }
+			if self.StartButton and self.StartButton:IsA("GuiButton") then
+				self.StartButton.Active = false
+			end
+			
+			if onComplete then onComplete(false) end
+			return
+		end
+		
+		self._rankedOpponentUserId = result.opponent and result.opponent.userId or nil
+		self._rankedTicket = result.ticket
+		
+		self.currentEnemyData = {
+			deck = result.deck or {},
+			levels = result.levels or {},
+			-- Ranked: show possible rewards similar to NPC (cosmetic + aligns with actual rewards)
+			rewards = {
+				{ type = "lootbox", rarity = "uncommon", count = 1, available = true },
+				{ type = "lootbox", rarity = "rare", count = 1, available = true },
+				{ type = "lootbox", rarity = "epic", count = 1, available = true },
+				{ type = "lootbox", rarity = "legendary", count = 1, available = true },
+			},
+			rankedOpponent = result.opponent
+		}
+		
+		if onComplete then onComplete(true) end
+	end)
+end
+
 function BattlePrepHandler:ShowBattlePrepWindow()
 	-- Reset request flag when opening window (in case it was stuck)
 	self._isRequestingBattle = false
 	
 	-- Ensure Start button is enabled when opening window
 	if self.StartButton and self.StartButton:IsA("GuiButton") then
+		-- Ranked requires an opponent ticket
+		if self.currentBattleMode == "Ranked" then
+			self.StartButton.Active = (self._rankedTicket ~= nil and self._rankedOpponentUserId ~= nil)
+		else
 		self.StartButton.Active = true
+		end
+	end
+
+	-- Ranked should not show NPC/Boss tabs (prevents accidental mode switching).
+	if self.TabsFrame then
+		self.TabsFrame.Visible = (self.currentBattleMode ~= "Ranked")
 	end
 	
 	-- Update tab gradients to reflect current battle mode
@@ -1017,6 +1366,9 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 	
 	-- Update ViewportFrame with appropriate model
 	if self.currentBattleMode == "NPC" then
+		if self.ViewportFrame then
+			self.ViewportFrame.Visible = true
+		end
 		local npcModelName = self.selectedNPCModelName
 		if npcModelName and FindModelInDescendants(Workspace, npcModelName) then
 			self:CloneModelToViewport(npcModelName, false)
@@ -1024,6 +1376,9 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 			warn("BattlePrepHandler: NPC model not found in Workspace:", npcModelName, "- skipping ViewportFrame update")
 		end
 	elseif self.currentBattleMode == "Boss" then
+		if self.ViewportFrame then
+			self.ViewportFrame.Visible = true
+		end
 		-- Use temp boss model name if set (from proximity prompt), otherwise find first boss
 		local bossModelName = self._tempBossModelName
 		if not bossModelName then
@@ -1039,6 +1394,11 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 		end
 		-- Clear temp boss model name
 		self._tempBossModelName = nil
+	elseif self.currentBattleMode == "Ranked" then
+		-- Ranked MVP: no model/thumbnail yet
+		if self.ViewportFrame then
+			self.ViewportFrame.Visible = false
+		end
 	end
 	
 	-- Show battle prep gui
@@ -1047,10 +1407,12 @@ function BattlePrepHandler:ShowBattlePrepWindow()
 	-- Register with close button handler
 	self:RegisterWithCloseButton(true)
 
-	-- Animate ViewportFrame sliding in
+	-- Animate ViewportFrame sliding in (skip for Ranked since it's hidden)
+	if self.currentBattleMode ~= "Ranked" then
 	self:AnimateViewportFrameIn(function()
 		-- ViewportFrame animation completed
 	end)
+	end
 
 	-- Use TweenUI if available, otherwise just show
 	if self.Utilities then
@@ -1122,7 +1484,8 @@ function BattlePrepHandler:LoadNPCEnemyData(onComplete)
 		deck = result.deck or {},
 		levels = result.levels or {}, -- Store levels for each card
 		rewards = rewardFrames,
-		rewardRarity = reward.rarity
+		rewardRarity = reward.rarity,
+		rankedOpponent = nil,
 	}
 		
 		print("✅ BattlePrepHandler: NPC deck loaded with", #self.currentEnemyData.deck, "cards")
@@ -1176,7 +1539,8 @@ function BattlePrepHandler:LoadBossEnemyData(onComplete)
 			levels = result.levels or {}, -- Store levels for each card
 			rewards = {reward}, -- Single reward (lootbox) as hardcoded in BossDecks
 			bossId = result.bossId,
-			difficulty = result.difficulty -- Store difficulty for UI display
+			difficulty = result.difficulty, -- Store difficulty for UI display
+			rankedOpponent = nil,
 		}
 		
 		print("✅ BattlePrepHandler: Boss deck loaded - boss:", result.bossId, "difficulty:", result.difficulty, "cards:", #self.currentEnemyData.deck)
@@ -1203,7 +1567,8 @@ function BattlePrepHandler:LoadTestEnemyData()
 			{type = "lootbox", rarity = "epic", count = 1, available = true},
 			{type = "lootbox", rarity = "legendary", count = 1, available = true}
 		},
-		rewardRarity = "uncommon"
+		rewardRarity = "uncommon",
+		rankedOpponent = nil,
 	}
 	
 	print("✅ BattlePrepHandler: Test enemy data loaded with", #self.currentEnemyData.deck, "cards and", #self.currentEnemyData.rewards, "reward types")
@@ -1274,6 +1639,10 @@ function BattlePrepHandler:UpdateRewardFrame(rewardFrame, reward)
 end
 
 function BattlePrepHandler:UpdateDifficultyDisplay()
+	-- Ranked cosmetics (name/rating/thumb). We piggyback on this update cycle
+	-- so Ranked info stays fresh whenever enemy data reloads.
+	self:UpdateRankedInfoDisplay()
+
 	-- Only show difficulty for boss mode
 	local isBossMode = self.currentPartName and self.currentPartName:match("^BossMode")
 	if not isBossMode then
@@ -1689,16 +2058,16 @@ function BattlePrepHandler:SetupStartButton()
 			return
 		end
 		
-		-- Ensure currentPartName is set before starting battle
-		-- This handles cases where it might not have been set during window opening
+		-- Ensure we have required selection before starting battle.
+		-- Ranked mode has no partName; it uses opponent selection ticket instead.
+		if self.currentBattleMode ~= "Ranked" then
 		if not self.currentPartName then
 			self:EnsurePartNameForMode()
 		end
-		
-		-- Verify currentPartName is set (should be set when window opens or by EnsurePartNameForMode)
 		if not self.currentPartName then
 			warn("BattlePrepHandler: Cannot start battle - no part name set")
 			return
+			end
 		end
 		
 		-- Call the handler
@@ -1737,38 +2106,59 @@ function BattlePrepHandler:RequestBattle()
 		return
 	end
 	
+	-- Ranked mode uses opponent ticket, not partName
+	local isRanked = (self.currentBattleMode == "Ranked")
+	if not isRanked then
 	-- Verify part name is set
 	if not self.currentPartName then
 		warn("BattlePrepHandler: No part name set - cannot determine battle mode")
-		-- Re-enable button on error
 		if self.StartButton then
 			self.StartButton.Active = true
 		end
 		return
+		end
 	end
 	
 	-- Mark as requesting to prevent duplicate requests
 	self._isRequestingBattle = true
 	
 	-- Determine battle mode from part name (for logging only, server determines this)
-	local isNPCMode = self.currentPartName:match("^NPCMode")
-	local isBossMode = self.currentPartName:match("^BossMode")
+	local isNPCMode = (not isRanked) and self.currentPartName:match("^NPCMode")
+	local isBossMode = (not isRanked) and self.currentPartName:match("^BossMode")
 	
 	-- Request battle with current enemy data
 	-- NOTE: For NPC/Boss mode, don't send variant - the server doesn't use it and will reject "Balanced" in production
 	-- Variant is only used for regular PvE battles, not NPC/Boss battles
-	local requestData = {
+	local requestData
+	if isRanked then
+		if not self._rankedOpponentUserId or not self._rankedTicket then
+			warn("BattlePrepHandler: Ranked opponent not selected (missing ticket/userId)")
+			self._isRequestingBattle = false
+			if self.StartButton then
+				self.StartButton.Active = true
+			end
+			return
+		end
+		requestData = {
+			mode = "PvP",
+			pvpMode = "Ranked",
+			opponentUserId = self._rankedOpponentUserId,
+			ticket = self._rankedTicket,
+		}
+	else
+		requestData = {
 		mode = "PvE",
 		seed = nil, -- Let server generate seed
 		partName = self.currentPartName -- Include part name for NPC/Boss detection
 	}
+	end
 	
-	-- Only add variant for regular PvE battles (not NPC/Boss)
-	if not isNPCMode and not isBossMode then
+	-- Only add variant for regular PvE battles (not NPC/Boss and not Ranked PvP)
+	if not isRanked and not isNPCMode and not isBossMode then
 		requestData.variant = "Balanced"
 	end
 	
-	print("✅ BattlePrepHandler: Requesting battle with partName:", tostring(self.currentPartName), "mode:", isNPCMode and "NPC" or (isBossMode and "Boss" or "Normal"), "variant:", tostring(requestData.variant))
+	print("✅ BattlePrepHandler: Requesting battle", isRanked and "(Ranked PvP)" or "", "partName:", tostring(self.currentPartName), "variant:", tostring(requestData.variant))
 	
 	-- Send battle request with error handling
 	local success, errorMessage = pcall(function()

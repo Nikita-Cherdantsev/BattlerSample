@@ -34,6 +34,22 @@ Manifest.CardImages = {
 	["card_1600"] = "rbxassetid://119952205768312", -- Yamcha
 	["card_1700"] = "rbxassetid://125875363703877", -- Midoriya
 	["card_1800"] = "rbxassetid://82447764673886", -- Piccolo
+
+	-- 2026-01 new cards (TODO: replace placeholders with real art)
+	["card_30"] = "rbxassetid://125548693576749",  -- Gaara
+	["card_40"] = "rbxassetid://121135325816826",  -- Franky
+	["card_120"] = "rbxassetid://112067507741783", -- Naruto
+	["card_130"] = "rbxassetid://0", -- Katakuri
+	["card_140"] = "rbxassetid://0", -- Sasuke
+	["card_150"] = "rbxassetid://0", -- Levi
+	["card_160"] = "rbxassetid://0", -- Killua
+	["card_170"] = "rbxassetid://0", -- Sung Jin-Woo
+	["card_180"] = "rbxassetid://0", -- Sasha
+	["card_190"] = "rbxassetid://0", -- Brook
+	["card_620"] = "rbxassetid://0", -- Leorio
+	["card_630"] = "rbxassetid://0", -- Nami
+	["card_640"] = "rbxassetid://0", -- Nico Robin
+	["card_650"] = "rbxassetid://0", -- Armin
 }
 
 -- Card images (TODO: Replace with actual card art)
@@ -63,6 +79,22 @@ Manifest.CardImagesDisabled = {
 	["card_1600"] = "rbxassetid://70847220149068", -- Yamcha
 	["card_1700"] = "rbxassetid://101838142917431", -- Midoriya
 	["card_1800"] = "rbxassetid://101009651230755", -- Piccolo
+
+	-- 2026-01 new cards (TODO: replace placeholders with real "disabled" art)
+	["card_30"] = "rbxassetid://88578527650338",  -- Gaara
+	["card_40"] = "rbxassetid://90370558718850",  -- Franky
+	["card_120"] = "rbxassetid://128158999795548", -- Naruto
+	["card_130"] = "rbxassetid://0", -- Katakuri
+	["card_140"] = "rbxassetid://0", -- Sasuke
+	["card_150"] = "rbxassetid://0", -- Levi
+	["card_160"] = "rbxassetid://0", -- Killua
+	["card_170"] = "rbxassetid://0", -- Sung Jin-Woo
+	["card_180"] = "rbxassetid://0", -- Sasha
+	["card_190"] = "rbxassetid://0", -- Brook
+	["card_620"] = "rbxassetid://0", -- Leorio
+	["card_630"] = "rbxassetid://0", -- Nami
+	["card_640"] = "rbxassetid://0", -- Nico Robin
+	["card_650"] = "rbxassetid://0", -- Armin
 }
 
 -- Class icons (TODO: Replace with actual class icons)
