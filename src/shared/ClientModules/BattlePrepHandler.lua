@@ -1097,9 +1097,7 @@ function BattlePrepHandler:EnsureRankedInfoUI()
 	if self.TxtRivalFrame:FindFirstChild("RankedInfo") then
 		self.RankedInfoFrame = self.TxtRivalFrame:FindFirstChild("RankedInfo")
 		self.RankedOpponentNameLabel = self.RankedInfoFrame:FindFirstChild("TxtOpponentName")
-		self.RankedOpponentRatingLabel = self.RankedInfoFrame:FindFirstChild("TxtOpponentRating")
 		self.RankedOpponentThumb = self.RankedInfoFrame:FindFirstChild("ImgOpponentThumb")
-		self.RankedTitleLabel = self.RankedInfoFrame:FindFirstChild("TxtRankedTitle")
 		return
 	end
 
@@ -1119,7 +1117,7 @@ function BattlePrepHandler:EnsureRankedInfoUI()
 	thumb.BackgroundTransparency = 1
 	thumb.Size = UDim2.fromOffset(34, 34)
 	thumb.Position = UDim2.fromOffset(0, 2)
-	thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+	thumb.Image = "rbxassetid://128885164460403"
 	thumb.ScaleType = Enum.ScaleType.Crop
 	thumb.Parent = rankedInfo
 
@@ -1127,53 +1125,23 @@ function BattlePrepHandler:EnsureRankedInfoUI()
 	thumbCorner.CornerRadius = UDim.new(1, 0)
 	thumbCorner.Parent = thumb
 
-	local title = Instance.new("TextLabel")
-	title.Name = "TxtRankedTitle"
-	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromOffset(40, 0)
-	title.Size = UDim2.new(1, -40, 0, 16)
-	title.Font = Enum.Font.GothamBold
-	title.TextSize = 13
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.TextYAlignment = Enum.TextYAlignment.Top
-	title.TextColor3 = Color3.fromRGB(255, 215, 0)
-	title.Text = "RANKED"
-	title.Parent = rankedInfo
-
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "TxtOpponentName"
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Position = UDim2.fromOffset(40, 16)
-	nameLabel.Size = UDim2.new(1, -40, 0, 18)
+	nameLabel.Size = UDim2.new(1, -40, 0, 20)
 	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 14
+	nameLabel.TextSize = 20
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-	nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+	nameLabel.TextYAlignment = Enum.TextYAlignment.Center
 	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.Text = "Opponent"
 	nameLabel.Parent = rankedInfo
 
-	local ratingLabel = Instance.new("TextLabel")
-	ratingLabel.Name = "TxtOpponentRating"
-	ratingLabel.BackgroundTransparency = 1
-	ratingLabel.Position = UDim2.fromOffset(40, 34)
-	ratingLabel.Size = UDim2.new(1, -40, 0, 14)
-	ratingLabel.Font = Enum.Font.Gotham
-	ratingLabel.TextSize = 11
-	ratingLabel.TextXAlignment = Enum.TextXAlignment.Left
-	ratingLabel.TextYAlignment = Enum.TextYAlignment.Top
-	ratingLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-	ratingLabel.Text = "Rating: ?"
-	-- Many UI variants clip TxtRival height; we keep rating hidden and fold it into the name line.
-	ratingLabel.Visible = false
-	ratingLabel.Parent = rankedInfo
-
 	self.RankedInfoFrame = rankedInfo
 	self.RankedOpponentNameLabel = nameLabel
-	self.RankedOpponentRatingLabel = ratingLabel
 	self.RankedOpponentThumb = thumb
-	self.RankedTitleLabel = title
 end
 
 function BattlePrepHandler:UpdateRankedInfoDisplay()
@@ -1204,7 +1172,7 @@ function BattlePrepHandler:UpdateRankedInfoDisplay()
 
 	if self.RankedOpponentNameLabel then
 		if type(oppRating) == "number" then
-			self.RankedOpponentNameLabel.Text = string.format("%s  •  %d", tostring(oppName), math.floor(oppRating))
+			self.RankedOpponentNameLabel.Text = string.format("%s • %d", tostring(oppName), math.floor(oppRating))
 		else
 			self.RankedOpponentNameLabel.Text = tostring(oppName)
 		end
@@ -1232,12 +1200,12 @@ function BattlePrepHandler:UpdateRankedInfoDisplay()
 							thumb.Image = content
 						end
 					else
-						thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+						thumb.Image = "rbxassetid://128885164460403"
 					end
 				end)
 			end
 		else
-			thumb.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+			thumb.Image = "rbxassetid://128885164460403"
 		end
 	end
 end
@@ -1249,7 +1217,7 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 		local findToken = self._rankedFindToken
 		self:ShowToastStyled("Looking for a rival...", {
 			textColor = Color3.fromRGB(255, 255, 255),
-			strokeColor = Color3.fromRGB(0, 160, 255),
+			strokeColor = Color3.fromRGB(0, 0, 0),
 			duration = 3.0,
 		})
 		task.spawn(function()
@@ -1261,7 +1229,7 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 				end
 				self:ShowToastStyled("Looking for a rival...", {
 					textColor = Color3.fromRGB(255, 255, 255),
-					strokeColor = Color3.fromRGB(0, 160, 255),
+					strokeColor = Color3.fromRGB(0, 0, 0),
 					duration = 3.0,
 				})
 			end
