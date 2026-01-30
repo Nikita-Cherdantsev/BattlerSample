@@ -111,13 +111,13 @@ BoxDropTables.ONEPIECE = {
 			rarity = BoxTypes.BoxRarity.RARE,
 			probability = 0.20, -- 20% (adjusted to make room for EPIC pool)
 			copiesRange = { min = 3, max = 6 },
-			cardPool = { "card_500", "card_630", "card_640", "card_40", "card_190" } -- Sanji, Nami, Robin, Franky, Brook
+			cardPool = { "card_260", "card_290", "card_500", "card_1130" } -- Sanji, Nami, Robin, Brook
 		},
 		{
 			rarity = BoxTypes.BoxRarity.EPIC,
 			probability = 0.12, -- 12%
 			copiesRange = { min = 3, max = 6 },
-			cardPool = { "card_130" } -- Katakuri (Epic)
+			cardPool = { "card_330" } -- Katakuri
 		},
 		{
 			rarity = BoxTypes.BoxRarity.LEGENDARY,

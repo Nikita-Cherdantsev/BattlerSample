@@ -11,13 +11,13 @@ local Manifest = {}
 Manifest.CardImages = {
 	-- Legendary cards
 	["card_100"] = "rbxassetid://78423585996740",  -- Monkey D. Luffy
-	["card_200"] = "rbxassetid://129594750129124",  -- Roronoa Zoro
+	["card_200"] = "rbxassetid://129594750129124", -- Roronoa Zoro
 	["card_800"] = "rbxassetid://95838232303458",  -- Vegeta
 	["card_1000"] = "rbxassetid://95259815635405", -- Goku
 	
 	-- Epic cards
 	["card_300"] = "rbxassetid://109391071241644",  -- Rock Lee
-	["card_400"] = "rbxassetid://71605508055920",  -- Tsunade
+	["card_400"] = "rbxassetid://71605508055920",   -- Tsunade
 	["card_1200"] = "rbxassetid://129062570319296", -- All Might
 	
 	-- Rare cards
@@ -30,26 +30,29 @@ Manifest.CardImages = {
 	["card_700"] = "rbxassetid://123184517185097",  -- Koby
 	["card_1100"] = "rbxassetid://102339751039385", -- Usopp
 	["card_1300"] = "rbxassetid://114677338404508", -- Chopper
-	["card_1400"] = "rbxassetid://76533453851792", -- Krillin
+	["card_1400"] = "rbxassetid://76533453851792",  -- Krillin
 	["card_1600"] = "rbxassetid://119952205768312", -- Yamcha
 	["card_1700"] = "rbxassetid://125875363703877", -- Midoriya
-	["card_1800"] = "rbxassetid://82447764673886", -- Piccolo
+	["card_1800"] = "rbxassetid://82447764673886",  -- Piccolo
 
 	-- 2026-01 new cards (TODO: replace placeholders with real art)
-	["card_30"] = "rbxassetid://125548693576749",  -- Gaara
-	["card_40"] = "rbxassetid://121135325816826",  -- Franky
-	["card_120"] = "rbxassetid://112067507741783", -- Naruto
-	["card_130"] = "rbxassetid://0", -- Katakuri
-	["card_140"] = "rbxassetid://0", -- Sasuke
-	["card_150"] = "rbxassetid://0", -- Levi
-	["card_160"] = "rbxassetid://0", -- Killua
-	["card_170"] = "rbxassetid://0", -- Sung Jin-Woo
-	["card_180"] = "rbxassetid://0", -- Sasha
-	["card_190"] = "rbxassetid://0", -- Brook
-	["card_620"] = "rbxassetid://0", -- Leorio
-	["card_630"] = "rbxassetid://0", -- Nami
-	["card_640"] = "rbxassetid://0", -- Nico Robin
-	["card_650"] = "rbxassetid://0", -- Armin
+	-- Legendary
+	["card_230"] = "rbxassetid://102798177394146", -- Naruto
+	["card_550"] = "rbxassetid://93634056468748", -- Sasuke
+	["card_570"] = "rbxassetid://82799502307660", -- Levi
+	-- Epic
+	["card_30"] = "rbxassetid://77897888000942",  -- Gaara
+	["card_330"] = "rbxassetid://89096877704526", -- Katakuri
+	["card_440"] = "rbxassetid://99659479879376", -- Killua
+	["card_460"] = "rbxassetid://133558544941798", -- Sung Jin-Woo
+	-- Rare
+	["card_260"] = "rbxassetid://135747807670885", -- Nami
+	["card_290"] = "rbxassetid://133666168872924", -- Nico Robin
+	["card_340"] = "rbxassetid://97793441372127", -- Leorio
+	["card_1130"] = "rbxassetid://88690278212526", -- Brook
+	-- Uncommon
+	["card_420"] = "rbxassetid://113199136847332", -- Armin
+	["card_480"] = "rbxassetid://100627200262331", -- Sasha
 }
 
 -- Card images (TODO: Replace with actual card art)
@@ -80,21 +83,24 @@ Manifest.CardImagesDisabled = {
 	["card_1700"] = "rbxassetid://101838142917431", -- Midoriya
 	["card_1800"] = "rbxassetid://101009651230755", -- Piccolo
 
-	-- 2026-01 new cards (TODO: replace placeholders with real "disabled" art)
-	["card_30"] = "rbxassetid://88578527650338",  -- Gaara
-	["card_40"] = "rbxassetid://90370558718850",  -- Franky
-	["card_120"] = "rbxassetid://128158999795548", -- Naruto
-	["card_130"] = "rbxassetid://0", -- Katakuri
-	["card_140"] = "rbxassetid://0", -- Sasuke
-	["card_150"] = "rbxassetid://0", -- Levi
-	["card_160"] = "rbxassetid://0", -- Killua
-	["card_170"] = "rbxassetid://0", -- Sung Jin-Woo
-	["card_180"] = "rbxassetid://0", -- Sasha
-	["card_190"] = "rbxassetid://0", -- Brook
-	["card_620"] = "rbxassetid://0", -- Leorio
-	["card_630"] = "rbxassetid://0", -- Nami
-	["card_640"] = "rbxassetid://0", -- Nico Robin
-	["card_650"] = "rbxassetid://0", -- Armin
+	-- 2026-01 new cards (TODO: replace placeholders with real art)
+	-- Legendary
+	["card_230"] = "rbxassetid://114355763895245", -- Naruto
+	["card_550"] = "rbxassetid://83913845399709",  -- Sasuke
+	["card_570"] = "rbxassetid://108770757098694", -- Levi
+	-- Epic
+	["card_30"] = "rbxassetid://101180348226582",  -- Gaara
+	["card_330"] = "rbxassetid://104396117504446", -- Katakuri
+	["card_440"] = "rbxassetid://105073836995863", -- Killua
+	["card_460"] = "rbxassetid://75569583699372",  -- Sung Jin-Woo
+	-- Rare
+	["card_260"] = "rbxassetid://73286417668111",  -- Nami
+	["card_290"] = "rbxassetid://100953535831042", -- Nico Robin
+	["card_340"] = "rbxassetid://128094087054018", -- Leorio
+	["card_1130"] = "rbxassetid://84072184384781", -- Brook
+	-- Uncommon
+	["card_420"] = "rbxassetid://74064355597144",  -- Armin
+	["card_480"] = "rbxassetid://133744255436521", -- Sasha
 }
 
 -- Class icons (TODO: Replace with actual class icons)
