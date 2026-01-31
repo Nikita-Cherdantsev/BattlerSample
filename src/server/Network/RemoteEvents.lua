@@ -164,6 +164,15 @@ local function SendErrorUpdate(player, context, code, message, options)
 	}, options)
 end
 
+local function SendServiceError(player, context, result, options)
+	-- Prefer a detailed service-provided message (when available).
+	-- This is especially important for lootbox errors like BOX_ALREADY_UNLOCKING where
+	-- LootboxService returns the active slot and remaining seconds.
+	local code = (result and result.error) or "INTERNAL"
+	local message = (result and result.message) or tostring(code)
+	return SendErrorUpdate(player, context, code, message, options)
+end
+
 local function SendSnapshot(player, context, overrides, options)
 	options = options or {}
 	options.context = context
@@ -382,7 +391,7 @@ local function HandleRequestResolvePendingDiscard(player, requestData)
 	local result = LootboxService.ResolvePendingDiscard(player.UserId)
 	
 	if not result.ok then
-		SendErrorUpdate(player, "RequestResolvePendingDiscard.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestResolvePendingDiscard.failure", result)
 		return
 	end
 	
@@ -411,7 +420,7 @@ local function HandleRequestResolvePendingReplace(player, requestData)
 	local result = LootboxService.ResolvePendingReplace(player.UserId, requestData.slotIndex)
 	
 	if not result.ok then
-		SendErrorUpdate(player, "RequestResolvePendingReplace.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestResolvePendingReplace.failure", result)
 		return
 	end
 	
@@ -440,7 +449,7 @@ local function HandleRequestStartUnlock(player, requestData)
 	local result = LootboxService.StartUnlock(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		SendErrorUpdate(player, "RequestStartUnlock.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestStartUnlock.failure", result)
 		return
 	end
 	
@@ -505,7 +514,7 @@ local function HandleRequestSpeedUp(player, requestData)
 			end
 		end
 		
-		SendErrorUpdate(player, "RequestSpeedUp.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestSpeedUp.failure", result)
 		return
 	end
 	
@@ -547,7 +556,7 @@ local function HandleRequestOpenNow(player, requestData)
 	local result = LootboxService.OpenNow(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		SendErrorUpdate(player, "RequestOpenNow.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestOpenNow.failure", result)
 		return
 	end
 	
@@ -583,7 +592,7 @@ local function HandleRequestCompleteUnlock(player, requestData)
 	local result = LootboxService.CompleteUnlock(player.UserId, requestData.slotIndex, os.time())
 	
 	if not result.ok then
-		SendErrorUpdate(player, "RequestCompleteUnlock.failure", result.error or "INTERNAL", tostring(result.error))
+		SendServiceError(player, "RequestCompleteUnlock.failure", result)
 		return
 	end
 	

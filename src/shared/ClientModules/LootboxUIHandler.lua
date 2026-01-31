@@ -2,6 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 --// Modules
 local NetworkClient = require(game.StarterPlayer.StarterPlayerScripts.Controllers.NetworkClient)
@@ -22,6 +23,15 @@ LootboxUIHandler._pendingRequests = {} -- Track pending requests per slot to pre
 
 -- Helper function to get server time with fallback and local offset
 local function getServerTime(clientState)
+	-- Prefer Roblox-provided synced server time when available.
+	-- This avoids relying on device clock (`os.time()`), which can jump on mobile.
+	local ok, serverNow = pcall(function()
+		return Workspace:GetServerTimeNow()
+	end)
+	if ok and type(serverNow) == "number" and serverNow > 0 then
+		return serverNow
+	end
+
 	if clientState and clientState.getState then
 		local state = clientState.getState()
 		if state and state.serverNow and state.serverNow > 0 then
