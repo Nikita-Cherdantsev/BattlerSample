@@ -43,6 +43,57 @@ function BattlePrepHandler:ShowToastStyled(message, opts)
 	end
 end
 
+-- Ranked matchmaking: block UI input while searching for an opponent.
+-- This prevents opening other windows (Deck/Shop/etc.) mid-search, which can lead to
+-- the battle prep window opening on top of another window.
+function BattlePrepHandler:EnsureRankedSearchBlocker()
+	if self._rankedSearchBlocker and self._rankedSearchBlocker.Parent then
+		return
+	end
+	if not self.UI then
+		return
+	end
+
+	local blocker = self.UI:FindFirstChild("RankedSearchBlocker")
+	if not blocker then
+		blocker = Instance.new("TextButton")
+		blocker.Name = "RankedSearchBlocker"
+		blocker.Size = UDim2.fromScale(1, 1)
+		blocker.Position = UDim2.fromScale(0, 0)
+		blocker.BackgroundTransparency = 1
+		blocker.Text = ""
+		blocker.AutoButtonColor = false
+		blocker.Active = false
+		blocker.Visible = false
+		blocker.Selectable = false
+		blocker.ZIndex = 10000
+		-- Modal ensures this button captures input and prevents clicks from reaching
+		-- other GuiObjects within the same ScreenGui.
+		blocker.Modal = true
+		blocker.Parent = self.UI
+	end
+
+	self._rankedSearchBlocker = blocker
+end
+
+function BattlePrepHandler:SetRankedSearchBlockerEnabled(enabled, token)
+	self:EnsureRankedSearchBlocker()
+	local blocker = self._rankedSearchBlocker
+	if not blocker then
+		return
+	end
+
+	-- Token-guard: avoid disabling a newer search from an older async callback.
+	if enabled then
+		self._rankedSearchBlockerToken = token
+	elseif token ~= nil and self._rankedSearchBlockerToken ~= token then
+		return
+	end
+
+	blocker.Visible = enabled
+	blocker.Active = enabled
+end
+
 --// Constants
 local LOOTBOX_ASSETS = {
 	uncommon = "rbxassetid://89282766853868",
@@ -1215,6 +1266,10 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 		-- Show "searching" toast while InvokeServer is in-flight (it can take a while).
 		self._rankedFindToken = (self._rankedFindToken or 0) + 1
 		local findToken = self._rankedFindToken
+
+		-- Block opening other UI windows while searching.
+		self:SetRankedSearchBlockerEnabled(true, findToken)
+
 		self:ShowToastStyled("Looking for a rival...", {
 			textColor = Color3.fromRGB(255, 255, 255),
 			strokeColor = Color3.fromRGB(0, 0, 0),
@@ -1241,6 +1296,7 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 			warn("BattlePrepHandler: Network folder not found (ranked)")
 			self:LoadTestEnemyData()
 			self._rankedFindToken = self._rankedFindToken + 1
+			self:SetRankedSearchBlockerEnabled(false, findToken)
 			if onComplete then onComplete() end
 			return
 		end
@@ -1250,6 +1306,7 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 			warn("BattlePrepHandler: RequestRankedOpponent RemoteFunction not found")
 			self:LoadTestEnemyData()
 			self._rankedFindToken = self._rankedFindToken + 1
+			self:SetRankedSearchBlockerEnabled(false, findToken)
 			if onComplete then onComplete() end
 			return
 		end
@@ -1260,6 +1317,9 @@ function BattlePrepHandler:LoadRankedOpponentData(onComplete)
 
 		-- Stop "searching" loop
 		self._rankedFindToken = self._rankedFindToken + 1
+
+		-- Unblock UI now that matchmaking completed (success or failure).
+		self:SetRankedSearchBlockerEnabled(false, findToken)
 
 		-- Hide the searching toast immediately (so it doesn't linger for a couple seconds after success).
 		local battleHandler = self.Controller and self.Controller:GetBattleHandler()

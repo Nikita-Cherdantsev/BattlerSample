@@ -8,7 +8,7 @@ RankedConstants.LOSE_DELTA = 20
 -- Matchmaking tuning
 RankedConstants.INITIAL_RANGE = 100      -- +/- range
 RankedConstants.RANGE_STEP = 100         -- expand by this when empty
-RankedConstants.MAX_RANGE = 600          -- hard cap expansion
+RankedConstants.MAX_RANGE = 300          -- hard cap expansion (reduced to speed up searches)
 RankedConstants.MAX_CANDIDATES = 50      -- fetched from index for random pick
 
 -- Bucketization (DataStore fallback / long-lived index)
