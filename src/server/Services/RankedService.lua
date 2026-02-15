@@ -284,6 +284,7 @@ function RankedService.PickOpponent(userId, rating)
 			debugLog("PickOpponent: DataStore fallback chosen=%s (MemoryStore unavailable)", dsPick)
 			return tostring(dsPickNum)
 		end
+		debugLog("PickOpponent: DataStore fallback found no candidates (MemoryStore unavailable)")
 		return nil, "NO_OPPONENTS"
 	end
 
@@ -297,6 +298,7 @@ function RankedService.PickOpponent(userId, rating)
 			debugLog("PickOpponent: DataStore fallback chosen=%s (backoff active)", dsPick)
 			return tostring(dsPickNum)
 		end
+		debugLog("PickOpponent: DataStore fallback found no candidates (backoff active)")
 		return nil, "NO_OPPONENTS"
 	end
 
@@ -330,6 +332,7 @@ function RankedService.PickOpponent(userId, rating)
 				debugLog("PickOpponent: DataStore fallback chosen=%s", dsPick)
 				return dsPick
 			end
+			debugLog("PickOpponent: DataStore fallback found no candidates (GetRangeAsync failed, range=%d)", range)
 			return nil, "NO_OPPONENTS"
 		end
 
@@ -366,6 +369,7 @@ function RankedService.PickOpponent(userId, rating)
 				debugLog("PickOpponent: DataStore fallback chosen=%s (range=%d)", dsPick, range)
 				return dsPick
 			end
+			debugLog("PickOpponent: DataStore fallback found no candidates (range=%d)", range)
 		end
 
 		range = range + RankedConstants.RANGE_STEP
@@ -386,8 +390,12 @@ function RankedService.PickOpponentFromDataStore(selfUserId, rating, range)
 	local baseBucket = math.floor(rating / bucketSize)
 	local bucketDelta = math.max(1, math.ceil(range / bucketSize))
 
-	local now = os.time()
-	local staleAfter = RankedConstants.DATASTORE_SNAPSHOT_TTL or (24 * 60 * 60)
+	debugLog("PickOpponentFromDataStore: self=%s rating=%d range=%d bucketSize=%d baseBucket=%d bucketDelta=%d",
+		selfUserId, math.floor(rating), math.floor(range), math.floor(bucketSize), baseBucket, bucketDelta)
+
+	-- Exact numeric bounds (bucketization is approximate; we must validate the real snapshot rating).
+	local minR = math.max(0, math.floor(rating - range))
+	local maxR = math.floor(rating + range)
 
 	local candidates = {}
 	for b = baseBucket - bucketDelta, baseBucket + bucketDelta do
@@ -396,6 +404,11 @@ function RankedService.PickOpponentFromDataStore(selfUserId, rating, range)
 			return DataStoreWrapper.GetAsync(DS_BUCKETS, bucketKey, 1)
 		end)
 		if ok and type(bucketMap) == "table" then
+			local bucketCount = 0
+			for _ in pairs(bucketMap) do
+				bucketCount = bucketCount + 1
+			end
+			debugLog("PickOpponentFromDataStore: bucket=%s entries=%d", bucketKey, bucketCount)
 			for userId, updatedAt in pairs(bucketMap) do
 				-- Defensive: bucket maps should be { [userIdString] = updatedAtNumber }.
 				-- Ignore any malformed keys/values (prevents selecting invalid opponentUserId like -2).
@@ -403,24 +416,69 @@ function RankedService.PickOpponentFromDataStore(selfUserId, rating, range)
 				if userIdNum and userIdNum > 0 then
 					local normalized = tostring(userIdNum)
 					if normalized ~= selfUserId then
-						if type(updatedAt) == "number" and (now - updatedAt) <= staleAfter then
-							table.insert(candidates, normalized)
-						end
+						-- NOTE: Do NOT filter by updatedAt recency.
+						-- The experience is early / low-population, so it's better to include older snapshots
+						-- (we'll still validate snapshot existence later when starting the match).
+						-- Keep updatedAt unused (may be nil/old); we log candidate counts by bucket above.
+						table.insert(candidates, normalized)
 					end
 				else
 					-- If bucket content is malformed (e.g. array), don't treat numeric indices as userIds
 					-- (pairs() would yield 1,2,3... keys which are NOT userIds).
 				end
 			end
+		else
+			debugLog("PickOpponentFromDataStore: bucket=%s read=%s type=%s", bucketKey, tostring(ok), type(bucketMap))
 		end
 	end
 
 	if #candidates == 0 then
+		debugLog("PickOpponentFromDataStore: no candidates")
 		return nil
 	end
 
+	-- Buckets can contain stale/mis-bucketed userIds (we don't remove old bucket entries on rating change).
+	-- Validate the actual snapshot rating before returning an opponent.
 	local rng = Random.new(os.clock() * 1000)
-	return candidates[rng:NextInteger(1, #candidates)]
+	debugLog("PickOpponentFromDataStore: rawCandidates=%d validating snapshots in [%d..%d]", #candidates, minR, maxR)
+
+	local maxAttempts = math.min(#candidates, 12)
+	for attempt = 1, maxAttempts do
+		local idx = rng:NextInteger(1, #candidates)
+		local chosen = candidates[idx]
+
+		-- Remove from pool so we don't retry the same userId
+		table.remove(candidates, idx)
+
+		local okSnap, snap = pcall(function()
+			return DataStoreWrapper.GetAsync(DS_SNAPSHOT, tostring(chosen), 1)
+		end)
+
+		if okSnap and type(snap) == "table" then
+			local snapRating = tonumber(snap.rating)
+			local deckOk = (type(snap.deck) == "table" and #snap.deck > 0)
+			if snapRating and snapRating >= minR and snapRating <= maxR and deckOk then
+				debugLog("PickOpponentFromDataStore: chosen=%s snapRating=%d (attempt=%d)", tostring(chosen), math.floor(snapRating), attempt)
+				return tostring(chosen)
+			end
+			debugLog("PickOpponentFromDataStore: skip userId=%s snapRating=%s deckOk=%s (attempt=%d)",
+				tostring(chosen),
+				snapRating and tostring(math.floor(snapRating)) or "nil",
+				tostring(deckOk),
+				attempt
+			)
+		else
+			debugLog("PickOpponentFromDataStore: skip userId=%s snapshotRead=%s type=%s (attempt=%d)",
+				tostring(chosen),
+				tostring(okSnap),
+				type(snap),
+				attempt
+			)
+		end
+	end
+
+	debugLog("PickOpponentFromDataStore: no valid snapshots in range (attempted=%d)", maxAttempts)
+	return nil
 end
 
 -- Two-phase flow: request opponent, issue a short-lived ticket to bind selection.

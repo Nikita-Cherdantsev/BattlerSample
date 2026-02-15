@@ -1282,11 +1282,21 @@ function MatchService.ExecuteMatch(player, requestData)
 			rewards = npcDeckData.reward
 			LogInfo(player, "Victory reward (Boss hardcoded): %s lootbox x%d", rewards.rarity, rewards.count or 1)
 		else
-			-- Generate new reward for non-NPC battles
+			-- Generate new reward for non-NPC battles (including Ranked PvP)
+			-- Keep the same weighted distribution as NPC mode:
+			-- 50% Uncommon, 30% Rare, 15% Epic, 5% Legendary
 			local rewardRNG = SeededRNG.New(serverSeed + 9999)
-			local rarities = {"uncommon", "rare", "epic", "legendary"}
-			local rarityIndex = SeededRNG.RandomInt(rewardRNG, 1, #rarities)
-			local rewardRarity = rarities[rarityIndex]
+			local roll = SeededRNG.RandomFloat(rewardRNG, 0, 1)
+			local rewardRarity = "uncommon"
+			if roll < 0.5 then
+				rewardRarity = "uncommon"
+			elseif roll < 0.8 then
+				rewardRarity = "rare"
+			elseif roll < 0.95 then
+				rewardRarity = "epic"
+			else
+				rewardRarity = "legendary"
+			end
 			
 			rewards = {
 				type = "lootbox",
