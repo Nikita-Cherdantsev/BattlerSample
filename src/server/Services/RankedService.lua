@@ -37,13 +37,14 @@ local lastPersistAtByUserId = {} -- userId -> os.time()
 local PERSIST_MIN_INTERVAL_SEC = 15
 
 -- Debug logging (set true temporarily when diagnosing matchmaking issues)
-local DEBUG = true
+local DEBUG = false
 
 local function debugLog(fmt, ...)
 	if not DEBUG then
 		return
 	end
-	print(string.format("[RankedService] " .. fmt, ...))
+	-- warn() more visible than print(); shows in Output when filtering Client/Server
+	warn(string.format("[RankedService] " .. fmt, ...))
 end
 
 local function safeJsonEncode(value)
@@ -168,15 +169,11 @@ local function buildGhostOpponent(playerSnapshot, myRating)
 	}
 end
 
--- Upsert player's snapshot and rating into MemoryStore.
+-- Upsert player's snapshot and rating into MemoryStore and DataStore.
+-- DataStore write is independent of MemoryStore: snapshots persist even when MemoryStore fails.
 -- Best-effort: failure should not block gameplay.
 function RankedService.UpsertSnapshot(userId, profile)
 	userId = tostring(userId)
-	if not initStores() then
-		debugLog("UpsertSnapshot skipped (MemoryStore unavailable) userId=%s", userId)
-		return false, "MEMORYSTORE_UNAVAILABLE"
-	end
-
 	local now = os.time()
 
 	local snapshot = buildSnapshotFromProfile(profile)
@@ -186,28 +183,30 @@ function RankedService.UpsertSnapshot(userId, profile)
 	end
 	debugLog("UpsertSnapshot userId=%s rating=%d deckSize=%d", userId, snapshot.rating, #snapshot.deck)
 
-	local encoded = safeJsonEncode(snapshot)
-	if not encoded then
-		return false, "ENCODE_FAILED"
+	-- MemoryStore: only when available
+	local memoryStoreOk = initStores()
+	if memoryStoreOk then
+		local encoded = safeJsonEncode(snapshot)
+		if encoded then
+			local okSnap, errSnap = pcall(function()
+				snapshotMap:SetAsync(userId, encoded, RankedConstants.SNAPSHOT_TTL)
+			end)
+			if not okSnap then
+				debugLog("UpsertSnapshot snapshotMap:SetAsync FAILED userId=%s err=%s", userId, tostring(errSnap))
+			end
+
+			local okIdx, errIdx = pcall(function()
+				ratingIndex:SetAsync(userId, now, RankedConstants.INDEX_TTL, snapshot.rating)
+			end)
+			if not okIdx then
+				debugLog("UpsertSnapshot ratingIndex:SetAsync FAILED userId=%s err=%s", userId, tostring(errIdx))
+			end
+		end
+	else
+		debugLog("UpsertSnapshot MemoryStore unavailable, skipping (DataStore will persist) userId=%s", userId)
 	end
 
-	local okSnap, errSnap = pcall(function()
-		snapshotMap:SetAsync(userId, encoded, RankedConstants.SNAPSHOT_TTL)
-	end)
-	if not okSnap then
-		debugLog("UpsertSnapshot snapshotMap:SetAsync FAILED userId=%s err=%s", userId, tostring(errSnap))
-	end
-
-	local okIdx, errIdx = pcall(function()
-		-- SortedMap ordering is driven by sortKey, NOT value.
-		-- Store a tiny value (timestamp) and put rating into sortKey for range queries.
-		ratingIndex:SetAsync(userId, now, RankedConstants.INDEX_TTL, snapshot.rating)
-	end)
-	if not okIdx then
-		debugLog("UpsertSnapshot ratingIndex:SetAsync FAILED userId=%s err=%s", userId, tostring(errIdx))
-	end
-
-	-- DataStore fallback: persist snapshot + add to bucket index (best effort, throttled)
+	-- DataStore: always persist (independent of MemoryStore)
 	local last = lastPersistAtByUserId[userId]
 	if not last or (now - last) >= PERSIST_MIN_INTERVAL_SEC then
 		lastPersistAtByUserId[userId] = now
@@ -216,7 +215,6 @@ function RankedService.UpsertSnapshot(userId, profile)
 				return snapshot
 			end, 2)
 		end)
-		-- Bucket index: bucketKey -> { [userId] = updatedAt }
 		local bucketSize = RankedConstants.BUCKET_SIZE or 100
 		local bucketId = math.floor(snapshot.rating / bucketSize)
 		local bucketKey = "b_" .. tostring(bucketId)
@@ -225,7 +223,6 @@ function RankedService.UpsertSnapshot(userId, profile)
 				local map = (type(old) == "table") and old or {}
 				map[userId] = now
 
-				-- Soft cleanup if bucket grows too large
 				local cap = RankedConstants.DATASTORE_BUCKET_CAP or 500
 				local count = 0
 				for _ in pairs(map) do
@@ -235,7 +232,6 @@ function RankedService.UpsertSnapshot(userId, profile)
 					end
 				end
 				if count > cap then
-					-- Remove oldest entries until under cap
 					local entries = {}
 					for k, ts in pairs(map) do
 						table.insert(entries, { k = k, ts = ts })
@@ -280,7 +276,7 @@ function RankedService.PickOpponent(userId, rating)
 		-- Still allow DataStore fallback (supports offline opponent selection)
 		local dsPick = RankedService.PickOpponentFromDataStore(userId, rating, RankedConstants.INITIAL_RANGE)
 		local dsPickNum = dsPick and tonumber(dsPick) or nil
-		if dsPickNum and dsPickNum > 0 and tostring(dsPickNum) ~= userId then
+		if dsPickNum and dsPickNum ~= 0 and tostring(dsPickNum) ~= userId then
 			debugLog("PickOpponent: DataStore fallback chosen=%s (MemoryStore unavailable)", dsPick)
 			return tostring(dsPickNum)
 		end
@@ -294,7 +290,7 @@ function RankedService.PickOpponent(userId, rating)
 		-- During backoff, try DataStore fallback (supports offline opponent selection)
 		local dsPick = RankedService.PickOpponentFromDataStore(userId, rating, RankedConstants.INITIAL_RANGE)
 		local dsPickNum = dsPick and tonumber(dsPick) or nil
-		if dsPickNum and dsPickNum > 0 and tostring(dsPickNum) ~= userId then
+		if dsPickNum and dsPickNum ~= 0 and tostring(dsPickNum) ~= userId then
 			debugLog("PickOpponent: DataStore fallback chosen=%s (backoff active)", dsPick)
 			return tostring(dsPickNum)
 		end
@@ -356,7 +352,7 @@ function RankedService.PickOpponent(userId, rating)
 				-- Common in solo test: index contains only self. Allow DataStore fallback.
 				local dsPick = RankedService.PickOpponentFromDataStore(userId, rating, range)
 				local dsPickNum = dsPick and tonumber(dsPick) or nil
-				if dsPickNum and dsPickNum > 0 and tostring(dsPickNum) ~= userId then
+				if dsPickNum and dsPickNum ~= 0 and tostring(dsPickNum) ~= userId then
 					debugLog("PickOpponent: DataStore fallback chosen=%s (only-self in MemoryStore, range=%d)", dsPick, range)
 					return tostring(dsPickNum)
 				end
@@ -375,6 +371,7 @@ function RankedService.PickOpponent(userId, rating)
 		range = range + RankedConstants.RANGE_STEP
 	end
 
+	debugLog("PickOpponent: exhausted all ranges, no opponent found userId=%s rating=%d", userId, rating)
 	return nil, "NO_OPPONENTS"
 end
 
@@ -411,9 +408,9 @@ function RankedService.PickOpponentFromDataStore(selfUserId, rating, range)
 			debugLog("PickOpponentFromDataStore: bucket=%s entries=%d", bucketKey, bucketCount)
 			for userId, updatedAt in pairs(bucketMap) do
 				-- Defensive: bucket maps should be { [userIdString] = updatedAtNumber }.
-				-- Ignore any malformed keys/values (prevents selecting invalid opponentUserId like -2).
+				-- Allow negative UserIds (Roblox Studio test players: -1, -2, etc.); only 0 is invalid.
 				local userIdNum = tonumber(userId)
-				if userIdNum and userIdNum > 0 then
+				if userIdNum and userIdNum ~= 0 then
 					local normalized = tostring(userIdNum)
 					if normalized ~= selfUserId then
 						-- NOTE: Do NOT filter by updatedAt recency.
@@ -428,7 +425,7 @@ function RankedService.PickOpponentFromDataStore(selfUserId, rating, range)
 				end
 			end
 		else
-			debugLog("PickOpponentFromDataStore: bucket=%s read=%s type=%s", bucketKey, tostring(ok), type(bucketMap))
+			debugLog("PickOpponentFromDataStore: bucket=%s read failed ok=%s err=%s", bucketKey, tostring(ok), tostring(bucketMap))
 		end
 	end
 
@@ -483,7 +480,10 @@ end
 
 -- Two-phase flow: request opponent, issue a short-lived ticket to bind selection.
 function RankedService.RequestOpponent(player)
+	debugLog("RequestOpponent: START player=%s userId=%s", tostring(player and player.Name), tostring(player and player.UserId))
+
 	if not player or not player.UserId then
+		debugLog("RequestOpponent: FAIL invalid player")
 		return { ok = false, error = { code = "INVALID_PLAYER", message = "Invalid player" } }
 	end
 
@@ -495,14 +495,19 @@ function RankedService.RequestOpponent(player)
 		profile = ProfileManager.LoadProfile(player.UserId)
 	end
 	if not profile then
+		debugLog("RequestOpponent: FAIL profile load failed userId=%s", userId)
 		return { ok = false, error = { code = "PROFILE_LOAD_FAILED", message = "Failed to load profile" } }
 	end
+	debugLog("RequestOpponent: profile loaded userId=%s deckSize=%d", userId, type(profile.deck) == "table" and #profile.deck or 0)
 
 	-- Upsert self snapshot for matchmaking visibility
 	RankedService.UpsertSnapshot(userId, profile)
 
 	local myRating = profile.pvpRating or RankedConstants.START_RATING
+	debugLog("RequestOpponent: PickOpponent userId=%s rating=%d", userId, myRating)
 	local opponentUserId, reason = RankedService.PickOpponent(userId, myRating)
+	debugLog("RequestOpponent: PickOpponent result opponentUserId=%s reason=%s", tostring(opponentUserId), tostring(reason))
+
 	local mySnapshot = buildSnapshotFromProfile(profile)
 	if not opponentUserId then
 		-- Cold start fallback: generate a ghost deck using the same style as NPC deck gen.
@@ -542,29 +547,44 @@ function RankedService.RequestOpponent(player)
 		end
 
 		-- Otherwise: no opponent available
+		debugLog("RequestOpponent: FAIL no opponents reason=%s (ghost disabled or no deck)", tostring(reason or "NO_OPPONENTS"))
 		return { ok = false, error = { code = tostring(reason or "NO_OPPONENTS"), message = tostring(reason or "No opponents available") } }
 	end
 
 	-- Safety: never allow invalid opponent ids to escape to client
+	-- Roblox Studio test players use negative UserIds (-1, -2, etc.); only 0 is invalid
 	local oppNum = tonumber(opponentUserId)
-	if not oppNum or oppNum <= 0 or tostring(oppNum) == userId then
+	if not oppNum or oppNum == 0 or tostring(oppNum) == userId then
+		debugLog("RequestOpponent: FAIL invalid opponent id opponentUserId=%s userId=%s", tostring(opponentUserId), userId)
 		return { ok = false, error = { code = "NO_OPPONENTS", message = "No opponents available" } }
 	end
 	opponentUserId = tostring(oppNum)
 
+	-- Fetch opponent deck snapshot (MemoryStore first, DataStore fallback)
+	debugLog("RequestOpponent: fetching deck for opponent userId=%s", opponentUserId)
 	local oppSnapshot = getSnapshot(opponentUserId)
-	-- If MemoryStore snapshot is missing, try DataStore snapshot.
+	local deckSource = "MemoryStore"
 	if not oppSnapshot then
+		debugLog("RequestOpponent: MemoryStore miss for opponent=%s, trying DataStore", opponentUserId)
 		local ok, dsSnapshot = pcall(function()
 			return DataStoreWrapper.GetAsync(DS_SNAPSHOT, tostring(opponentUserId), 1)
 		end)
 		if ok and type(dsSnapshot) == "table" then
 			oppSnapshot = dsSnapshot
+			deckSource = "DataStore"
+		else
+			debugLog("RequestOpponent: DataStore miss for opponent=%s ok=%s", opponentUserId, tostring(ok))
 		end
+	else
+		debugLog("RequestOpponent: MemoryStore hit for opponent=%s deckSize=%d", opponentUserId, type(oppSnapshot.deck) == "table" and #oppSnapshot.deck or 0)
 	end
+
 	if not oppSnapshot or type(oppSnapshot.deck) ~= "table" or #oppSnapshot.deck == 0 then
+		debugLog("RequestOpponent: FAIL opponent snapshot missing opponent=%s hasSnapshot=%s deckType=%s deckLen=%d",
+			opponentUserId, oppSnapshot ~= nil, type(oppSnapshot and oppSnapshot.deck), oppSnapshot and type(oppSnapshot.deck) == "table" and #oppSnapshot.deck or 0)
 		return { ok = false, error = { code = "OPPONENT_SNAPSHOT_MISSING", message = "Opponent snapshot missing" } }
 	end
+	debugLog("RequestOpponent: deck obtained from %s opponent=%s deckSize=%d", deckSource, opponentUserId, #oppSnapshot.deck)
 
 	local opponentName = nil
 	local oppPlayer = Players:GetPlayerByUserId(tonumber(opponentUserId))
@@ -596,6 +616,8 @@ function RankedService.RequestOpponent(player)
 		end)
 	end
 
+	debugLog("RequestOpponent: SUCCESS userId=%s opponent=%s deckSize=%d opponentName=%s",
+		userId, opponentUserId, #oppSnapshot.deck, tostring(opponentName))
 	return {
 		ok = true,
 		opponent = {
