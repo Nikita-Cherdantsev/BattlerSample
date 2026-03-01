@@ -66,6 +66,9 @@
         },
         "LikeHandler": {
           "$path": "src/shared/ClientModules/LikeHandler.lua"
+        },
+        "RatingPlaqueHandler": {
+          "$path": "src/shared/ClientModules/RatingPlaqueHandler.lua"
         }
       },
       "Modules": {

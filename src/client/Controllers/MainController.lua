@@ -30,6 +30,7 @@ local PromoCodeHandler = require(ReplicatedStorage.ClientModules.PromoCodeHandle
 local NotificationMarkerHandler = require(ReplicatedStorage.ClientModules.NotificationMarkerHandler)
 local TutorialHandler = require(ReplicatedStorage.ClientModules.TutorialHandler)
 local LikeHandler = require(ReplicatedStorage.ClientModules.LikeHandler)
+local RatingPlaqueHandler = require(ReplicatedStorage.ClientModules.RatingPlaqueHandler)
 
 -- State
 local isInitialized = false
@@ -72,7 +73,8 @@ function MainController:Init(skipRequestProfile)
 		{name = "FollowRewardHandler", handler = FollowRewardHandler},
 		{name = "PromoCodeHandler", handler = PromoCodeHandler},
 		{name = "TutorialHandler", handler = TutorialHandler},
-		{name = "LikeHandler", handler = LikeHandler}
+		{name = "LikeHandler", handler = LikeHandler},
+		{name = "RatingPlaqueHandler", handler = RatingPlaqueHandler}
 	}
 	
 	for _, handlerInfo in ipairs(handlers) do
